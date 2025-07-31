@@ -383,12 +383,12 @@ class JellyfinAPI:
         self.client = None
         self.last_connection_check = 0
         self.connection_check_interval = 60  # seconds
-        
+
     async def connect(self) -> bool:
         """Connect to Jellyfin server"""
         try:
             self.client = JellyfinClient()
-            
+
             # Configure client
             self.client.config.app(
                 self.config.get('jellyfin.client_name'),
@@ -396,33 +396,45 @@ class JellyfinAPI:
                 self.config.get('jellyfin.device_name'),
                 self.config.get('jellyfin.device_id')
             )
-            
+
             server_url = self.config.get('jellyfin.server_url')
             api_key = self.config.get('jellyfin.api_key')
-            
-            if not server_url or not api_key:
-                raise ValueError("Jellyfin server URL and API key are required")
-            
+            user_id = self.config.get('jellyfin.user_id')
+
+            if not server_url or not api_key or not user_id:
+                missing = []
+                if not server_url: missing.append("server_url")
+                if not api_key: missing.append("api_key")
+                if not user_id: missing.append("user_id")
+                raise ValueError(f"Missing required Jellyfin configuration: {', '.join(missing)}")
+
+            # Remove trailing slash from server URL if present
+            if server_url.endswith('/'):
+                server_url = server_url[:-1]
+
             # Use API key authentication
             self.client.config.data["auth.ssl"] = server_url.startswith('https')
+            self.client.config.data["auth.user_id"] = user_id  # Add this line
+
             credentials = {
                 "Servers": [{
                     "AccessToken": api_key,
+                    "userId": user_id,  # Add this line
                     "address": server_url,
                     "Id": "jellyfin-webhook-service"
                 }]
             }
-            
+
             self.client.authenticate(credentials, discover=False)
-            
+
             # Test connection
             response = self.client.jellyfin.get_system_info()
             if response:
                 logging.info(f"Connected to Jellyfin server: {response.get('ServerName', 'Unknown')}")
                 return True
-            
+
             return False
-            
+
         except Exception as e:
             logging.error(f"Failed to connect to Jellyfin: {e}")
             return False
@@ -454,17 +466,18 @@ class JellyfinAPI:
 
         all_items = []
         start_index = 0
+        user_id = self.config.get('jellyfin.user_id')
 
         while True:
             try:
-                # Use user_items instead of get_items, and remove parent_id parameter
-                response = self.client.jellyfin.user_items(params={
-                    'startIndex': start_index,  # Likely lowercase based on Python conventions
-                    'limit': batch_size,
-                    'recursive': True,
-                    'includeItemTypes': "Movie,Series,Season,Episode",
-                    'fields': "Overview,MediaStreams,ProviderIds,Path,MediaSources"
-                })
+                response = self.client.jellyfin.get_items(
+                    userId=user_id,  # Add this line
+                    parent_id=None,
+                    start_index=start_index,
+                    limit=batch_size,
+                    include_item_types="Movie,Series,Season,Episode",
+                    fields="Overview,MediaStreams,ProviderIds,Path,MediaSources"
+                )
 
                 if not response or 'Items' not in response:
                     break
