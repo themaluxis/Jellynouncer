@@ -19,4 +19,4 @@
           with:
             context: .
             push: true
-            tags: ${{ secrets.DOCKER_USERNAME }}/your-repo-name:latest # Replace 'your-repo-name'
+            tags: ${{ secrets.DOCKER_USERNAME }}/JellyNotify:latest # Replace 'your-repo-name'
