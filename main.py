@@ -354,15 +354,47 @@ class DatabaseManager:
         except Exception as e:
             logging.error(f"Error saving item {item.item_id}: {e}")
             return False
-    
-    async def get_all_items(self) -> List[MediaItem]:
-        """Get all media items"""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT * FROM media_items ORDER BY updated_at DESC")
-            rows = await cursor.fetchall()
-            
-            return [MediaItem(**dict(row)) for row in rows]
+
+    async def get_all_items(self, batch_size: int = 100) -> List[Dict[str, Any]]:
+        """Get all media items from Jellyfin"""
+        if not await self.is_connected():
+            if not await self.connect():
+                raise Exception("Cannot connect to Jellyfin server")
+
+        all_items = []
+        start_index = 0
+
+        while True:
+            try:
+                # Use user_items instead of get_items, and remove parent_id parameter
+                response = self.client.jellyfin.user_items(params={
+                    'startIndex': start_index,  # Likely lowercase based on Python conventions
+                    'limit': batch_size,
+                    'recursive': True,
+                    'includeItemTypes': "Movie,Series,Season,Episode",
+                    'fields': "Overview,MediaStreams,ProviderIds,Path,MediaSources"
+                })
+
+                if not response or 'Items' not in response:
+                    break
+
+                items = response['Items']
+                if not items:
+                    break
+
+                all_items.extend(items)
+                start_index += len(items)
+
+                # Respect API rate limits
+                await asyncio.sleep(self.config.get('sync.api_request_delay', 0.1))
+
+                logging.info(f"Fetched {len(all_items)} items from Jellyfin...")
+
+            except Exception as e:
+                logging.error(f"Error fetching items from Jellyfin: {e}")
+                break
+
+        return all_items
     
     async def vacuum_database(self):
         """Vacuum database for maintenance"""
