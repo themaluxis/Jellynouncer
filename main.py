@@ -8,7 +8,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -101,7 +101,7 @@ class WebhookPayload(BaseModel):
 class Config:
     """Configuration manager"""
     
-    def __init__(self, config_path: str = "/app/config.json"):
+    def __init__(self, config_path: str = "/app/config/config.json"):
         self.config_path = config_path
         self.config = self._load_config()
         
@@ -112,39 +112,59 @@ class Config:
                 "server_url": os.getenv("JELLYFIN_SERVER_URL"),
                 "api_key": os.getenv("JELLYFIN_API_KEY"),
                 "user_id": os.getenv("JELLYFIN_USER_ID"),
-                "client_name": "Jellyfin-Discord-Webhook",
+                "client_name": "JellyNotify",
                 "client_version": "1.0.0",
-                "device_name": "webhook-service",
-                "device_id": "jellyfin-discord-webhook-001"
+                "device_name": "jellynotify-webhook",
+                "device_id": "jellynotify-discord-webhook-001"
             },
             "discord": {
-                # Legacy single webhook support (backwards compatible)
+                # Single/fallback webhook
                 "webhook_url": os.getenv("DISCORD_WEBHOOK_URL"),
-                # New multi-webhook configuration
+                # Multi-webhook configuration
                 "webhooks": {
                     "default": {
                         "url": os.getenv("DISCORD_WEBHOOK_URL"),
                         "name": "General",
-                        "enabled": True
+                        "enabled": True,
+                        "grouping": {
+                            "mode": "none",
+                            "delay_minutes": 5,
+                            "max_items": 25
+                        }
                     },
                     "movies": {
                         "url": os.getenv("DISCORD_WEBHOOK_URL_MOVIES"),
                         "name": "Movies",
-                        "enabled": False
+                        "enabled": False,
+                        "grouping": {
+                            "mode": "none",
+                            "delay_minutes": 5,
+                            "max_items": 25
+                        }
                     },
                     "tv": {
                         "url": os.getenv("DISCORD_WEBHOOK_URL_TV"),
                         "name": "TV Shows",
-                        "enabled": False
+                        "enabled": False,
+                        "grouping": {
+                            "mode": "none",
+                            "delay_minutes": 5,
+                            "max_items": 25
+                        }
                     },
                     "music": {
                         "url": os.getenv("DISCORD_WEBHOOK_URL_MUSIC"),
                         "name": "Music",
-                        "enabled": False
+                        "enabled": False,
+                        "grouping": {
+                            "mode": "none",
+                            "delay_minutes": 5,
+                            "max_items": 25
+                        }
                     }
                 },
                 "routing": {
-                    "enabled": False,  # Enable multi-webhook routing
+                    "enabled": False,
                     "movie_types": ["Movie"],
                     "tv_types": ["Episode", "Season", "Series"],
                     "music_types": ["Audio", "MusicAlbum", "MusicArtist"],
@@ -164,7 +184,13 @@ class Config:
             "templates": {
                 "directory": "/app/templates",
                 "new_item_template": "new_item.j2",
-                "upgraded_item_template": "upgraded_item.j2"
+                "upgraded_item_template": "upgraded_item.j2",
+                "new_items_by_event_template": "new_items_by_event.j2",
+                "upgraded_items_by_event_template": "upgraded_items_by_event.j2",
+                "new_items_by_type_template": "new_items_by_type.j2",
+                "upgraded_items_by_type_template": "upgraded_items_by_type.j2",
+                "new_items_grouped_template": "new_items_grouped.j2",
+                "upgraded_items_grouped_template": "upgraded_items_grouped.j2"
             },
             "notifications": {
                 "watch_changes": {
@@ -177,12 +203,12 @@ class Config:
                     "provider_ids": True
                 },
                 "colors": {
-                    "new_item": 0x00FF00,  # Green
-                    "resolution_upgrade": 0xFFD700,  # Gold
-                    "codec_upgrade": 0xFF8C00,  # Dark Orange
-                    "audio_upgrade": 0x9370DB,  # Medium Purple
-                    "hdr_upgrade": 0xFF1493,  # Deep Pink
-                    "provider_update": 0x1E90FF  # Dodger Blue
+                    "new_item": 65280,
+                    "resolution_upgrade": 16766720,
+                    "codec_upgrade": 16747520,
+                    "audio_upgrade": 9662683,
+                    "hdr_upgrade": 16716947,
+                    "provider_update": 2003199
                 }
             },
             "server": {
@@ -604,8 +630,319 @@ class ChangeDetector:
         return changes
 
 
+class NotificationQueue:
+    """
+    Manages grouped notifications with time-based batching.
+    Groups items based on webhook, item type, and event type.
+    """
+
+    def __init__(self, discord_notifier):
+        self.discord_notifier = discord_notifier
+        self.queues = {}  # Keyed by webhook_name
+        self.timers = {}  # Keyed by webhook_name
+        self.processing_locks = {}  # Prevent concurrent queue processing
+        
+    async def add_item(self, webhook_name: str, item, changes: List[Dict] = None, is_new: bool = True):
+        """
+        Add an item to the appropriate queue based on webhook and grouping settings.
+        """
+        # Get webhook configuration
+        webhook_config = self.discord_notifier.webhooks.get(webhook_name, {})
+        grouping_config = webhook_config.get('grouping', {})
+        grouping_mode = grouping_config.get('mode', 'none')
+        
+        # If no grouping, send immediately
+        if grouping_mode == 'none':
+            await self.discord_notifier.send_notification(item, changes, is_new)
+            return
+            
+        # Create queue for this webhook if it doesn't exist
+        if webhook_name not in self.queues:
+            self.queues[webhook_name] = {
+                'new': {
+                    'movies': [],
+                    'tv': [],
+                    'music': [],
+                    'other': []
+                },
+                'upgraded': {
+                    'movies': [],
+                    'tv': [],
+                    'music': [],
+                    'other': []
+                },
+                'last_added': time.time(),
+                'timer_started': False
+            }
+            self.processing_locks[webhook_name] = asyncio.Lock()
+            
+        # Determine category based on item type
+        item_type = item.item_type
+        routing_config = self.discord_notifier.routing_config
+        
+        if item_type in routing_config.get('movie_types', ['Movie']):
+            category = 'movies'
+        elif item_type in routing_config.get('tv_types', ['Episode', 'Season', 'Series']):
+            category = 'tv'
+        elif item_type in routing_config.get('music_types', ['Audio', 'MusicAlbum', 'MusicArtist']):
+            category = 'music'
+        else:
+            category = 'other'
+            
+        # Add to appropriate queue
+        event_type = 'new' if is_new else 'upgraded'
+        item_data = {
+            'item': item,
+            'changes': changes or [],
+            'is_new': is_new,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+        
+        self.queues[webhook_name][event_type][category].append(item_data)
+        self.queues[webhook_name]['last_added'] = time.time()
+        
+        # Start timer if not already running
+        if not self.queues[webhook_name]['timer_started']:
+            self.queues[webhook_name]['timer_started'] = True
+            delay_minutes = grouping_config.get('delay_minutes', 5)
+            self.timers[webhook_name] = asyncio.create_task(
+                self._process_queue_after_delay(webhook_name, delay_minutes * 60)
+            )
+            
+        # Check if we've reached max items and should send now
+        max_items = grouping_config.get('max_items', 25)
+        total_items = sum(len(items) for event in self.queues[webhook_name].values() 
+                        if isinstance(event, dict) 
+                        for items in event.values())
+        
+        if total_items >= max_items:
+            # Cancel existing timer
+            if webhook_name in self.timers and not self.timers[webhook_name].done():
+                self.timers[webhook_name].cancel()
+                
+            # Process queue immediately
+            asyncio.create_task(self._process_queue(webhook_name))
+            
+    async def _process_queue_after_delay(self, webhook_name: str, delay_seconds: int):
+        """Wait for the specified delay, then process the queue."""
+        try:
+            await asyncio.sleep(delay_seconds)
+            await self._process_queue(webhook_name)
+        except asyncio.CancelledError:
+            # Timer was cancelled, probably because queue reached max items
+            pass
+        except Exception as e:
+            logging.error(f"Error in notification queue timer for {webhook_name}: {e}")
+            
+    async def _process_queue(self, webhook_name: str):
+        """Process the queue for a specific webhook."""
+        # Use a lock to prevent concurrent processing
+        async with self.processing_locks[webhook_name]:
+            try:
+                # Skip if queue is empty
+                if webhook_name not in self.queues:
+                    return
+                    
+                # Get queue data
+                queue = self.queues[webhook_name]
+                
+                # Skip if all queues are empty
+                total_items = sum(len(items) for event in queue.values() 
+                              if isinstance(event, dict) 
+                              for items in event.values())
+                              
+                if total_items == 0:
+                    self.queues[webhook_name]['timer_started'] = False
+                    return
+                
+                # Get webhook config
+                webhook_config = self.discord_notifier.webhooks.get(webhook_name, {})
+                grouping_mode = webhook_config.get('grouping', {}).get('mode', 'none')
+                
+                # Send notifications based on grouping mode
+                if grouping_mode == 'item_type':
+                    await self._send_by_item_type(webhook_name, queue)
+                elif grouping_mode == 'event_type':
+                    await self._send_by_event_type(webhook_name, queue)
+                elif grouping_mode == 'both':
+                    await self._send_grouped(webhook_name, queue)
+                    
+                # Clear queue and reset timer
+                self.queues[webhook_name] = {
+                    'new': {
+                        'movies': [],
+                        'tv': [],
+                        'music': [],
+                        'other': []
+                    },
+                    'upgraded': {
+                        'movies': [],
+                        'tv': [],
+                        'music': [],
+                        'other': []
+                    },
+                    'last_added': time.time(),
+                    'timer_started': False
+                }
+                
+            except Exception as e:
+                logging.error(f"Error processing notification queue for {webhook_name}: {e}")
+                # Reset timer status so future items can start a new timer
+                if webhook_name in self.queues:
+                    self.queues[webhook_name]['timer_started'] = False
+                    
+    async def _send_by_item_type(self, webhook_name: str, queue: Dict):
+        """Send notifications grouped by item type."""
+        # Combine new and upgraded items by category
+        categories = ['movies', 'tv', 'music', 'other']
+        
+        for category in categories:
+            new_items = queue['new'][category]
+            upgraded_items = queue['upgraded'][category]
+            
+            # Skip empty categories
+            if not new_items and not upgraded_items:
+                continue
+                
+            # Prepare data for template
+            template_data = {
+                'category': category,
+                'new_items': new_items,
+                'upgraded_items': upgraded_items,
+                'has_new': bool(new_items),
+                'has_upgraded': bool(upgraded_items),
+                'total_items': len(new_items) + len(upgraded_items),
+                'jellyfin_url': self.discord_notifier.config.get('jellyfin.server_url'),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'webhook_name': webhook_name
+            }
+            
+            # Determine template to use
+            template_name = self.discord_notifier.config.get('templates.new_items_by_type_template')
+            
+            # Render and send
+            await self.discord_notifier.send_grouped_notification(
+                webhook_name, template_name, template_data
+            )
+            
+    async def _send_by_event_type(self, webhook_name: str, queue: Dict):
+        """Send notifications grouped by event type (new vs upgraded)."""
+        # Process new items if any
+        new_items = []
+        for category in ['movies', 'tv', 'music', 'other']:
+            new_items.extend(queue['new'][category])
+            
+        if new_items:
+            template_data = {
+                'items': new_items,
+                'is_new': True,
+                'total_items': len(new_items),
+                'jellyfin_url': self.discord_notifier.config.get('jellyfin.server_url'),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'webhook_name': webhook_name
+            }
+            
+            template_name = self.discord_notifier.config.get('templates.new_items_by_event_template')
+            await self.discord_notifier.send_grouped_notification(
+                webhook_name, template_name, template_data
+            )
+            
+        # Process upgraded items if any
+        upgraded_items = []
+        for category in ['movies', 'tv', 'music', 'other']:
+            upgraded_items.extend(queue['upgraded'][category])
+            
+        if upgraded_items:
+            template_data = {
+                'items': upgraded_items,
+                'is_new': False,
+                'total_items': len(upgraded_items),
+                'jellyfin_url': self.discord_notifier.config.get('jellyfin.server_url'),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'webhook_name': webhook_name
+            }
+            
+            template_name = self.discord_notifier.config.get('templates.upgraded_items_by_event_template')
+            await self.discord_notifier.send_grouped_notification(
+                webhook_name, template_name, template_data
+            )
+            
+    async def _send_grouped(self, webhook_name: str, queue: Dict):
+        """Send notifications grouped by both item type and event type."""
+        categories = ['movies', 'tv', 'music', 'other']
+        event_types = ['new', 'upgraded']
+        
+        # Check if we have any items
+        total_items = sum(len(queue[event][category]) 
+                        for event in event_types 
+                        for category in categories)
+                        
+        if total_items == 0:
+            return
+            
+        # Prepare data structure
+        grouped_data = {
+            'categories': {},
+            'total_items': total_items,
+            'jellyfin_url': self.discord_notifier.config.get('jellyfin.server_url'),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'webhook_name': webhook_name
+        }
+        
+        # Build category data
+        for category in categories:
+            category_items = {
+                'new': queue['new'][category],
+                'upgraded': queue['upgraded'][category],
+                'total_items': len(queue['new'][category]) + len(queue['upgraded'][category])
+            }
+            
+            # Only include non-empty categories
+            if category_items['total_items'] > 0:
+                grouped_data['categories'][category] = category_items
+                
+        # Determine if we have new or upgraded items
+        has_new = any(len(queue['new'][category]) > 0 for category in categories)
+        has_upgraded = any(len(queue['upgraded'][category]) > 0 for category in categories)
+        
+        # Select template based on item types present
+        if has_new and has_upgraded:
+            template_name = self.discord_notifier.config.get('templates.new_items_grouped_template')
+        elif has_new:
+            template_name = self.discord_notifier.config.get('templates.new_items_by_type_template')
+        else:
+            template_name = self.discord_notifier.config.get('templates.upgraded_items_by_type_template')
+            
+        # Send the notification
+        await self.discord_notifier.send_grouped_notification(
+            webhook_name, template_name, grouped_data
+        )
+        
+    def get_queue_status(self) -> Dict[str, Any]:
+        """Get status of all notification queues."""
+        status = {}
+        
+        for webhook_name, queue in self.queues.items():
+            # Count items in each category
+            new_count = sum(len(items) for items in queue['new'].values())
+            upgraded_count = sum(len(items) for items in queue['upgraded'].values())
+            
+            # Get time since last item was added
+            time_since_last = time.time() - queue['last_added']
+            
+            status[webhook_name] = {
+                'total_items': new_count + upgraded_count,
+                'new_items': new_count,
+                'upgraded_items': upgraded_count,
+                'timer_active': queue['timer_started'],
+                'seconds_since_last_item': round(time_since_last, 1)
+            }
+            
+        return status
+
+
 class DiscordNotifier:
-    """Discord webhook notification sender with multi-webhook support"""
+    """Discord webhook notification sender with multi-webhook and grouping support"""
     
     def __init__(self, config: Config):
         self.config = config
@@ -617,6 +954,9 @@ class DiscordNotifier:
         # Per-webhook rate limiting tracking
         self.webhook_rate_limits = {}
         self.session = None
+        
+        # Initialize notification queue
+        self.notification_queue = NotificationQueue(self)
         
         # Initialize Jinja2 templates
         self.template_env = Environment(
@@ -636,7 +976,12 @@ class DiscordNotifier:
                 "default": {
                     "url": legacy_webhook,
                     "name": "General",
-                    "enabled": True
+                    "enabled": True,
+                    "grouping": {
+                        "mode": "none",
+                        "delay_minutes": 5,
+                        "max_items": 25
+                    }
                 }
             }
             logging.info("Using legacy webhook URL configuration")
@@ -658,6 +1003,14 @@ class DiscordNotifier:
                 self.webhook_rate_limits[webhook_name] = {
                     'last_request_time': 0,
                     'request_count': 0
+                }
+                
+            # Ensure grouping settings exist
+            if 'grouping' not in webhook_config:
+                webhook_config['grouping'] = {
+                    "mode": "none",
+                    "delay_minutes": 5,
+                    "max_items": 25
                 }
     
     def _get_webhook_for_item(self, item: MediaItem) -> Optional[Dict[str, Any]]:
@@ -766,6 +1119,16 @@ class DiscordNotifier:
         
         webhook_name = webhook_info['name']
         webhook_config = webhook_info['config']
+        
+        # Check if grouping is enabled for this webhook
+        grouping_mode = webhook_config.get('grouping', {}).get('mode', 'none')
+        
+        if grouping_mode != 'none':
+            # Add to queue instead of sending immediately
+            await self.notification_queue.add_item(webhook_name, item, changes, is_new)
+            return True
+        
+        # No grouping, send immediately
         webhook_url = webhook_config['url']
         
         await self._wait_for_rate_limit(webhook_name)
@@ -819,6 +1182,52 @@ class DiscordNotifier:
                     
         except Exception as e:
             logging.error(f"Error sending Discord notification to '{webhook_name}': {e}")
+            return False
+    
+    async def send_grouped_notification(self, webhook_name: str, template_name: str, template_data: Dict[str, Any]) -> bool:
+        """Send a grouped notification using the specified template"""
+        if webhook_name not in self.webhooks:
+            logging.error(f"Webhook '{webhook_name}' not found")
+            return False
+            
+        webhook_config = self.webhooks[webhook_name]
+        webhook_url = webhook_config.get('url')
+        
+        if not webhook_url:
+            logging.error(f"No URL for webhook '{webhook_name}'")
+            return False
+            
+        await self._wait_for_rate_limit(webhook_name)
+        
+        try:
+            # Load and render template
+            template = self.template_env.get_template(template_name)
+            
+            # Render the template
+            rendered = template.render(**template_data)
+            
+            # Parse the rendered JSON
+            payload = json.loads(rendered)
+            
+            # Send to Discord
+            async with self.session.post(webhook_url, json=payload) as response:
+                if response.status == 204:
+                    item_count = template_data.get('total_items', 0)
+                    logging.info(f"Successfully sent grouped notification with {item_count} items to '{webhook_name}' webhook")
+                    return True
+                elif response.status == 429:
+                    # Rate limited
+                    retry_after = response.headers.get('Retry-After', '60')
+                    logging.warning(f"Discord webhook '{webhook_name}' rate limited, retry after {retry_after} seconds")
+                    await asyncio.sleep(int(retry_after))
+                    return await self.send_grouped_notification(webhook_name, template_name, template_data)
+                else:
+                    error_text = await response.text()
+                    logging.error(f"Discord webhook '{webhook_name}' failed with status {response.status}: {error_text}")
+                    return False
+                    
+        except Exception as e:
+            logging.error(f"Error sending grouped Discord notification to '{webhook_name}': {e}")
             return False
     
     def _get_change_color(self, changes: List[Dict[str, Any]]) -> int:
@@ -889,7 +1298,8 @@ class DiscordNotifier:
         status = {
             "routing_enabled": self.routing_enabled,
             "webhooks": {},
-            "routing_config": self.routing_config if self.routing_enabled else None
+            "routing_config": self.routing_config if self.routing_enabled else None,
+            "notification_queues": self.notification_queue.get_queue_status()
         }
         
         for webhook_name, webhook_config in self.webhooks.items():
@@ -898,7 +1308,8 @@ class DiscordNotifier:
                 "enabled": webhook_config.get('enabled', False),
                 "has_url": bool(webhook_config.get('url')),
                 "url_preview": webhook_config.get('url', '')[:50] + '...' if webhook_config.get('url') else None,
-                "rate_limit_info": self.webhook_rate_limits.get(webhook_name, {})
+                "rate_limit_info": self.webhook_rate_limits.get(webhook_name, {}),
+                "grouping": webhook_config.get('grouping', {'mode': 'none'})
             }
         
         return status
@@ -1092,6 +1503,10 @@ class WebhookService:
     async def cleanup(self):
         """Cleanup resources"""
         await self.discord.close()
+        
+    async def get_queue_status(self) -> Dict[str, Any]:
+        """Get status of notification queues"""
+        return self.discord.notification_queue.get_queue_status()
 
 
 # FastAPI application
@@ -1162,6 +1577,12 @@ async def webhooks_endpoint():
     return service.discord.get_webhook_status()
 
 
+@app.get("/queues")
+async def queues_endpoint():
+    """Get notification queue status"""
+    return await service.get_queue_status()
+
+
 @app.post("/test-webhook")
 async def test_webhook_endpoint(webhook_name: str = "default"):
     """Test a specific webhook"""
@@ -1203,6 +1624,42 @@ async def test_webhook_endpoint(webhook_name: str = "default"):
                     "message": f"HTTP {response.status}: {error_text}"
                 }
                 
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/flush-queues")
+async def flush_queues_endpoint(webhook_name: str = None):
+    """Force process notification queues immediately"""
+    try:
+        queue = service.discord.notification_queue
+        
+        if webhook_name:
+            # Process specific webhook queue
+            if webhook_name in queue.queues:
+                asyncio.create_task(queue._process_queue(webhook_name))
+                return {
+                    "status": "success",
+                    "message": f"Processing queue for webhook '{webhook_name}'",
+                    "webhook": webhook_name
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": f"Webhook '{webhook_name}' not found or has no queue"
+                }
+        else:
+            # Process all queues
+            processed = []
+            for webhook in queue.queues.keys():
+                asyncio.create_task(queue._process_queue(webhook))
+                processed.append(webhook)
+                
+            return {
+                "status": "success",
+                "message": f"Processing {len(processed)} queues",
+                "webhooks": processed
+            }
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

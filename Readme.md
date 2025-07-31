@@ -11,6 +11,7 @@ JellyNotify is an intermediate webhook service that sits between Jellyfin and Di
 - ⚡ **Rate Limit Handling**: Respects Discord's webhook rate limits
 - 🔄 **Auto-Recovery**: Monitors Jellyfin server status and notifies on outages
 - 🐳 **Docker Ready**: Complete containerized solution
+- 📩 **Smart Notification Grouping**: Reduce notification spam by grouping similar media updates
 
 ## Quick Start
 
@@ -57,7 +58,7 @@ DISCORD_WEBHOOK_URL_MUSIC=https://discord.com/api/webhooks/your/music/webhook/ur
 3. Add a new "Generic" destination
 4. Set URL to: `http://your-docker-host:8080/webhook`
 5. Enable "Item Added" notification type
-6. Use the template from `jellyfin-webhook-template.json`
+6. Use the template from `templates/Default_Jellyfin_Webhook_Template.txt`
 
 ### 4. Deploy with Docker
 
@@ -86,22 +87,42 @@ Just set `DISCORD_WEBHOOK_URL` and all notifications go to one channel.
       "default": {
         "url": null,
         "name": "General",
-        "enabled": true
+        "enabled": true,
+        "grouping": {
+          "mode": "none",
+          "delay_minutes": 5,
+          "max_items": 25
+        }
       },
       "movies": {
         "url": null,
         "name": "Movies",
-        "enabled": true
+        "enabled": true,
+        "grouping": {
+          "mode": "none",
+          "delay_minutes": 5,
+          "max_items": 25
+        }
       },
       "tv": {
         "url": null,
         "name": "TV Shows", 
-        "enabled": true
+        "enabled": true,
+        "grouping": {
+          "mode": "none",
+          "delay_minutes": 5,
+          "max_items": 25
+        }
       },
       "music": {
         "url": null,
         "name": "Music",
-        "enabled": true
+        "enabled": true,
+        "grouping": {
+          "mode": "none",
+          "delay_minutes": 5,
+          "max_items": 25
+        }
       }
     },
     "routing": {
@@ -131,9 +152,87 @@ DISCORD_WEBHOOK_URL_TV=https://discord.com/api/webhooks/YOUR_TV_WEBHOOK
 DISCORD_WEBHOOK_URL_MUSIC=https://discord.com/api/webhooks/YOUR_MUSIC_WEBHOOK
 ```
 
-### Webhook Management
+## Notification Grouping
 
-#### Check Webhook Status
+JellyNotify now supports grouping of similar notifications to reduce spam in your Discord channels.
+
+### How Grouping Works
+
+1. Notifications are collected for a configurable period (default: 5 minutes)
+2. When time expires or maximum items reached, a single notification is sent
+3. Items are grouped based on the configured grouping mode
+
+### Grouping Modes
+
+Each webhook can be configured with one of the following grouping modes:
+
+- **none** (default): No grouping, send notifications immediately
+- **item_type**: Group by content category (Movies, TV Shows, Music)
+- **event_type**: Group by event (New vs. Upgraded)
+- **both**: Group by both content type and event
+
+### Configuring Grouping
+
+In `config.json`, set the grouping options for each webhook:
+
+```json
+"webhooks": {
+  "default": {
+    "url": "...",
+    "name": "General",
+    "enabled": true,
+    "grouping": {
+      "mode": "both",       // Options: "none", "item_type", "event_type", "both"
+      "delay_minutes": 5,   // How long to wait before sending
+      "max_items": 25       // Maximum items per notification
+    }
+  }
+}
+```
+
+### Checking Queue Status
+
+```bash
+curl http://localhost:8080/queues
+```
+
+Response:
+```json
+{
+  "default": {
+    "total_items": 12,
+    "new_items": 8,
+    "upgraded_items": 4,
+    "timer_active": true,
+    "seconds_since_last_item": 45.3
+  },
+  "movies": {
+    "total_items": 3,
+    "new_items": 3,
+    "upgraded_items": 0,
+    "timer_active": true,
+    "seconds_since_last_item": 120.7
+  }
+}
+```
+
+### Manually Processing Queues
+
+To force process all notification queues immediately:
+
+```bash
+curl -X POST http://localhost:8080/flush-queues
+```
+
+To process a specific webhook's queue:
+
+```bash
+curl -X POST "http://localhost:8080/flush-queues?webhook_name=movies"
+```
+
+## Webhook Management
+
+### Check Webhook Status
 ```bash
 curl http://localhost:8080/webhooks
 ```
@@ -147,37 +246,38 @@ Response:
       "name": "General",
       "enabled": true,
       "has_url": true,
-      "url_preview": "https://discord.com/api/webhooks/1234567890/..."
+      "url_preview": "https://discord.com/api/webhooks/1234567890/...",
+      "grouping": {
+        "mode": "both",
+        "delay_minutes": 5,
+        "max_items": 25
+      }
     },
     "movies": {
       "name": "Movies", 
       "enabled": true,
       "has_url": true,
-      "url_preview": "https://discord.com/api/webhooks/0987654321/..."
-    },
-    "tv": {
-      "name": "TV Shows",
-      "enabled": true,
-      "has_url": true,
-      "url_preview": "https://discord.com/api/webhooks/1122334455/..."
-    },
-    "music": {
-      "name": "Music",
-      "enabled": true,
-      "has_url": true,
-      "url_preview": "https://discord.com/api/webhooks/2233445566/..."
+      "url_preview": "https://discord.com/api/webhooks/0987654321/...",
+      "grouping": {
+        "mode": "item_type",
+        "delay_minutes": 5,
+        "max_items": 25
+      }
     }
   },
-  "routing_config": {
-    "movie_types": ["Movie"],
-    "tv_types": ["Episode", "Season", "Series"],
-    "music_types": ["Audio", "MusicAlbum", "MusicArtist"],
-    "fallback_webhook": "default"
+  "notification_queues": {
+    "default": {
+      "total_items": 5,
+      "new_items": 3,
+      "upgraded_items": 2,
+      "timer_active": true,
+      "seconds_since_last_item": 45.3
+    }
   }
 }
 ```
 
-#### Test Individual Webhooks
+### Test Individual Webhooks
 ```bash
 # Test default webhook
 curl -X POST "http://localhost:8080/test-webhook?webhook_name=default"
@@ -192,7 +292,7 @@ curl -X POST "http://localhost:8080/test-webhook?webhook_name=tv"
 curl -X POST "http://localhost:8080/test-webhook?webhook_name=music"
 ```
 
-### Routing Logic
+## Routing Logic
 
 1. **Routing Disabled**: All notifications go to the first enabled webhook
 2. **Routing Enabled**: 
@@ -202,30 +302,6 @@ curl -X POST "http://localhost:8080/test-webhook?webhook_name=music"
    - Other types → `fallback_webhook`
    - If target webhook unavailable → falls back to `fallback_webhook`
    - If fallback unavailable → uses any enabled webhook
-
-### Advanced Routing
-
-You can customize which item types go to which webhooks:
-
-```json
-{
-  "discord": {
-    "routing": {
-      "enabled": true,
-      "movie_types": ["Movie", "BoxSet"],
-      "tv_types": ["Episode", "Season", "Series"],
-      "music_types": ["Audio", "MusicAlbum", "MusicArtist"],
-      "fallback_webhook": "default"
-    },
-    "webhooks": {
-      "default": {"url": "...", "enabled": true},
-      "movies": {"url": "...", "enabled": true},
-      "tv": {"url": "...", "enabled": true},
-      "music": {"url": "...", "enabled": true}
-    }
-  }
-}
-```
 
 ## Manual Commands
 
@@ -280,130 +356,31 @@ The service supports extensive configuration through JSON:
       "hdr_upgrade": 16716947,         // Pink for HDR upgrades
       "provider_update": 2003199       // Blue for provider updates
     }
+  },
+  "templates": {
+    "directory": "/app/templates",
+    "new_item_template": "new_item.j2",
+    "upgraded_item_template": "upgraded_item.j2",
+    "new_items_by_event_template": "new_items_by_event.j2",
+    "upgraded_items_by_event_template": "upgraded_items_by_event.j2",
+    "new_items_by_type_template": "new_items_by_type.j2",
+    "upgraded_items_by_type_template": "upgraded_items_by_type.j2",
+    "new_items_grouped_template": "new_items_grouped.j2",
+    "upgraded_items_grouped_template": "upgraded_items_grouped.j2"
   }
 }
 ```
 
 ### Custom Templates
 
-Templates are located in the `templates/` directory and use Jinja2 syntax:
+Templates are located in the `templates/` directory and use Jinja2 syntax. The following templates are used for grouped notifications:
 
-#### Available Template Variables:
-
-**Item Data:**
-- `item.name` - Item name
-- `item.item_type` - Movie, Episode, etc.
-- `item.year` - Release year
-- `item.series_name` - TV series name
-- `item.season_number` / `item.episode_number` - Episode info
-- `item.overview` - Description
-
-**Video Properties:**
-- `item.video_height` / `item.video_width` - Resolution
-- `item.video_codec` - Video codec (h264, hevc, etc.)
-- `item.video_profile` - Codec profile (High, Main, etc.)
-- `item.video_range` - SDR/HDR status
-- `item.video_framerate` - Frame rate
-- `item.aspect_ratio` - Aspect ratio
-
-**Audio Properties:**
-- `item.audio_codec` - Audio codec (aac, ac3, dts, etc.)
-- `item.audio_channels` - Number of audio channels
-- `item.audio_language` - Audio language
-- `item.audio_bitrate` - Audio bitrate
-
-**Provider IDs:**
-- `item.imdb_id` - IMDb ID
-- `item.tmdb_id` - TMDb ID
-- `item.tvdb_id` - TVDb ID
-
-**Change Data (for upgraded items):**
-- `changes` - List of detected changes
-- `changes[].type` - Change type (resolution, codec, etc.)
-- `changes[].old_value` / `changes[].new_value` - Before/after values
-- `changes[].description` - Human-readable description
-
-**Metadata:**
-- `is_new` - Boolean indicating if this is a new item
-- `color` - Calculated embed color based on change type
-- `jellyfin_url` - Your Jellyfin server URL
-- `timestamp` - Current timestamp
-
-### Creating Custom Templates
-
-1. Copy an existing template from `templates/`
-2. Modify the Jinja2 template syntax
-3. Update `config.json` to reference your new template
-4. Restart the service
-
-Example custom template:
-```jinja2
-{
-  "embeds": [
-    {
-      "title": "🎬 {{ item.name }}",
-      "description": "{% if item.overview %}{{ item.overview[:200] }}...{% endif %}",
-      "color": {{ color }},
-      "fields": [
-        {% if changes %}
-        {% for change in changes %}
-        {
-          "name": "Change: {{ change.type|title }}",
-          "value": "{{ change.description }}",
-          "inline": false
-        }{% if not loop.last %},{% endif %}
-        {% endfor %}
-        {% endif %}
-      ]
-    }
-  ]
-}
-```
-
-## Discord Rate Limits
-
-The service respects Discord's webhook rate limits:
-- **5 requests per 2 seconds** per webhook URL
-- **30 messages per minute** per channel (shared among all webhooks)
-- **50 requests per second** global rate limit per IP
-
-The service automatically queues and throttles requests to stay within these limits.
-
-## Database Schema
-
-The SQLite database stores complete media metadata:
-
-```sql
-CREATE TABLE media_items (
-    item_id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    item_type TEXT NOT NULL,
-    year INTEGER,
-    series_name TEXT,
-    season_number INTEGER,
-    episode_number INTEGER,
-    overview TEXT,
-    video_height INTEGER,
-    video_width INTEGER,
-    video_codec TEXT,
-    video_profile TEXT,
-    video_range TEXT,
-    video_framerate REAL,
-    aspect_ratio TEXT,
-    audio_codec TEXT,
-    audio_channels INTEGER,
-    audio_language TEXT,
-    audio_bitrate INTEGER,
-    imdb_id TEXT,
-    tmdb_id TEXT,
-    tvdb_id TEXT,
-    timestamp TEXT,
-    file_path TEXT,
-    file_size INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
+- **new_items_by_event.j2**: New items grouped by event type
+- **upgraded_items_by_event.j2**: Upgraded items grouped by event type
+- **new_items_by_type.j2**: Items grouped by content type
+- **upgraded_items_by_type.j2**: Items grouped by content type
+- **new_items_grouped.j2**: Complete grouping (both type and event)
+- **upgraded_items_grouped.j2**: Complete grouping (both type and event)
 
 ## API Endpoints
 
@@ -445,59 +422,16 @@ Returns database statistics:
 ```
 
 ### GET /webhooks
-Returns configuration and status of all Discord webhooks:
-```json
-{
-  "routing_enabled": true,
-  "webhooks": {
-    "default": {
-      "name": "General",
-      "enabled": true,
-      "has_url": true,
-      "rate_limit_info": {...}
-    }
-  },
-  "routing_config": {...}
-}
-```
+Returns configuration and status of all Discord webhooks.
+
+### GET /queues
+Returns notification queue status for all webhooks.
+
+### POST /flush-queues
+Manually triggers queue processing.
 
 ### POST /test-webhook
-Tests a specific webhook by sending a test notification:
-```bash
-curl -X POST "http://localhost:8080/test-webhook?webhook_name=movies"
-```
-
-Returns:
-```json
-{
-  "status": "success",
-  "webhook": "movies",
-  "message": "Test notification sent successfully"
-}
-```
-
-## Logging
-
-The service provides comprehensive logging at multiple levels:
-
-- **DEBUG**: Detailed processing information
-- **INFO**: General operational messages
-- **WARNING**: Non-critical issues (rate limits, temporary failures)
-- **ERROR**: Serious errors that don't stop the service
-- **CRITICAL**: Fatal errors that stop the service
-
-Logs are written to both:
-- Console output (visible in `docker logs`)
-- `/app/logs/service.log` file
-
-Configure log level in `config.json`:
-```json
-{
-  "server": {
-    "log_level": "INFO"
-  }
-}
-```
+Tests a specific webhook by sending a test notification.
 
 ## Troubleshooting
 
@@ -513,13 +447,18 @@ Configure log level in `config.json`:
 - Check for rate limiting in logs
 - Ensure Discord channel/server permissions allow webhooks
 
-**3. Database Locked Errors**
+**3. Notification Grouping Not Working**
+- Check that grouping mode is set correctly in config.json
+- Verify that the webhook has the correct URL and is enabled
+- Check the queue status with GET /queues to see if items are being queued
+
+**4. Database Locked Errors**
 - WAL mode should prevent this, but if it occurs:
   ```bash
   docker exec -it jellyfin-discord-webhook sqlite3 /app/data/jellyfin_items.db "PRAGMA journal_mode=WAL;"
   ```
 
-**4. Template Rendering Errors**
+**5. Template Rendering Errors**
 - Check Jinja2 syntax in custom templates
 - Verify all referenced variables exist
 - Look for JSON syntax errors in template output
@@ -543,87 +482,6 @@ View live logs:
 docker logs -f jellyfin-discord-webhook
 ```
 
-## Advanced Configuration
-
-### Custom Notification Colors
-
-Colors are specified as integer values (Discord embed colors):
-
-```python
-# Convert hex to integer
-hex_color = 0xFF0000  # Red
-int_color = 16711680  # Same color as integer
-```
-
-Common colors:
-- Green: `65280` (#00FF00)
-- Red: `16711680` (#FF0000)
-- Blue: `255` (#0000FF)
-- Gold: `16766720` (#FFD700)
-- Purple: `8388736` (#800080)
-
-### Performance Tuning
-
-For large libraries, adjust these settings:
-
-```json
-{
-  "sync": {
-    "sync_batch_size": 50,        // Smaller batches for slower systems
-    "api_request_delay": 0.2      // Longer delay between API calls
-  },
-  "database": {
-    "vacuum_interval_hours": 168  // Weekly vacuum instead of daily
-  }
-}
-```
-
-### Multiple Discord Channels
-
-To send notifications to multiple Discord channels, you can:
-
-1. **Run multiple instances** with different webhook URLs
-2. **Create a custom template** that sends to multiple webhooks
-3. **Use Discord's webhook forwarding** features
-
-## Security Considerations
-
-- **API Keys**: Store in environment variables, not in config files
-- **Database**: SQLite file contains all media metadata - secure appropriately
-- **Network**: Consider running on internal network only
-- **Logs**: May contain sensitive data - rotate and secure log files
-
-## Contributing
-
-### Development Setup
-
-1. Clone repository
-2. Create virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # Linux/Mac
-   # or
-   venv\Scripts\activate     # Windows
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Run locally:
-   ```bash
-   python main.py
-   ```
-
-### Adding New Change Detection
-
-To add detection for new types of changes:
-
-1. Add the field to the `MediaItem` dataclass
-2. Update the `extract_media_item` method in `JellyfinAPI`
-3. Add detection logic in `ChangeDetector.detect_changes`
-4. Update templates to display the new change type
-5. Add configuration option in `config.json`
-
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
@@ -639,6 +497,12 @@ For issues, feature requests, or questions:
    - Steps to reproduce the issue
 
 ## Version History
+
+### v1.1.0
+- Added notification grouping feature
+- Added new API endpoints for queue management
+- Added new Jinja2 templates for grouped notifications
+- Added configurable grouping modes and timers
 
 ### v1.0.0
 - Initial release

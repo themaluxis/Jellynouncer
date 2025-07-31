@@ -1,0 +1,162 @@
+{
+  "embeds": [
+    {% if category == 'movies' %}
+    {
+      "title": "🎬 New Movies Added ({{ total_items }})",
+      "description": "The following movies have been added to Jellyfin:",
+      "color": 65280,
+      "fields": [
+        {% for item_data in new_items %}
+        {
+          "name": "{{ item_data.item.name }}{% if item_data.item.year %} ({{ item_data.item.year }}){% endif %}",
+          "value": "{% if item_data.item.video_height %}📐 {{ item_data.item.video_height }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}",
+          "inline": false
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+      ],
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
+    }{% if has_upgraded %},{% endif %}
+    {% if has_upgraded %}
+    {
+      "title": "🎬⬆️ Movies Upgraded ({{ upgraded_items|length }})",
+      "description": "The following movies have been upgraded in Jellyfin:",
+      "color": 16766720,
+      "fields": [
+        {% for item_data in upgraded_items %}
+        {
+          "name": "{{ item_data.item.name }}{% if item_data.item.year %} ({{ item_data.item.year }}){% endif %}",
+          "value": "{% if item_data.item.video_height %}📐 {{ item_data.item.video_height }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.changes|length > 0 %}
+**Changes**: {% for change in item_data.changes %}{% if change.type == 'resolution' %}Resolution {{ change.old_value or 'Unknown' }}p → **{{ change.new_value or 'Unknown' }}p**{% elif change.type == 'codec' %}Codec {{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_codec' %}Audio {{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_channels' %}Channels {{ change.old_value or 0 }} → **{{ change.new_value or 0 }}**{% elif change.type == 'hdr_status' %}{{ change.old_value or 'SDR' }} → **{{ change.new_value or 'SDR' }}**{% else %}{{ change.description }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}",
+          "inline": false
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+      ],
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
+    }
+    {% endif %}
+    {% elif category == 'tv' %}
+    {
+      "title": "📺 New TV Episodes Added ({{ total_items }})",
+      "description": "The following TV episodes have been added to Jellyfin:",
+      "color": 65280,
+      "fields": [
+        {% for item_data in new_items %}
+        {
+          "name": "{{ item_data.item.series_name }} S{{ '%02d'|format(item_data.item.season_number or 0) }}E{{ '%02d'|format(item_data.item.episode_number or 0) }}",
+          "value": "{{ item_data.item.name }}{% if item_data.item.video_height %} • 📐 {{ item_data.item.video_height }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}",
+          "inline": false
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+      ],
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
+    }{% if has_upgraded %},{% endif %}
+    {% if has_upgraded %}
+    {
+      "title": "📺⬆️ TV Episodes Upgraded ({{ upgraded_items|length }})",
+      "description": "The following TV episodes have been upgraded in Jellyfin:",
+      "color": 16766720,
+      "fields": [
+        {% for item_data in upgraded_items %}
+        {
+          "name": "{{ item_data.item.series_name }} S{{ '%02d'|format(item_data.item.season_number or 0) }}E{{ '%02d'|format(item_data.item.episode_number or 0) }}",
+          "value": "{{ item_data.item.name }}{% if item_data.item.video_height %} • 📐 {{ item_data.item.video_height }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.changes|length > 0 %}
+**Changes**: {% for change in item_data.changes %}{% if change.type == 'resolution' %}Resolution {{ change.old_value or 'Unknown' }}p → **{{ change.new_value or 'Unknown' }}p**{% elif change.type == 'codec' %}Codec {{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_codec' %}Audio {{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_channels' %}Channels {{ change.old_value or 0 }} → **{{ change.new_value or 0 }}**{% elif change.type == 'hdr_status' %}{{ change.old_value or 'SDR' }} → **{{ change.new_value or 'SDR' }}**{% else %}{{ change.description }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}",
+          "inline": false
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+      ],
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
+    }
+    {% endif %}
+    {% elif category == 'music' %}
+    {
+      "title": "🎵 New Music Added ({{ total_items }})",
+      "description": "The following music has been added to Jellyfin:",
+      "color": 65280,
+      "fields": [
+        {% for item_data in new_items %}
+        {
+          "name": "{{ item_data.item.name }}",
+          "value": "{% if item_data.item.audio_codec %}🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.item.audio_bitrate %} • {{ (item_data.item.audio_bitrate / 1000)|int }} kbps{% endif %}",
+          "inline": false
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+      ],
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
+    }{% if has_upgraded %},{% endif %}
+    {% if has_upgraded %}
+    {
+      "title": "🎵⬆️ Music Upgraded ({{ upgraded_items|length }})",
+      "description": "The following music has been upgraded in Jellyfin:",
+      "color": 16766720,
+      "fields": [
+        {% for item_data in upgraded_items %}
+        {
+          "name": "{{ item_data.item.name }}",
+          "value": "{% if item_data.item.audio_codec %}🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.item.audio_bitrate %} • {{ (item_data.item.audio_bitrate / 1000)|int }} kbps{% endif %}{% if item_data.changes|length > 0 %}
+**Changes**: {% for change in item_data.changes %}{% if change.type == 'audio_codec' %}Audio {{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_channels' %}Channels {{ change.old_value or 0 }} → **{{ change.new_value or 0 }}**{% else %}{{ change.description }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}",
+          "inline": false
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+      ],
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
+    }
+    {% endif %}
+    {% else %}
+    {
+      "title": "📁 New Items Added ({{ total_items }})",
+      "description": "The following items have been added to Jellyfin:",
+      "color": 65280,
+      "fields": [
+        {% for item_data in new_items %}
+        {
+          "name": "{{ item_data.item.name }}",
+          "value": "Type: {{ item_data.item.item_type }}{% if item_data.item.video_height %} • 📐 {{ item_data.item.video_height }}p{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% endif %}",
+          "inline": false
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+      ],
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
+    }{% if has_upgraded %},{% endif %}
+    {% if has_upgraded %}
+    {
+      "title": "⬆️ Items Upgraded ({{ upgraded_items|length }})",
+      "description": "The following items have been upgraded in Jellyfin:",
+      "color": 16766720,
+      "fields": [
+        {% for item_data in upgraded_items %}
+        {
+          "name": "{{ item_data.item.name }}",
+          "value": "Type: {{ item_data.item.item_type }}{% if item_data.item.video_height %} • 📐 {{ item_data.item.video_height }}p{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% endif %}{% if item_data.changes|length > 0 %}
+**Changes**: {% for change in item_data.changes %}{% if change.type == 'resolution' %}Resolution {{ change.old_value or 'Unknown' }}p → **{{ change.new_value or 'Unknown' }}p**{% elif change.type == 'codec' %}Codec {{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_codec' %}Audio {{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_channels' %}Channels {{ change.old_value or 0 }} → **{{ change.new_value or 0 }}**{% elif change.type == 'hdr_status' %}{{ change.old_value or 'SDR' }} → **{{ change.new_value or 'SDR' }}**{% else %}{{ change.description }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}",
+          "inline": false
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+      ],
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
+    }
+    {% endif %}
+    {% endif %}
+  ],
+  "footer": {
+    "text": "Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC",
+    "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
+  },
+  "timestamp": "{{ timestamp }}"
+}

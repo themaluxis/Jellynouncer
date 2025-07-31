@@ -1,0 +1,47 @@
+{
+  "embeds": [
+    {
+      "title": "⬆️ Jellyfin Library Upgrades ({{ total_items }})",
+      "description": "The following items have been upgraded in Jellyfin:",
+      "color": 16766720,
+      "fields": [
+        {% if 'movies' in categories %}
+        {
+          "name": "🎬 Movies",
+          "value": "{% if categories.movies.upgraded|length > 0 %}**Upgraded ({{ categories.movies.upgraded|length }})**: {% for item_data in categories.movies.upgraded %}{{ item_data.item.name }}{% if item_data.item.year %} ({{ item_data.item.year }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}",
+          "inline": false
+        },
+        {% endif %}
+        {% if 'tv' in categories %}
+        {
+          "name": "📺 TV Shows",
+          "value": "{% if categories.tv.upgraded|length > 0 %}**Upgraded ({{ categories.tv.upgraded|length }})**: {% for item_data in categories.tv.upgraded %}{{ item_data.item.series_name }} S{{ '%02d'|format(item_data.item.season_number or 0) }}E{{ '%02d'|format(item_data.item.episode_number or 0) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}",
+          "inline": false
+        },
+        {% endif %}
+        {% if 'music' in categories %}
+        {
+          "name": "🎵 Music",
+          "value": "{% if categories.music.upgraded|length > 0 %}**Upgraded ({{ categories.music.upgraded|length }})**: {% for item_data in categories.music.upgraded %}{{ item_data.item.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}",
+          "inline": false
+        },
+        {% endif %}
+        {% if 'other' in categories %}
+        {
+          "name": "📁 Other",
+          "value": "{% if categories.other.upgraded|length > 0 %}**Upgraded ({{ categories.other.upgraded|length }})**: {% for item_data in categories.other.upgraded %}{{ item_data.item.name }} ({{ item_data.item.item_type }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %}",
+          "inline": false
+        },
+        {% endif %}
+      ],
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      },
+      "footer": {
+        "text": "Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC",
+        "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
+      },
+      "timestamp": "{{ timestamp }}"
+    }
+  ]
+}

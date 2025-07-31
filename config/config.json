@@ -3,10 +3,10 @@
     "server_url": null,
     "api_key": null,
     "user_id": null,
-    "client_name": "Jellyfin-Discord-Webhook",
+    "client_name": "JellyNotify-Discord-Webhook",
     "client_version": "1.0.0",
-    "device_name": "webhook-service",
-    "device_id": "jellyfin-discord-webhook-001"
+    "device_name": "jellynotify-webhook-service",
+    "device_id": "jellynotify-discord-webhook-001"
   },
   "discord": {
     "webhook_url": null,
@@ -14,22 +14,42 @@
       "default": {
         "url": null,
         "name": "General",
-        "enabled": true
+        "enabled": true,
+        "grouping": {
+          "mode": "none",
+          "delay_minutes": 5,
+          "max_items": 25
+        }
       },
       "movies": {
         "url": null,
         "name": "Movies",
-        "enabled": false
+        "enabled": false,
+        "grouping": {
+          "mode": "none",
+          "delay_minutes": 5,
+          "max_items": 25
+        }
       },
       "tv": {
         "url": null,
         "name": "TV Shows",
-        "enabled": false
+        "enabled": false,
+        "grouping": {
+          "mode": "none",
+          "delay_minutes": 5,
+          "max_items": 25
+        }
       },
       "music": {
         "url": null,
         "name": "Music",
-        "enabled": false
+        "enabled": false,
+        "grouping": {
+          "mode": "none",
+          "delay_minutes": 5,
+          "max_items": 25
+        }
       }
     },
     "routing": {
@@ -53,7 +73,13 @@
   "templates": {
     "directory": "/app/templates",
     "new_item_template": "new_item.j2",
-    "upgraded_item_template": "upgraded_item.j2"
+    "upgraded_item_template": "upgraded_item.j2",
+    "new_items_by_event_template": "new_items_by_event.j2",
+    "upgraded_items_by_event_template": "upgraded_items_by_event.j2",
+    "new_items_by_type_template": "new_items_by_type.j2",
+    "upgraded_items_by_type_template": "upgraded_items_by_type.j2",
+    "new_items_grouped_template": "new_items_grouped.j2",
+    "upgraded_items_grouped_template": "upgraded_items_grouped.j2"
   },
   "notifications": {
     "watch_changes": {

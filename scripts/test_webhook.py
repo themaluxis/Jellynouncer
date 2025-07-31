@@ -13,21 +13,6 @@ def test_webhook():
     
     # Sample webhook payload (as it would come from Jellyfin)
     test_payload = {
-        "ItemId": "test-item-12345",#!/usr/bin/env python3
-# scripts/test_webhook.py - Test webhook endpoint
-
-import json
-import requests
-import sys
-from datetime import datetime
-
-def test_webhook():
-    """Test the webhook endpoint with sample data"""
-    
-    webhook_url = "http://localhost:8080/webhook"
-    
-    # Sample webhook payload (as it would come from Jellyfin)
-    test_payload = {
         "ItemId": "test-item-12345",
         "Name": "The Matrix",
         "ItemType": "Movie",
