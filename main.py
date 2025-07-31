@@ -414,12 +414,11 @@ class JellyfinAPI:
 
             # Use API key authentication
             self.client.config.data["auth.ssl"] = server_url.startswith('https')
-            self.client.config.data["auth.user_id"] = user_id  # Add this line
 
             credentials = {
                 "Servers": [{
                     "AccessToken": api_key,
-                    "userId": user_id,  # Add this line
+                    "UserId": user_id,  # Make sure user ID is set correctly
                     "address": server_url,
                     "Id": "jellyfin-webhook-service"
                 }]
@@ -466,18 +465,17 @@ class JellyfinAPI:
 
         all_items = []
         start_index = 0
-        user_id = self.config.get('jellyfin.user_id')
 
         while True:
             try:
-                response = self.client.jellyfin.get_items(
-                    userId=user_id,  # Add this line
-                    parent_id=None,
-                    start_index=start_index,
-                    limit=batch_size,
-                    include_item_types="Movie,Series,Season,Episode",
-                    fields="Overview,MediaStreams,ProviderIds,Path,MediaSources"
-                )
+                # Using user_items instead of get_items
+                response = self.client.jellyfin.user_items(params={
+                    'recursive': True,
+                    'includeItemTypes': "Movie,Series,Season,Episode",
+                    'fields': "Overview,MediaStreams,ProviderIds,Path,MediaSources",
+                    'startIndex': start_index,
+                    'limit': batch_size
+                })
 
                 if not response or 'Items' not in response:
                     break
