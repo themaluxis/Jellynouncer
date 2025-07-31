@@ -1,0 +1,14 @@
+{
+  "embeds": [
+    {
+      "title": "{% if is_online %}🟢 Jellyfin Server Online{% else %}🔴 Jellyfin Server Offline{% endif %}",
+      "description": "{% if is_online %}Jellyfin server connection has been restored.{% else %}Unable to connect to Jellyfin server. Will retry every minute.{% endif %}",
+      "color": {% if is_online %}65280{% else %}16711680{% endif %},
+      "footer": {
+        "text": "Jellyfin Monitor Service",
+        "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
+      },
+      "timestamp": "{{ timestamp }}"
+    }
+  ]
+}

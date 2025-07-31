@@ -1,0 +1,27 @@
+# Jellyfin Webhook Plugin Template Configuration
+# Use this template in your Jellyfin Webhook Plugin settings
+
+{
+  "ItemId": "{{ItemId}}",
+  "Name": "{{Name}}",
+  "ItemType": "{{ItemType}}",
+  "Year": "{{Year}}",
+  "SeriesName": "{{SeriesName}}",
+  "SeasonNumber00": "{{SeasonNumber00}}",
+  "EpisodeNumber00": "{{EpisodeNumber00}}",
+  "Overview": "{{Overview}}",
+  "Video_0_Height": "{{Video_0_Height}}",
+  "Video_0_Width": "{{Video_0_Width}}",
+  "Video_0_Codec": "{{Video_0_Codec}}",
+  "Video_0_Profile": "{{Video_0_Profile}}",
+  "Video_0_VideoRange": "{{Video_0_VideoRange}}",
+  "Video_0_FrameRate": "{{Video_0_FrameRate}}",
+  "Video_0_AspectRatio": "{{Video_0_AspectRatio}}",
+  "Audio_0_Codec": "{{Audio_0_Codec}}",
+  "Audio_0_Channels": "{{Audio_0_Channels}}",
+  "Audio_0_Language": "{{Audio_0_Language}}",
+  "Audio_0_Bitrate": "{{Audio_0_Bitrate}}",
+  "Provider_imdb": "{{Provider_imdb}}",
+  "Provider_tmdb": "{{Provider_tmdb}}",
+  "Provider_tvdb": "{{Provider_tvdb}}"
+}

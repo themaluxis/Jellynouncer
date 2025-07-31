@@ -1,0 +1,31 @@
+services:
+  jellyfin-discord-webhook:
+    build: .
+    container_name: jellyfin-discord-webhook
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/app/config
+      - ./templates:/app/templates
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - JELLYFIN_SERVER_URL=${JELLYFIN_SERVER_URL}
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
+      - JELLYFIN_USER_ID=${JELLYFIN_USER_ID}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      - DISCORD_WEBHOOK_URL_MOVIES=${DISCORD_WEBHOOK_URL_MOVIES}
+      - DISCORD_WEBHOOK_URL_TV=${DISCORD_WEBHOOK_URL_TV}
+      - DISCORD_WEBHOOK_URL_MUSIC=${DISCORD_WEBHOOK_URL_MUSIC}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - jellyfin-webhook-network
+
+networks:
+  jellyfin-webhook-network:
+    driver: bridge

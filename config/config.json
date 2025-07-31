@@ -1,0 +1,87 @@
+{
+  "jellyfin": {
+    "server_url": null,
+    "api_key": null,
+    "user_id": null,
+    "client_name": "Jellyfin-Discord-Webhook",
+    "client_version": "1.0.0",
+    "device_name": "webhook-service",
+    "device_id": "jellyfin-discord-webhook-001"
+  },
+  "discord": {
+    "webhook_url": null,
+    "webhooks": {
+      "default": {
+        "url": null,
+        "name": "General",
+        "enabled": true
+      },
+      "movies": {
+        "url": null,
+        "name": "Movies",
+        "enabled": false
+      },
+      "tv": {
+        "url": null,
+        "name": "TV Shows",
+        "enabled": false
+      },
+      "music": {
+        "url": null,
+        "name": "Music",
+        "enabled": false
+      }
+    },
+    "routing": {
+      "enabled": false,
+      "movie_types": ["Movie"],
+      "tv_types": ["Episode", "Season", "Series"],
+      "music_types": ["Audio", "MusicAlbum", "MusicArtist"],
+      "fallback_webhook": "default"
+    },
+    "rate_limit": {
+      "requests_per_period": 5,
+      "period_seconds": 2,
+      "channel_limit_per_minute": 30
+    }
+  },
+  "database": {
+    "path": "/app/data/jellyfin_items.db",
+    "wal_mode": true,
+    "vacuum_interval_hours": 24
+  },
+  "templates": {
+    "directory": "/app/templates",
+    "new_item_template": "new_item.j2",
+    "upgraded_item_template": "upgraded_item.j2"
+  },
+  "notifications": {
+    "watch_changes": {
+      "resolution": true,
+      "codec": true,
+      "audio_codec": true,
+      "audio_channels": true,
+      "hdr_status": true,
+      "file_size": true,
+      "provider_ids": true
+    },
+    "colors": {
+      "new_item": 65280,
+      "resolution_upgrade": 16766720,
+      "codec_upgrade": 16747520,
+      "audio_upgrade": 9662683,
+      "hdr_upgrade": 16716947,
+      "provider_update": 2003199
+    }
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080,
+    "log_level": "INFO"
+  },
+  "sync": {
+    "startup_sync": true,
+    "sync_batch_size": 100,
+    "api_request_delay": 0.1
+  }
+}
