@@ -218,7 +218,7 @@ class Config:
             },
             "sync": {
                 "startup_sync": True,
-                "sync_batch_size": 100,
+                "sync_batch_size": 1000,
                 "api_request_delay": 0.1
             }
         }
@@ -457,7 +457,7 @@ class JellyfinAPI:
         except Exception:
             return False
 
-    async def get_all_items(self, batch_size: int = 100) -> List[Dict[str, Any]]:
+    async def get_all_items(self, batch_size: int = 1000) -> List[Dict[str, Any]]:
         """Get all media items from Jellyfin"""
         if not await self.is_connected():
             if not await self.connect():
@@ -1381,7 +1381,7 @@ class WebhookService:
         
         try:
             jellyfin_items = await self.jellyfin.get_all_items(
-                self.config.get('sync.sync_batch_size', 100)
+                self.config.get('sync.sync_batch_size', 1000)
             )
             
             for jellyfin_item in jellyfin_items:
@@ -1539,9 +1539,35 @@ async def shutdown():
 
 
 @app.post("/webhook")
-async def webhook_endpoint(payload: WebhookPayload):
+async def webhook_endpoint(request: Request):
     """Main webhook endpoint for Jellyfin"""
-    return await service.process_webhook(payload)
+    try:
+        # Get the raw payload for logging
+        raw_body = await request.body()
+        payload_str = raw_body.decode('utf-8')
+
+        # Log the raw payload for debugging
+        logging.debug(f"Received webhook payload: {payload_str}")
+
+        # Parse the payload
+        try:
+            payload_json = json.loads(payload_str)
+            payload = WebhookPayload(**payload_json)
+            return await service.process_webhook(payload)
+        except Exception as e:
+            logging.error(f"Failed to parse webhook payload: {e}")
+            # Still log the error but return a proper HTTP response
+            return JSONResponse(
+                status_code=422,
+                content={"status": "error", "message": f"Invalid webhook payload: {str(e)}"}
+            )
+
+    except Exception as e:
+        logging.error(f"Error processing webhook: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
 
 
 @app.get("/health")
