@@ -355,11 +355,27 @@ update_config_json() {
 
     log_info "Updating configuration file with environment variables" "${component}"
 
+    # Debug: Print environment variables
+    log_debug "Environment variables being used:" "${component}"
+    log_debug "  JELLYFIN_SERVER_URL='${JELLYFIN_SERVER_URL:-<unset>}'" "${component}"
+    log_debug "  JELLYFIN_API_KEY='${JELLYFIN_API_KEY:-<unset>}'" "${component}"
+    log_debug "  JELLYFIN_USER_ID='${JELLYFIN_USER_ID:-<unset>}'" "${component}"
+    log_debug "  DISCORD_WEBHOOK_URL='${DISCORD_WEBHOOK_URL:-<unset>}'" "${component}"
+    log_debug "  DISCORD_WEBHOOK_URL_MOVIES='${DISCORD_WEBHOOK_URL_MOVIES:-<unset>}'" "${component}"
+    log_debug "  DISCORD_WEBHOOK_URL_TV='${DISCORD_WEBHOOK_URL_TV:-<unset>}'" "${component}"
+    log_debug "  DISCORD_WEBHOOK_URL_MUSIC='${DISCORD_WEBHOOK_URL_MUSIC:-<unset>}'" "${component}"
+
     # Validate input file
     if ! validate_json_file "${config_file}" "${component}"; then
         log_error "Configuration file validation failed" "${component}"
         return 1
     fi
+
+    # Debug: Show original config before modification
+    log_debug "Original config file content:" "${component}"
+    jq . "${config_file}" 2>/dev/null | head -20 | while IFS= read -r line; do
+        log_debug "  ${line}" "${component}"
+    done
 
     # Create secure temporary file for atomic updates
     local temp_config
@@ -411,9 +427,24 @@ update_config_json() {
 
         # Validate the generated JSON
         if validate_json_file "${temp_config}" "${component}"; then
+            # Debug: Show what changes were made
+            log_debug "Configuration changes made:" "${component}"
+            if command -v diff >/dev/null 2>&1; then
+                diff -u "${config_file}" "${temp_config}" | head -20 | while IFS= read -r line; do
+                    log_debug "  ${line}" "${component}"
+                done
+            fi
+
             # Atomic update using mv for consistency
             if mv "${temp_config}" "${config_file}"; then
                 log_success "Configuration updated successfully using jq" "${component}"
+
+                # Debug: Show final config
+                log_debug "Final config file content:" "${component}"
+                jq . "${config_file}" 2>/dev/null | head -20 | while IFS= read -r line; do
+                    log_debug "  ${line}" "${component}"
+                done
+
                 return 0
             else
                 log_error "Failed to replace configuration file" "${component}"
@@ -434,6 +465,11 @@ setup_configuration() {
     local component="CONFIG"
     log_info "Setting up configuration files" "${component}"
 
+    # Debug: Check file existence
+    log_debug "Checking configuration files:" "${component}"
+    log_debug "  Config file exists: $([[ -f "${CONFIG_FILE}" ]] && echo "YES" || echo "NO") - ${CONFIG_FILE}" "${component}"
+    log_debug "  Default config exists: $([[ -f "${DEFAULT_CONFIG_FILE}" ]] && echo "YES" || echo "NO") - ${DEFAULT_CONFIG_FILE}" "${component}"
+
     # Check if configuration file exists
     if [[ ! -f "${CONFIG_FILE}" ]]; then
         log_info "Configuration file not found, copying default" "${component}"
@@ -441,6 +477,17 @@ setup_configuration() {
         # Verify default configuration exists
         if [[ ! -f "${DEFAULT_CONFIG_FILE}" ]]; then
             log_critical "Default configuration file not found: ${DEFAULT_CONFIG_FILE}" "${component}"
+
+            # Debug: List contents of defaults directory
+            log_debug "Contents of ${DEFAULTS_DIR}:" "${component}"
+            if [[ -d "${DEFAULTS_DIR}" ]]; then
+                find "${DEFAULTS_DIR}" -type f 2>/dev/null | while IFS= read -r file; do
+                    log_debug "  Found file: ${file}" "${component}"
+                done
+            else
+                log_debug "  Directory does not exist: ${DEFAULTS_DIR}" "${component}"
+            fi
+
             return 1
         fi
 

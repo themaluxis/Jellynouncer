@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
 # Set persistent storage
-VOLUME /app
+VOLUME ["/app/data", "/app/logs", "/app/config", "/app/templates"]
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -12,6 +12,10 @@ RUN apt-get update && apt-get install -y \
 
 # Set working directory
 WORKDIR /app
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY main.py .
@@ -34,10 +38,6 @@ RUN mkdir -p /app/data /app/logs /app/config /app/templates /app/scripts && \
 
 # Expose port
 EXPOSE 8080
-
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
 # Set entrypoint to our script
 ENTRYPOINT ["docker-entrypoint.sh"]
