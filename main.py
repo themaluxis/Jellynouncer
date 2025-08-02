@@ -1266,9 +1266,6 @@ class DiscordNotifier:
         # Initialize Jinja2 templates
         self.template_env = None
 
-        # Validate webhook configuration
-        self._validate_webhook_config()
-
     async def initialize(self, templates_config: TemplatesConfig) -> None:
         """Initialize the notifier with error handling"""
         try:
