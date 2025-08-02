@@ -78,15 +78,32 @@ setup_application_user() {
 }
 
 # Switch to application user and execute command
+# Switch to application user and execute command
 exec_as_app_user() {
     local component="EXEC"
 
     if [[ -n "${APP_USER:-}" ]]; then
         log_info "Switching to user '${APP_USER}' and executing: $*" "${component}"
 
-        # Use su to switch user and execute command
-        # -c flag runs the command, - flag provides a login shell environment
-        exec su - "${APP_USER}" -c "cd /app && exec \"$@\""
+        # Change to app directory first
+        cd /app || {
+            log_error "Failed to change to /app directory" "${component}"
+            exit 1
+        }
+
+        # Use gosu (designed specifically for this use case)
+        if command -v gosu >/dev/null 2>&1; then
+            log_debug "Using gosu to execute command as ${APP_USER}" "${component}"
+            exec gosu "${APP_USER}" "$@"
+        # Fallback to runuser (available in Debian 12)
+        elif command -v runuser >/dev/null 2>&1; then
+            log_debug "Using runuser to execute command as ${APP_USER}" "${component}"
+            exec runuser -u "${APP_USER}" -- "$@"
+        # Last resort: su with proper syntax
+        else
+            log_debug "Using su to execute command as ${APP_USER}" "${component}"
+            exec su "${APP_USER}" -c 'exec "$@"' -- bash "$@"
+        fi
     else
         log_warning "No application user set, executing as root: $*" "${component}"
         exec "$@"

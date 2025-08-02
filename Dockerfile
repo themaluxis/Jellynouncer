@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     sqlite3 \
     jq \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
