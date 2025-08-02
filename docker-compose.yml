@@ -1,7 +1,7 @@
 services:
-  jellyfin-discord-webhook:
+  jellynotify:
     build: .
-    container_name: jellyfin-discord-webhook
+    container_name: jellynotify
     ports:
       - "8080:8080"
     volumes:
@@ -9,6 +9,7 @@ services:
       - ./templates:/app/templates
       - ./data:/app/data
       - ./logs:/app/logs
+      - ./scripts:/app/scripts
     environment:
       - JELLYFIN_SERVER_URL=${JELLYFIN_SERVER_URL}
       - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
@@ -17,6 +18,9 @@ services:
       - DISCORD_WEBHOOK_URL_MOVIES=${DISCORD_WEBHOOK_URL_MOVIES}
       - DISCORD_WEBHOOK_URL_TV=${DISCORD_WEBHOOK_URL_TV}
       - DISCORD_WEBHOOK_URL_MUSIC=${DISCORD_WEBHOOK_URL_MUSIC}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-UTC}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -24,8 +28,8 @@ services:
       timeout: 10s
       retries: 3
     networks:
-      - jellyfin-webhook-network
+      - jellynotify
 
 networks:
-  jellyfin-webhook-network:
+  jellynotify:
     driver: bridge
