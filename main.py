@@ -275,7 +275,7 @@ class Config:
         
         # Load from file if exists
         if os.path.exists(self.config_path):
-            try
+            try:
                 with open(self.config_path, 'r') as f:
                     file_config = json.load(f)
                     self._deep_update(default_config, file_config)
