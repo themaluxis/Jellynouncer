@@ -16,9 +16,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY main.py .
 COPY docker-entrypoint.sh /usr/local/bin/
-COPY templates/ ./templates/
-COPY config/ ./config/
-COPY scripts/ ./scripts/
+COPY templates/ ./defaults/templates/
+COPY config/ ./defaults/config/
+COPY scripts/ ./defaults/scripts/
 
 # Create required directories
 RUN mkdir -p /app/data /app/logs && \
