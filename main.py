@@ -1,4 +1,4 @@
-# JellyNotify Webhook Service
+# JellyNotify Discord Webhook Service
 # A comprehensive intermediate webhook service for Jellyfin to Discord notifications
 
 import os
@@ -10,7 +10,6 @@ import hashlib
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Callable
 from dataclasses import dataclass, asdict
-import subprocess
 from pathlib import Path
 
 import aiohttp
@@ -35,7 +34,7 @@ class MediaItem:
     season_number: Optional[int] = None
     episode_number: Optional[int] = None
     overview: Optional[str] = None
-    
+
     # Video properties
     video_height: Optional[int] = None
     video_width: Optional[int] = None
@@ -44,33 +43,33 @@ class MediaItem:
     video_range: Optional[str] = None
     video_framerate: Optional[float] = None
     aspect_ratio: Optional[str] = None
-    
+
     # Audio properties
     audio_codec: Optional[str] = None
     audio_channels: Optional[int] = None
     audio_language: Optional[str] = None
     audio_bitrate: Optional[int] = None
-    
+
     # Provider IDs
     imdb_id: Optional[str] = None
     tmdb_id: Optional[str] = None
     tvdb_id: Optional[str] = None
-    
+
     # Metadata
     timestamp: Optional[str] = None
     file_path: Optional[str] = None
     file_size: Optional[int] = None
     content_hash: Optional[str] = None  # Hash to detect changes
     last_modified: Optional[str] = None  # Last modified timestamp from Jellyfin
-    
+
     def __post_init__(self):
         if self.timestamp is None:
             self.timestamp = datetime.now(timezone.utc).isoformat()
-        
+
         # Generate content hash if not provided
         if self.content_hash is None:
             self.content_hash = self.generate_content_hash()
-    
+
     def generate_content_hash(self) -> str:
         """Generate a hash representing the content state"""
         # Combine key fields that would indicate a meaningful change
@@ -85,7 +84,7 @@ class MediaItem:
             str(self.tmdb_id or ''),
             str(self.tvdb_id or '')
         ]
-        
+
         hash_input = "|".join(key_fields)
         return hashlib.md5(hash_input.encode()).hexdigest()
 
@@ -100,7 +99,7 @@ class WebhookPayload(BaseModel):
     SeasonNumber00: Optional[str] = None
     EpisodeNumber00: Optional[str] = None
     Overview: Optional[str] = None
-    
+
     # Video info
     Video_0_Height: Optional[int] = None
     Video_0_Width: Optional[int] = None
@@ -109,78 +108,26 @@ class WebhookPayload(BaseModel):
     Video_0_VideoRange: Optional[str] = None
     Video_0_FrameRate: Optional[float] = None
     Video_0_AspectRatio: Optional[str] = None
-    
+
     # Audio info
     Audio_0_Codec: Optional[str] = None
     Audio_0_Channels: Optional[int] = None
     Audio_0_Language: Optional[str] = None
     Audio_0_Bitrate: Optional[int] = None
-    
+
     # Provider IDs
     Provider_imdb: Optional[str] = None
     Provider_tmdb: Optional[str] = None
     Provider_tvdb: Optional[str] = None
 
 
-class ScriptExecutor:
-    """Utility for executing scripts in the scripts directory"""
-
-    @staticmethod
-    async def execute_script(script_name: str, *args) -> Dict[str, Any]:
-        """Execute a script from the scripts directory and return the result"""
-        script_path = os.path.join('/app/scripts', script_name)
-
-        if not os.path.exists(script_path):
-            logging.error(f"Script not found: {script_path}")
-            return {"status": "error", "message": f"Script {script_name} not found"}
-
-        # Ensure script is executable
-        if not os.access(script_path, os.X_OK):
-            logging.warning(f"Script {script_name} is not executable, setting permissions")
-            try:
-                os.chmod(script_path, 0o755)  # rwxr-xr-x
-            except Exception as e:
-                logging.error(f"Failed to set script permissions: {e}")
-                return {"status": "error", "message": f"Failed to set script permissions: {e}"}
-
-        try:
-            # Build command with arguments
-            cmd = [script_path] + list(args)
-
-            # Execute the script
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-
-            stdout, stderr = await process.communicate()
-
-            if process.returncode == 0:
-                return {
-                    "status": "success",
-                    "output": stdout.decode().strip(),
-                    "returncode": process.returncode
-                }
-            else:
-                return {
-                    "status": "error",
-                    "output": stdout.decode().strip(),
-                    "error": stderr.decode().strip(),
-                    "returncode": process.returncode
-                }
-
-        except Exception as e:
-            logging.error(f"Error executing script {script_name}: {e}")
-            return {"status": "error", "message": str(e)}
-
 class Config:
     """Configuration manager"""
-    
+
     def __init__(self, config_path: str = "/app/config/config.json"):
         self.config_path = config_path
         self.config = self._load_config()
-        
+
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from file with environment variable overrides"""
         default_config = {
@@ -188,10 +135,10 @@ class Config:
                 "server_url": os.getenv("JELLYFIN_SERVER_URL"),
                 "api_key": os.getenv("JELLYFIN_API_KEY"),
                 "user_id": os.getenv("JELLYFIN_USER_ID"),
-                "client_name": "JellyNotify-Discord-Webhook",
+                "client_name": "Jellyfin-Discord-Webhook",
                 "client_version": "1.0.0",
                 "device_name": "webhook-service",
-                "device_id": "jellynotify-discord-webhook-001"
+                "device_id": "jellyfin-discord-webhook-001"
             },
             "discord": {
                 # Legacy single webhook support (backwards compatible)
@@ -272,7 +219,7 @@ class Config:
                 "api_request_delay": 0.1
             }
         }
-        
+
         # Load from file if exists
         if os.path.exists(self.config_path):
             try:
@@ -281,9 +228,9 @@ class Config:
                     self._deep_update(default_config, file_config)
             except Exception as e:
                 logging.error(f"Error loading config file: {e}")
-        
+
         return default_config
-    
+
     def _deep_update(self, base_dict: Dict, update_dict: Dict):
         """Recursively update nested dictionary"""
         for key, value in update_dict.items():
@@ -291,31 +238,31 @@ class Config:
                 self._deep_update(base_dict[key], value)
             else:
                 base_dict[key] = value
-    
+
     def get(self, key_path: str, default=None):
         """Get config value using dot notation (e.g., 'jellyfin.server_url')"""
         keys = key_path.split('.')
         value = self.config
-        
+
         for key in keys:
             if isinstance(value, dict) and key in value:
                 value = value[key]
             else:
                 return default
-        
+
         return value
 
 
 class DatabaseManager:
     """SQLite database manager with WAL mode support"""
-    
+
     def __init__(self, db_path: str, wal_mode: bool = True):
         self.db_path = db_path
         self.wal_mode = wal_mode
-        
+
         # Ensure directory exists
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        
+
     async def initialize(self):
         """Initialize database and create tables"""
         async with aiosqlite.connect(self.db_path) as db:
@@ -325,7 +272,7 @@ class DatabaseManager:
                 await db.execute("PRAGMA temp_store=memory")
                 await db.execute("PRAGMA mmap_size=268435456")  # 256MB
                 await db.execute("PRAGMA cache_size=-32000")  # 32MB cache
-            
+
             # Create media_items table with additional fields for optimization
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS media_items (
@@ -360,16 +307,16 @@ class DatabaseManager:
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
+
             # Create indexes
             await db.execute("CREATE INDEX IF NOT EXISTS idx_item_type ON media_items(item_type)")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_series_name ON media_items(series_name)")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_updated_at ON media_items(updated_at)")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_content_hash ON media_items(content_hash)")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_last_modified ON media_items(last_modified)")
-            
+
             await db.commit()
-    
+
     async def get_item(self, item_id: str) -> Optional[MediaItem]:
         """Get media item by ID"""
         async with aiosqlite.connect(self.db_path) as db:
@@ -378,11 +325,11 @@ class DatabaseManager:
                 "SELECT * FROM media_items WHERE item_id = ?", (item_id,)
             )
             row = await cursor.fetchone()
-            
+
             if row:
                 return MediaItem(**dict(row))
             return None
-    
+
     async def get_item_hash(self, item_id: str) -> Optional[str]:
         """Get only the content hash of an item by ID (faster than fetching the whole item)"""
         async with aiosqlite.connect(self.db_path) as db:
@@ -390,11 +337,11 @@ class DatabaseManager:
                 "SELECT content_hash FROM media_items WHERE item_id = ?", (item_id,)
             )
             row = await cursor.fetchone()
-            
+
             if row:
                 return row[0]
             return None
-    
+
     async def save_item(self, item: MediaItem) -> bool:
         """Save or update a single media item"""
         try:
@@ -402,73 +349,73 @@ class DatabaseManager:
                 # Convert dataclass to dict
                 item_dict = asdict(item)
                 item_dict['updated_at'] = datetime.now(timezone.utc).isoformat()
-                
+
                 # Prepare SQL
                 columns = list(item_dict.keys())
                 placeholders = ['?' for _ in columns]
                 values = list(item_dict.values())
-                
+
                 sql = f"""
                     INSERT OR REPLACE INTO media_items 
                     ({', '.join(columns)}) 
                     VALUES ({', '.join(placeholders)})
                 """
-                
+
                 await db.execute(sql, values)
                 await db.commit()
-                
+
                 return True
         except Exception as e:
             logging.error(f"Error saving item {item.item_id}: {e}")
             return False
-    
+
     async def save_items_batch(self, items: List[MediaItem]) -> int:
         """Save multiple items in a single transaction"""
         if not items:
             return 0
-            
+
         saved_count = 0
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 # Begin transaction
                 await db.execute("BEGIN TRANSACTION")
-                
+
                 for item in items:
                     # Convert dataclass to dict
                     item_dict = asdict(item)
                     item_dict['updated_at'] = datetime.now(timezone.utc).isoformat()
-                    
+
                     # Prepare SQL
                     columns = list(item_dict.keys())
                     placeholders = ['?' for _ in columns]
                     values = list(item_dict.values())
-                    
+
                     sql = f"""
                         INSERT OR REPLACE INTO media_items 
                         ({', '.join(columns)}) 
                         VALUES ({', '.join(placeholders)})
                     """
-                    
+
                     await db.execute(sql, values)
                     saved_count += 1
-                
+
                 # Commit transaction
                 await db.commit()
-                
+
             return saved_count
         except Exception as e:
             logging.error(f"Error saving batch of {len(items)} items: {e}")
             return saved_count
-    
+
     async def get_all_items(self) -> List[MediaItem]:
         """Get all media items"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT * FROM media_items ORDER BY updated_at DESC")
             rows = await cursor.fetchall()
-            
+
             return [MediaItem(**dict(row)) for row in rows]
-    
+
     async def get_last_sync_time(self) -> Optional[str]:
         """Get the timestamp of the most recently updated item"""
         async with aiosqlite.connect(self.db_path) as db:
@@ -476,11 +423,11 @@ class DatabaseManager:
                 "SELECT MAX(updated_at) FROM media_items"
             )
             row = await cursor.fetchone()
-            
+
             if row and row[0]:
                 return row[0]
             return None
-    
+
     async def vacuum_database(self):
         """Vacuum database for maintenance"""
         try:
@@ -494,18 +441,18 @@ class DatabaseManager:
 
 class JellyfinAPI:
     """Jellyfin API client wrapper"""
-    
+
     def __init__(self, config: Config):
         self.config = config
         self.client = None
         self.last_connection_check = 0
         self.connection_check_interval = 60  # seconds
-        
+
     async def connect(self) -> bool:
         """Connect to Jellyfin server"""
         try:
             self.client = JellyfinClient()
-            
+
             # Configure client
             self.client.config.app(
                 self.config.get('jellyfin.client_name'),
@@ -513,13 +460,13 @@ class JellyfinAPI:
                 self.config.get('jellyfin.device_name'),
                 self.config.get('jellyfin.device_id')
             )
-            
+
             server_url = self.config.get('jellyfin.server_url')
             api_key = self.config.get('jellyfin.api_key')
-            
+
             if not server_url or not api_key:
                 raise ValueError("Jellyfin server URL and API key are required")
-            
+
             # Use API key authentication
             self.client.config.data["auth.ssl"] = server_url.startswith('https')
             credentials = {
@@ -529,144 +476,104 @@ class JellyfinAPI:
                     "Id": "jellyfin-webhook-service"
                 }]
             }
-            
+
             self.client.authenticate(credentials, discover=False)
-            
+
             # Test connection
             response = self.client.jellyfin.get_system_info()
             if response:
                 logging.info(f"Connected to Jellyfin server: {response.get('ServerName', 'Unknown')}")
                 return True
-            
+
             return False
-            
+
         except Exception as e:
             logging.error(f"Failed to connect to Jellyfin: {e}")
             return False
-    
+
     async def is_connected(self) -> bool:
         """Check if connected to Jellyfin"""
         current_time = time.time()
-        
+
         # Only check connection every minute to avoid spam
         if current_time - self.last_connection_check < self.connection_check_interval:
             return self.client is not None
-        
+
         self.last_connection_check = current_time
-        
+
         if not self.client:
             return False
-        
+
         try:
             response = self.client.jellyfin.get_system_info()
             return response is not None
         except Exception:
             return False
-    
-    async def get_all_items(self, batch_size: int = 100) -> List[Dict[str, Any]]:
-        """Get all media items from Jellyfin (legacy method, kept for compatibility)"""
-        if not await self.is_connected():
-            if not await self.connect():
-                raise Exception("Cannot connect to Jellyfin server")
-        
-        all_items = []
-        start_index = 0
-        
-        while True:
-            try:
-                response = self.client.jellyfin.get_items(
-                    parent_id=None,
-                    start_index=start_index,
-                    limit=batch_size,
-                    include_item_types="Movie,Series,Season,Episode",
-                    fields="Overview,MediaStreams,ProviderIds,Path,MediaSources,DateModified"
-                )
-                
-                if not response or 'Items' not in response:
-                    break
-                
-                items = response['Items']
-                if not items:
-                    break
-                
-                all_items.extend(items)
-                start_index += len(items)
-                
-                # Respect API rate limits
-                await asyncio.sleep(self.config.get('sync.api_request_delay', 0.1))
-                
-                logging.info(f"Fetched {len(all_items)} items from Jellyfin...")
-                
-            except Exception as e:
-                logging.error(f"Error fetching items from Jellyfin: {e}")
-                break
-        
-        return all_items
-    
-    async def get_all_items_incremental(self, batch_size: int = 100, 
+
+    async def get_all_items(self, batch_size: int = 200,
                                         process_batch_callback: Callable = None) -> List[Dict[str, Any]]:
         """Get all media items from Jellyfin incrementally, processing each batch as it arrives"""
         if not await self.is_connected():
             if not await self.connect():
                 raise Exception("Cannot connect to Jellyfin server")
-        
+
         start_index = 0
         all_items = []
         total_items_processed = 0
-        
+
         while True:
             try:
-                response = self.client.jellyfin.get_items(
-                    parent_id=None,
-                    start_index=start_index,
-                    limit=batch_size,
-                    include_item_types="Movie,Series,Season,Episode",
-                    fields="Overview,MediaStreams,ProviderIds,Path,MediaSources,DateModified"
-                )
-                
+                response = self.client.jellyfin.user_items(params={
+                    'recursive': True,
+                    'includeItemTypes': "Movie,Series,Season,Episode",
+                    'fields': "Overview,MediaStreams,ProviderIds,Path,MediaSources",
+                    'startIndex': start_index,
+                    'limit': batch_size
+                })
+
                 if not response or 'Items' not in response:
                     break
-                
+
                 items = response['Items']
                 if not items:
                     break
-                
+
                 # Process this batch immediately if callback provided
                 if process_batch_callback:
                     await process_batch_callback(items)
                 else:
                     all_items.extend(items)
-                
+
                 total_items_processed += len(items)
                 start_index += len(items)
-                
+
                 # Log progress periodically
                 if total_items_processed % (batch_size * 10) == 0:
                     logging.info(f"Processed {total_items_processed} items from Jellyfin...")
-                
+
                 # Respect API rate limits
                 await asyncio.sleep(self.config.get('sync.api_request_delay', 0.1))
-                
+
             except Exception as e:
                 logging.error(f"Error fetching items from Jellyfin: {e}")
                 break
-        
+
         logging.info(f"Completed processing {total_items_processed} items from Jellyfin")
         return all_items if not process_batch_callback else []
-    
+
     def extract_media_item(self, jellyfin_item: Dict[str, Any]) -> MediaItem:
         """Extract MediaItem from Jellyfin API response"""
         # Get media streams
         media_streams = jellyfin_item.get('MediaStreams', [])
         video_stream = next((s for s in media_streams if s.get('Type') == 'Video'), {})
         audio_stream = next((s for s in media_streams if s.get('Type') == 'Audio'), {})
-        
+
         # Get provider IDs
         provider_ids = jellyfin_item.get('ProviderIds', {})
-        
+
         # Get date modified
         date_modified = jellyfin_item.get('DateModified')
-        
+
         item = MediaItem(
             item_id=jellyfin_item['Id'],
             name=jellyfin_item.get('Name', ''),
@@ -676,7 +583,7 @@ class JellyfinAPI:
             season_number=jellyfin_item.get('IndexNumber') if jellyfin_item.get('Type') == 'Season' else None,
             episode_number=jellyfin_item.get('IndexNumber') if jellyfin_item.get('Type') == 'Episode' else None,
             overview=jellyfin_item.get('Overview'),
-            
+
             # Video properties
             video_height=video_stream.get('Height'),
             video_width=video_stream.get('Width'),
@@ -685,43 +592,43 @@ class JellyfinAPI:
             video_range=video_stream.get('VideoRange'),
             video_framerate=video_stream.get('RealFrameRate'),
             aspect_ratio=video_stream.get('AspectRatio'),
-            
+
             # Audio properties
             audio_codec=audio_stream.get('Codec'),
             audio_channels=audio_stream.get('Channels'),
             audio_language=audio_stream.get('Language'),
             audio_bitrate=audio_stream.get('BitRate'),
-            
+
             # Provider IDs
             imdb_id=provider_ids.get('Imdb'),
             tmdb_id=provider_ids.get('Tmdb'),
             tvdb_id=provider_ids.get('Tvdb'),
-            
+
             # File info
             file_path=jellyfin_item.get('Path'),
             file_size=jellyfin_item.get('Size'),
-            
+
             # Metadata for change tracking
             last_modified=date_modified
         )
-        
+
         # Content hash is automatically generated in __post_init__
         return item
 
 
 class ChangeDetector:
     """Detects changes between media items"""
-    
+
     def __init__(self, config: Config):
         self.config = config
         self.watch_changes = config.get('notifications.watch_changes', {})
-    
+
     def detect_changes(self, old_item: MediaItem, new_item: MediaItem) -> List[Dict[str, Any]]:
         """Detect changes between two media items"""
         changes = []
-        
+
         # Resolution changes
-        if (self.watch_changes.get('resolution', True) and 
+        if (self.watch_changes.get('resolution', True) and
             old_item.video_height != new_item.video_height):
             changes.append({
                 'type': 'resolution',
@@ -730,9 +637,9 @@ class ChangeDetector:
                 'new_value': new_item.video_height,
                 'description': f"Resolution changed from {old_item.video_height}p to {new_item.video_height}p"
             })
-        
+
         # Codec changes
-        if (self.watch_changes.get('codec', True) and 
+        if (self.watch_changes.get('codec', True) and
             old_item.video_codec != new_item.video_codec):
             changes.append({
                 'type': 'codec',
@@ -741,9 +648,9 @@ class ChangeDetector:
                 'new_value': new_item.video_codec,
                 'description': f"Video codec changed from {old_item.video_codec or 'Unknown'} to {new_item.video_codec or 'Unknown'}"
             })
-        
+
         # Audio codec changes
-        if (self.watch_changes.get('audio_codec', True) and 
+        if (self.watch_changes.get('audio_codec', True) and
             old_item.audio_codec != new_item.audio_codec):
             changes.append({
                 'type': 'audio_codec',
@@ -752,9 +659,9 @@ class ChangeDetector:
                 'new_value': new_item.audio_codec,
                 'description': f"Audio codec changed from {old_item.audio_codec or 'Unknown'} to {new_item.audio_codec or 'Unknown'}"
             })
-        
+
         # Audio channels changes
-        if (self.watch_changes.get('audio_channels', True) and 
+        if (self.watch_changes.get('audio_channels', True) and
             old_item.audio_channels != new_item.audio_channels):
             channels_old = f"{old_item.audio_channels or 0} channel{'s' if (old_item.audio_channels or 0) != 1 else ''}"
             channels_new = f"{new_item.audio_channels or 0} channel{'s' if (new_item.audio_channels or 0) != 1 else ''}"
@@ -765,9 +672,9 @@ class ChangeDetector:
                 'new_value': new_item.audio_channels,
                 'description': f"Audio channels changed from {channels_old} to {channels_new}"
             })
-        
+
         # HDR status changes
-        if (self.watch_changes.get('hdr_status', True) and 
+        if (self.watch_changes.get('hdr_status', True) and
             old_item.video_range != new_item.video_range):
             changes.append({
                 'type': 'hdr_status',
@@ -776,9 +683,9 @@ class ChangeDetector:
                 'new_value': new_item.video_range,
                 'description': f"HDR status changed from {old_item.video_range or 'SDR'} to {new_item.video_range or 'SDR'}"
             })
-        
+
         # File size changes
-        if (self.watch_changes.get('file_size', True) and 
+        if (self.watch_changes.get('file_size', True) and
             old_item.file_size != new_item.file_size):
             changes.append({
                 'type': 'file_size',
@@ -787,7 +694,7 @@ class ChangeDetector:
                 'new_value': new_item.file_size,
                 'description': f"File size changed"
             })
-        
+
         # Provider ID changes
         if self.watch_changes.get('provider_ids', True):
             for provider, old_val, new_val in [
@@ -803,33 +710,33 @@ class ChangeDetector:
                         'new_value': new_val,
                         'description': f"{provider.upper()} ID changed from {old_val or 'None'} to {new_val or 'None'}"
                     })
-        
+
         return changes
 
 
 class DiscordNotifier:
     """Discord webhook notification sender with multi-webhook support"""
-    
+
     def __init__(self, config: Config):
         self.config = config
         self.routing_enabled = config.get('discord.routing.enabled', False)
         self.webhooks = config.get('discord.webhooks', {})
         self.routing_config = config.get('discord.routing', {})
         self.rate_limit = config.get('discord.rate_limit', {})
-        
+
         # Per-webhook rate limiting tracking
         self.webhook_rate_limits = {}
         self.session = None
-        
+
         # Initialize Jinja2 templates
         self.template_env = Environment(
             loader=FileSystemLoader(config.get('templates.directory', '/app/templates')),
             autoescape=True
         )
-        
+
         # Validate webhook configuration
         self._validate_webhook_config()
-    
+
     def _validate_webhook_config(self):
         """Validate webhook configuration and set up fallbacks"""
         # Backwards compatibility: if old webhook_url is set but no webhooks config
@@ -843,18 +750,18 @@ class DiscordNotifier:
                 }
             }
             logging.info("Using legacy webhook URL configuration")
-        
+
         # Ensure we have at least one enabled webhook
-        enabled_webhooks = [name for name, webhook in self.webhooks.items() 
+        enabled_webhooks = [name for name, webhook in self.webhooks.items()
                           if webhook.get('enabled', False) and webhook.get('url')]
-        
+
         if not enabled_webhooks:
             logging.error("No enabled Discord webhooks configured!")
             # Try to enable default if it has a URL
             if 'default' in self.webhooks and self.webhooks['default'].get('url'):
                 self.webhooks['default']['enabled'] = True
                 logging.warning("Enabled default webhook as fallback")
-        
+
         # Initialize rate limiting for each webhook
         for webhook_name, webhook_config in self.webhooks.items():
             if webhook_config.get('enabled', False):
@@ -862,7 +769,7 @@ class DiscordNotifier:
                     'last_request_time': 0,
                     'request_count': 0
                 }
-    
+
     def _get_webhook_for_item(self, item: MediaItem) -> Optional[Dict[str, Any]]:
         """Determine which webhook to use for a given item"""
         if not self.routing_enabled:
@@ -874,16 +781,16 @@ class DiscordNotifier:
                         'config': webhook_config
                     }
             return None
-        
+
         # Routing is enabled - determine based on item type
         item_type = item.item_type
         movie_types = self.routing_config.get('movie_types', ['Movie'])
         tv_types = self.routing_config.get('tv_types', ['Episode', 'Season', 'Series'])
         music_types = self.routing_config.get('music_types', ['Audio', 'MusicAlbum', 'MusicArtist'])
         fallback_webhook = self.routing_config.get('fallback_webhook', 'default')
-        
+
         target_webhook = None
-        
+
         if item_type in movie_types:
             target_webhook = 'movies'
         elif item_type in tv_types:
@@ -892,16 +799,16 @@ class DiscordNotifier:
             target_webhook = 'music'
         else:
             target_webhook = fallback_webhook
-        
+
         # Check if target webhook is enabled and has URL
-        if (target_webhook in self.webhooks and 
+        if (target_webhook in self.webhooks and
             self.webhooks[target_webhook].get('enabled', False) and
             self.webhooks[target_webhook].get('url')):
             return {
                 'name': target_webhook,
                 'config': self.webhooks[target_webhook]
             }
-        
+
         # Fall back to fallback webhook
         if (fallback_webhook in self.webhooks and
             self.webhooks[fallback_webhook].get('enabled', False) and
@@ -911,7 +818,7 @@ class DiscordNotifier:
                 'name': fallback_webhook,
                 'config': self.webhooks[fallback_webhook]
             }
-        
+
         # Fall back to any enabled webhook
         for webhook_name, webhook_config in self.webhooks.items():
             if webhook_config.get('enabled', False) and webhook_config.get('url'):
@@ -920,19 +827,19 @@ class DiscordNotifier:
                     'name': webhook_name,
                     'config': webhook_config
                 }
-        
+
         return None
-    
+
     async def initialize(self):
         """Initialize the notifier"""
         if not self.session:
             self.session = aiohttp.ClientSession()
-    
+
     async def close(self):
         """Close the notifier session"""
         if self.session:
             await self.session.close()
-    
+
     async def _wait_for_rate_limit(self, webhook_name: str):
         """Wait for rate limit if necessary for specific webhook"""
         if webhook_name not in self.webhook_rate_limits:
@@ -940,14 +847,14 @@ class DiscordNotifier:
                 'last_request_time': 0,
                 'request_count': 0
             }
-        
+
         rate_limit_info = self.webhook_rate_limits[webhook_name]
         current_time = time.time()
-        
+
         # Reset counter if period has passed
         if current_time - rate_limit_info['last_request_time'] >= self.rate_limit.get('period_seconds', 2):
             rate_limit_info['request_count'] = 0
-        
+
         # Check if we need to wait
         if rate_limit_info['request_count'] >= self.rate_limit.get('requests_per_period', 5):
             wait_time = self.rate_limit.get('period_seconds', 2) - (current_time - rate_limit_info['last_request_time'])
@@ -955,24 +862,24 @@ class DiscordNotifier:
                 logging.debug(f"Rate limiting webhook '{webhook_name}', waiting {wait_time:.2f}s")
                 await asyncio.sleep(wait_time)
                 rate_limit_info['request_count'] = 0
-        
+
         rate_limit_info['last_request_time'] = time.time()
         rate_limit_info['request_count'] += 1
-    
+
     async def send_notification(self, item: MediaItem, changes: List[Dict[str, Any]] = None, is_new: bool = True) -> bool:
         """Send Discord notification to appropriate webhook"""
         webhook_info = self._get_webhook_for_item(item)
-        
+
         if not webhook_info:
             logging.error("No suitable Discord webhook found for notification")
             return False
-        
+
         webhook_name = webhook_info['name']
         webhook_config = webhook_info['config']
         webhook_url = webhook_config['url']
-        
+
         await self._wait_for_rate_limit(webhook_name)
-        
+
         try:
             # Determine template and color
             if is_new:
@@ -982,10 +889,10 @@ class DiscordNotifier:
                 template_name = self.config.get('templates.upgraded_item_template', 'upgraded_item.j2')
                 # Determine color based on change type
                 color = self._get_change_color(changes)
-            
+
             # Load and render template
             template = self.template_env.get_template(template_name)
-            
+
             # Prepare template data
             template_data = {
                 'item': asdict(item),
@@ -997,13 +904,13 @@ class DiscordNotifier:
                 'webhook_name': webhook_config.get('name', webhook_name),
                 'webhook_target': webhook_name
             }
-            
+
             # Render the template
             rendered = template.render(**template_data)
-            
+
             # Parse the rendered JSON
             payload = json.loads(rendered)
-            
+
             # Send to Discord
             async with self.session.post(webhook_url, json=payload) as response:
                 if response.status == 204:
@@ -1019,21 +926,21 @@ class DiscordNotifier:
                     error_text = await response.text()
                     logging.error(f"Discord webhook '{webhook_name}' failed with status {response.status}: {error_text}")
                     return False
-                    
+
         except Exception as e:
             logging.error(f"Error sending Discord notification to '{webhook_name}': {e}")
             return False
-    
+
     def _get_change_color(self, changes: List[Dict[str, Any]]) -> int:
         """Get color based on change types"""
         colors = self.config.get('notifications.colors', {})
-        
+
         if not changes:
             return colors.get('new_item', 0x00FF00)
-        
+
         # Prioritize change types
         change_types = [change['type'] for change in changes]
-        
+
         if 'resolution' in change_types:
             return colors.get('resolution_upgrade', 0xFFD700)
         elif 'codec' in change_types:
@@ -1046,32 +953,32 @@ class DiscordNotifier:
             return colors.get('provider_update', 0x1E90FF)
         else:
             return colors.get('new_item', 0x00FF00)
-    
+
     async def send_server_status(self, is_online: bool) -> bool:
         """Send server status notification to all enabled webhooks"""
         try:
             template = self.template_env.get_template('server_status.j2')
-            
+
             template_data = {
                 'is_online': is_online,
                 'jellyfin_url': self.config.get('jellyfin.server_url'),
                 'timestamp': datetime.now(timezone.utc).isoformat()
             }
-            
+
             rendered = template.render(**template_data)
             payload = json.loads(rendered)
-            
+
             # Send to all enabled webhooks
             success_count = 0
             total_webhooks = 0
-            
+
             for webhook_name, webhook_config in self.webhooks.items():
                 if not webhook_config.get('enabled', False) or not webhook_config.get('url'):
                     continue
-                
+
                 total_webhooks += 1
                 await self._wait_for_rate_limit(webhook_name)
-                
+
                 try:
                     async with self.session.post(webhook_config['url'], json=payload) as response:
                         if response.status == 204:
@@ -1081,14 +988,14 @@ class DiscordNotifier:
                             logging.warning(f"Server status failed for '{webhook_name}' webhook: {response.status}")
                 except Exception as e:
                     logging.error(f"Error sending server status to '{webhook_name}': {e}")
-            
+
             logging.info(f"Server status notification sent to {success_count}/{total_webhooks} webhooks")
             return success_count > 0
-                
+
         except Exception as e:
             logging.error(f"Error sending server status notification: {e}")
             return False
-    
+
     def get_webhook_status(self) -> Dict[str, Any]:
         """Get status of all configured webhooks"""
         status = {
@@ -1096,7 +1003,7 @@ class DiscordNotifier:
             "webhooks": {},
             "routing_config": self.routing_config if self.routing_enabled else None
         }
-        
+
         for webhook_name, webhook_config in self.webhooks.items():
             status["webhooks"][webhook_name] = {
                 "name": webhook_config.get('name', webhook_name),
@@ -1105,13 +1012,13 @@ class DiscordNotifier:
                 "url_preview": webhook_config.get('url', '')[:50] + '...' if webhook_config.get('url') else None,
                 "rate_limit_info": self.webhook_rate_limits.get(webhook_name, {})
             }
-        
+
         return status
 
 
 class WebhookService:
     """Main webhook service"""
-    
+
     def __init__(self):
         self.config = Config()
         self.db = DatabaseManager(
@@ -1121,12 +1028,12 @@ class WebhookService:
         self.jellyfin = JellyfinAPI(self.config)
         self.change_detector = ChangeDetector(self.config)
         self.discord = DiscordNotifier(self.config)
-        
+
         self.last_vacuum = 0
         self.server_was_offline = False
         self.sync_in_progress = False
         self.initial_sync_complete = False
-        
+
         # Setup logging
         log_level = getattr(logging, self.config.get('server.log_level', 'INFO').upper())
         logging.basicConfig(
@@ -1137,21 +1044,21 @@ class WebhookService:
                 logging.FileHandler('/app/logs/service.log', mode='a')
             ]
         )
-        
+
         # Ensure log directory exists
         os.makedirs('/app/logs', exist_ok=True)
-    
+
     async def initialize(self):
         """Initialize all components"""
-        logging.info("Initializing JellyNotify Discord Webhook Service...")
-        
+        logging.info("Initializing Jellyfin Discord Webhook Service...")
+
         await self.db.initialize()
         await self.discord.initialize()
-        
+
         # Connect to Jellyfin
         if await self.jellyfin.connect():
             logging.info("Successfully connected to Jellyfin")
-            
+
             # Perform startup sync if enabled
             if self.config.get('sync.startup_sync', True):
                 await self.sync_jellyfin_library()
@@ -1159,58 +1066,58 @@ class WebhookService:
         else:
             logging.error("Failed to connect to Jellyfin server")
             self.server_was_offline = True
-    
+
     async def process_batch(self, jellyfin_items: List[Dict[str, Any]]):
         """Process a batch of items from Jellyfin API"""
         media_items = []
-        
+
         for jellyfin_item in jellyfin_items:
             media_item = self.jellyfin.extract_media_item(jellyfin_item)
-            
+
             # Check if item exists and has changed (using hash)
             existing_hash = await self.db.get_item_hash(media_item.item_id)
-            
+
             if existing_hash and existing_hash == media_item.content_hash:
                 # Item exists and hasn't changed - skip
                 continue
-                
+
             media_items.append(media_item)
-        
+
         # Save all changed items in a single transaction
         if media_items:
             saved_count = await self.db.save_items_batch(media_items)
             logging.debug(f"Saved {saved_count} changed items in batch")
-    
+
     async def sync_jellyfin_library(self, background: bool = False):
         """Sync entire Jellyfin library to database"""
         # If a sync is already running, don't start another
         if self.sync_in_progress:
             logging.warning("Library sync already in progress, skipping new request")
             return
-        
+
         self.sync_in_progress = True
-        
+
         try:
             if background:
                 logging.info("Starting background Jellyfin library sync...")
             else:
                 logging.info("Starting initial Jellyfin library sync...")
-            
+
             batch_size = self.config.get('sync.sync_batch_size', 100)
-            
+
             # Use the incremental API with callback for immediate processing
-            await self.jellyfin.get_all_items_incremental(
+            await self.jellyfin.get_all_items(
                 batch_size=batch_size,
                 process_batch_callback=self.process_batch
             )
-            
+
             logging.info("Jellyfin library sync completed")
-            
+
         except Exception as e:
             logging.error(f"Error during library sync: {e}")
         finally:
             self.sync_in_progress = False
-    
+
     async def process_webhook(self, payload: WebhookPayload) -> Dict[str, Any]:
         """Process incoming webhook from Jellyfin"""
         # If initial sync hasn't completed, wait for it
@@ -1218,33 +1125,33 @@ class WebhookService:
             max_retries = 10
             retry_count = 0
             retry_delay = 1.0  # Start with 1 second
-            
+
             while self.sync_in_progress and retry_count < max_retries:
                 logging.info(f"Initial sync in progress, webhook processing delayed (retry {retry_count+1}/{max_retries})")
                 await asyncio.sleep(retry_delay)
                 retry_count += 1
                 retry_delay *= 1.5  # Exponential backoff
-            
+
             if self.sync_in_progress:
                 logging.warning("Initial sync still in progress after maximum retries, proceeding with webhook processing anyway")
-        
+
         try:
             # Extract media item from webhook
             media_item = self._extract_from_webhook(payload)
-            
+
             # Check if item exists and has changed using content hash
             existing_hash = await self.db.get_item_hash(media_item.item_id)
-            
+
             if existing_hash:
                 # Item exists, check if it has changed
                 if existing_hash != media_item.content_hash:
                     # Fetch full item to detect specific changes
                     existing_item = await self.db.get_item(media_item.item_id)
-                    
+
                     if existing_item:
                         # Detect changes
                         changes = self.change_detector.detect_changes(existing_item, media_item)
-                        
+
                         if changes:
                             # Item was updated/upgraded
                             await self.discord.send_notification(media_item, changes, is_new=False)
@@ -1259,17 +1166,17 @@ class WebhookService:
                 # New item
                 await self.discord.send_notification(media_item, is_new=True)
                 logging.info(f"Processed new item: {media_item.name}")
-            
+
             # Save/update item in database (only if new or changed)
             if not existing_hash or existing_hash != media_item.content_hash:
                 await self.db.save_item(media_item)
-            
+
             return {"status": "success", "item_id": media_item.item_id}
-            
+
         except Exception as e:
             logging.error(f"Error processing webhook: {e}")
             raise HTTPException(status_code=500, detail=str(e))
-    
+
     def _extract_from_webhook(self, payload: WebhookPayload) -> MediaItem:
         """Extract MediaItem from webhook payload"""
         return MediaItem(
@@ -1281,7 +1188,7 @@ class WebhookService:
             season_number=int(payload.SeasonNumber00) if payload.SeasonNumber00 else None,
             episode_number=int(payload.EpisodeNumber00) if payload.EpisodeNumber00 else None,
             overview=payload.Overview,
-            
+
             # Video properties
             video_height=payload.Video_0_Height,
             video_width=payload.Video_0_Width,
@@ -1290,23 +1197,23 @@ class WebhookService:
             video_range=payload.Video_0_VideoRange,
             video_framerate=payload.Video_0_FrameRate,
             aspect_ratio=payload.Video_0_AspectRatio,
-            
+
             # Audio properties
             audio_codec=payload.Audio_0_Codec,
             audio_channels=payload.Audio_0_Channels,
             audio_language=payload.Audio_0_Language,
             audio_bitrate=payload.Audio_0_Bitrate,
-            
+
             # Provider IDs
             imdb_id=payload.Provider_imdb,
             tmdb_id=payload.Provider_tmdb,
             tvdb_id=payload.Provider_tvdb
         )
-    
+
     async def health_check(self) -> Dict[str, Any]:
         """Health check endpoint"""
         jellyfin_connected = await self.jellyfin.is_connected()
-        
+
         return {
             "status": "healthy" if jellyfin_connected else "degraded",
             "jellyfin_connected": jellyfin_connected,
@@ -1314,81 +1221,81 @@ class WebhookService:
             "initial_sync_complete": self.initial_sync_complete,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
-    
+
     async def manual_sync(self) -> Dict[str, Any]:
         """Manual sync command"""
         if self.sync_in_progress:
             return {"status": "warning", "message": "Library sync already in progress"}
-            
+
         try:
             # Start sync in background
             asyncio.create_task(self.sync_jellyfin_library(background=True))
             return {"status": "success", "message": "Library sync started in background"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
-    
+
     async def background_tasks(self):
         """Background maintenance tasks"""
         # Initial delay to allow startup to complete
         await asyncio.sleep(60)
-        
+
         while True:
             try:
                 current_time = time.time()
-                
+
                 # Database vacuum
                 vacuum_interval = self.config.get('database.vacuum_interval_hours', 24) * 3600
                 if current_time - self.last_vacuum > vacuum_interval:
                     await self.db.vacuum_database()
                     self.last_vacuum = current_time
-                
+
                 # Check Jellyfin connection
                 jellyfin_connected = await self.jellyfin.is_connected()
-                
+
                 if not jellyfin_connected and not self.server_was_offline:
                     # Server went offline
                     await self.discord.send_server_status(False)
                     self.server_was_offline = True
                     logging.warning("Jellyfin server went offline")
-                    
+
                 elif jellyfin_connected and self.server_was_offline:
                     # Server came back online
                     await self.discord.send_server_status(True)
                     self.server_was_offline = False
                     logging.info("Jellyfin server is back online")
-                    
+
                     # Do a background sync after server comes back online
                     if not self.sync_in_progress:
                         asyncio.create_task(self.sync_jellyfin_library(background=True))
-                
+
                 # Periodic background sync (every 24 hours)
                 if not self.sync_in_progress:
                     sync_interval = 24 * 3600  # 24 hours in seconds
                     last_sync_time = await self.db.get_last_sync_time()
-                    
+
                     if last_sync_time:
                         last_sync = datetime.fromisoformat(last_sync_time.replace('Z', '+00:00'))
                         now = datetime.now(timezone.utc)
                         seconds_since_sync = (now - last_sync).total_seconds()
-                        
+
                         if seconds_since_sync > sync_interval:
                             logging.info(f"Starting periodic background sync ({seconds_since_sync:.1f}s since last sync)")
                             asyncio.create_task(self.sync_jellyfin_library(background=True))
-                
+
                 # Sleep for 60 seconds
                 await asyncio.sleep(60)
-                
+
             except Exception as e:
                 logging.error(f"Error in background tasks: {e}")
                 await asyncio.sleep(60)
-    
+
     async def cleanup(self):
         """Cleanup resources"""
         await self.discord.close()
 
 
 # FastAPI application
-app = FastAPI(title="JellyNotify Discord Webhook Service", version="1.0.0")
+app = FastAPI(title="Jellyfin Discord Webhook Service", version="1.0.0")
 service = WebhookService()
 
 
@@ -1427,7 +1334,7 @@ async def stats_endpoint():
     """Get database statistics"""
     try:
         items = await service.db.get_all_items()
-        
+
         stats = {
             "total_items": len(items),
             "item_types": {},
@@ -1437,18 +1344,18 @@ async def stats_endpoint():
                 "initial_sync_complete": service.initial_sync_complete
             }
         }
-        
+
         for item in items:
             item_type = item.item_type
             if item_type not in stats["item_types"]:
                 stats["item_types"][item_type] = 0
             stats["item_types"][item_type] += 1
-            
+
             if not stats["last_updated"] or item.timestamp > stats["last_updated"]:
                 stats["last_updated"] = item.timestamp
-        
+
         return stats
-        
+
     except Exception as e:
         return {"error": str(e)}
 
@@ -1470,10 +1377,10 @@ async def test_webhook_endpoint(webhook_name: str = "default"):
                 item_type="Movie"
             )
         )
-        
+
         if not webhook_info:
             return {"error": "No webhook available for testing"}
-        
+
         test_payload = {
             "embeds": [{
                 "title": "🧪 Webhook Test",
@@ -1482,13 +1389,13 @@ async def test_webhook_endpoint(webhook_name: str = "default"):
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }]
         }
-        
+
         webhook_url = webhook_info['config']['url']
-        
+
         async with service.discord.session.post(webhook_url, json=test_payload) as response:
             if response.status == 204:
                 return {
-                    "status": "success", 
+                    "status": "success",
                     "webhook": webhook_info['name'],
                     "message": "Test notification sent successfully"
                 }
@@ -1499,22 +1406,7 @@ async def test_webhook_endpoint(webhook_name: str = "default"):
                     "webhook": webhook_info['name'],
                     "message": f"HTTP {response.status}: {error_text}"
                 }
-                
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
 
-# Placeholder for possible future changes
-@app.post("/run-script/{script_name}")
-async def run_script_endpoint(script_name: str, request: Request):
-    """Endpoint to run a script from the scripts directory"""
-    try:
-        # Parse request body for arguments
-        body = await request.json()
-        args = body.get("args", [])
-
-        # Execute the script
-        result = await ScriptExecutor.execute_script(script_name, *args)
-        return result
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
