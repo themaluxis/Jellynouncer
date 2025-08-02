@@ -1,5 +1,6 @@
 FROM python:3.11-slim
 
+# Set working directory
 WORKDIR /app
 
 # Install system dependencies
@@ -8,32 +9,28 @@ RUN apt-get update && apt-get install -y \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better layer caching
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Create directory structure
-RUN mkdir -p /app/config /app/templates /app/data /app/logs /app/scripts /app/defaults/templates /app/defaults/scripts
-
-# Copy application code
+# Copy application files
 COPY main.py .
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+COPY templates/ ./templates/
+COPY config/ ./config/
+COPY scripts/ ./scripts/
 
-# Copy default configuration files to the defaults directory
-COPY config/config.json /app/defaults/
-COPY templates/*.j2 /app/defaults/templates/
-
-# Copy scripts and make them executable in the defaults directory
-COPY scripts/* /app/defaults/scripts/
-RUN chmod +x /app/defaults/scripts/*
+# Create required directories
+RUN mkdir -p /app/data /app/logs && \
+    chmod 755 /app/data /app/logs && \
+    chmod +x /app/scripts/*.sh 2>/dev/null || true && \
+    chmod +x /app/scripts/*.py 2>/dev/null || true
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8080/health || exit 1
 
-# Set entrypoint to our script
-ENTRYPOINT ["docker-entrypoint.sh"]
+# Expose port
+EXPOSE 8080
 
-# Default command
+# Run the application directly
 CMD ["python", "main.py"]

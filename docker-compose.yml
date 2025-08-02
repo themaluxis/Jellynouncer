@@ -1,23 +1,23 @@
 services:
-  jellynotify:
+  jellyfin-discord-webhook:
     build: .
-    container_name: jellynotify
+    container_name: jellyfin-discord-webhook
     ports:
       - "8080:8080"
     volumes:
-      - ./config:/app/config
-      - ./templates:/app/templates
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./scripts:/app/scripts
+      # Mount host directories to container, with fallback to container defaults
+      - ./config:/app/config:rw
+      - ./templates:/app/templates:rw
+      - ./data:/app/data:rw
+      - ./logs:/app/logs:rw
     environment:
       - JELLYFIN_SERVER_URL=${JELLYFIN_SERVER_URL}
       - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
       - JELLYFIN_USER_ID=${JELLYFIN_USER_ID}
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
-      - DISCORD_WEBHOOK_URL_MOVIES=${DISCORD_WEBHOOK_URL_MOVIES}
-      - DISCORD_WEBHOOK_URL_TV=${DISCORD_WEBHOOK_URL_TV}
-      - DISCORD_WEBHOOK_URL_MUSIC=${DISCORD_WEBHOOK_URL_MUSIC}
+      - DISCORD_WEBHOOK_URL_MOVIES=${DISCORD_WEBHOOK_URL_MOVIES:-}
+      - DISCORD_WEBHOOK_URL_TV=${DISCORD_WEBHOOK_URL_TV:-}
+      - DISCORD_WEBHOOK_URL_MUSIC=${DISCORD_WEBHOOK_URL_MUSIC:-}
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - TZ=${TZ:-UTC}
@@ -27,9 +27,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
     networks:
-      - jellynotify
+      - jellyfin-webhook-network
 
 networks:
-  jellynotify:
+  jellyfin-webhook-network:
     driver: bridge
