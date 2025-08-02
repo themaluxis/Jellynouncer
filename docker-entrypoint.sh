@@ -17,6 +17,83 @@
 #
 
 #=============================================================================
+# USER MANAGEMENT FUNCTIONS
+#=============================================================================
+
+# Create and configure user for running the application
+setup_application_user() {
+    local component="USER"
+    local puid="${PUID:-1000}"
+    local pgid="${PGID:-1000}"
+
+    log_info "Setting up application user with UID:GID ${puid}:${pgid}" "${component}"
+
+    # Create group if it doesn't exist
+    if ! getent group "${pgid}" >/dev/null 2>&1; then
+        if groupadd -g "${pgid}" jellynotify 2>/dev/null; then
+            log_success "Created group 'jellynotify' with GID ${pgid}" "${component}"
+        else
+            log_warning "Could not create group with GID ${pgid}, using existing group" "${component}"
+        fi
+    else
+        local existing_group
+        existing_group=$(getent group "${pgid}" | cut -d: -f1)
+        log_debug "Using existing group '${existing_group}' with GID ${pgid}" "${component}"
+    fi
+
+    # Create user if it doesn't exist
+    if ! getent passwd "${puid}" >/dev/null 2>&1; then
+        if useradd -u "${puid}" -g "${pgid}" -d /app -s /bin/bash -M jellynotify 2>/dev/null; then
+            log_success "Created user 'jellynotify' with UID ${puid}" "${component}"
+        else
+            log_error "Could not create user with UID ${puid}" "${component}"
+            return 1
+        fi
+    else
+        local existing_user
+        existing_user=$(getent passwd "${puid}" | cut -d: -f1)
+        log_debug "Using existing user '${existing_user}' with UID ${puid}" "${component}"
+    fi
+
+    # Verify user can access application directory
+    local test_user
+    test_user=$(getent passwd "${puid}" | cut -d: -f1)
+
+    if [[ -n "${test_user}" ]]; then
+        # Test write access to app directory
+        if su - "${test_user}" -c "test -w /app" 2>/dev/null; then
+            log_success "User '${test_user}' has proper access to /app directory" "${component}"
+        else
+            log_warning "User '${test_user}' may not have proper access to /app directory" "${component}"
+        fi
+
+        # Export the username for use in exec
+        export APP_USER="${test_user}"
+        log_debug "Application will run as user: ${APP_USER}" "${component}"
+        return 0
+    else
+        log_error "Failed to verify created user" "${component}"
+        return 1
+    fi
+}
+
+# Switch to application user and execute command
+exec_as_app_user() {
+    local component="EXEC"
+
+    if [[ -n "${APP_USER:-}" ]]; then
+        log_info "Switching to user '${APP_USER}' and executing: $*" "${component}"
+
+        # Use su to switch user and execute command
+        # -c flag runs the command, - flag provides a login shell environment
+        exec su - "${APP_USER}" -c "cd /app && exec \"$@\""
+    else
+        log_warning "No application user set, executing as root: $*" "${component}"
+        exec "$@"
+    fi
+}
+
+#=============================================================================
 # BASH CONFIGURATION AND STRICT MODE
 #=============================================================================
 
@@ -113,6 +190,12 @@ init_debug_logging() {
             echo "Debug Mode: ENABLED"
             echo "========================================================================"
         } > "${DEBUG_LOG_FILE}" 2>/dev/null || true
+
+        # Set proper ownership and permissions on debug log
+        if [[ -n "${PUID:-}" && -n "${PGID:-}" ]]; then
+            safe_chown "${DEBUG_LOG_FILE}" "${PUID}:${PGID}" "DEBUG"
+        fi
+        safe_chmod "${DEBUG_LOG_FILE}" "644" "DEBUG"
     fi
 }
 
@@ -477,11 +560,30 @@ update_config_json() {
             if mv "${temp_config}" "${config_file}"; then
                 log_success "Configuration updated successfully using jq" "${component}"
 
+                # Set proper ownership and permissions on the updated config file
+                if [[ -n "${PUID:-}" && -n "${PGID:-}" ]]; then
+                    safe_chown "${config_file}" "${PUID}:${PGID}" "${component}"
+                fi
+                safe_chmod "${config_file}" "644" "${component}"
+
                 # Debug: Show final config
                 log_debug "Final config file content:" "${component}"
                 jq . "${config_file}" 2>/dev/null | head -20 | while IFS= read -r line; do
                     log_debug "  ${line}" "${component}"
                 done
+
+                # Debug: Force sync to ensure file is written
+                sync 2>/dev/null || true
+
+                # Debug: Verify file was actually written
+                sleep 0.1  # Brief pause to ensure filesystem sync
+                if [[ -f "${config_file}" ]]; then
+                    local file_size
+                    file_size=$(stat -c%s "${config_file}" 2>/dev/null || echo "0")
+                    log_debug "File verification after write: ${file_size} bytes" "${component}"
+                else
+                    log_error "Configuration file disappeared after write!" "${component}"
+                fi
 
                 return 0
             else
@@ -532,6 +634,13 @@ setup_configuration() {
         # Copy default configuration
         if cp "${DEFAULT_CONFIG_FILE}" "${CONFIG_FILE}"; then
             log_success "Default configuration copied successfully" "${component}"
+
+            # Set proper ownership on the copied config file
+            if [[ -n "${PUID:-}" && -n "${PGID:-}" ]]; then
+                safe_chown "${CONFIG_FILE}" "${PUID}:${PGID}" "${component}"
+            fi
+            # Set proper permissions for config file
+            safe_chmod "${CONFIG_FILE}" "644" "${component}"
         else
             log_error "Failed to copy default configuration" "${component}"
             return 1
@@ -543,6 +652,31 @@ setup_configuration() {
     # Update configuration with environment variables
     if measure_execution_time update_config_json "${CONFIG_FILE}"; then
         log_success "Configuration setup completed successfully" "${component}"
+
+        # Debug: Verify the final configuration file
+        log_debug "Final verification of configuration file:" "${component}"
+        log_debug "  File exists: $([[ -f "${CONFIG_FILE}" ]] && echo "YES" || echo "NO")" "${component}"
+        log_debug "  File size: $(stat -c%s "${CONFIG_FILE}" 2>/dev/null || echo "unknown") bytes" "${component}"
+        log_debug "  File permissions: $(stat -c%a "${CONFIG_FILE}" 2>/dev/null || echo "unknown")" "${component}"
+        log_debug "  File owner: $(stat -c%U:%G "${CONFIG_FILE}" 2>/dev/null || echo "unknown")" "${component}"
+
+        # Debug: Show specific fields that should have been modified
+        if command -v jq >/dev/null 2>&1; then
+            log_debug "Key configuration values after modification:" "${component}"
+            log_debug "  jellyfin.server_url: $(jq -r '.jellyfin.server_url' "${CONFIG_FILE}" 2>/dev/null || echo "error")" "${component}"
+            log_debug "  jellyfin.api_key: $(jq -r '.jellyfin.api_key' "${CONFIG_FILE}" 2>/dev/null || echo "error")" "${component}"
+            log_debug "  discord.webhooks.default.url: $(jq -r '.discord.webhooks.default.url' "${CONFIG_FILE}" 2>/dev/null || echo "error")" "${component}"
+            log_debug "  discord.webhooks.default.enabled: $(jq -r '.discord.webhooks.default.enabled' "${CONFIG_FILE}" 2>/dev/null || echo "error")" "${component}"
+        fi
+
+        # Debug: Check if this is really the mounted file
+        log_debug "Mount point verification:" "${component}"
+        if command -v findmnt >/dev/null 2>&1; then
+            findmnt /app/config 2>/dev/null | while IFS= read -r line; do
+                log_debug "  ${line}" "${component}"
+            done
+        fi
+
         return 0
     else
         log_error "Configuration setup failed" "${component}"
@@ -614,9 +748,16 @@ copy_default_files() {
             log_success "${file_type} ${filename} copied successfully" "${component}"
             ((files_copied++))
 
-            # Make scripts executable if this is a script file
+            # Set proper ownership on copied files
+            if [[ -n "${PUID:-}" && -n "${PGID:-}" ]]; then
+                safe_chown "${dest_file}" "${PUID}:${PGID}" "${component}"
+            fi
+
+            # Set proper permissions based on file type
             if [[ "${file_type}" == "Script" ]]; then
-                safe_chmod "${dest_file}" "+x" "${component}"
+                safe_chmod "${dest_file}" "755" "${component}"
+            else
+                safe_chmod "${dest_file}" "644" "${component}"
             fi
         else
             log_error "Failed to copy ${file_type,,} ${filename}" "${component}"
@@ -883,6 +1024,15 @@ main() {
         log_warning "Permission management had issues, but continuing" "${component}"
     fi
 
+    # Setup application user for running Python script
+    if [[ -n "${PUID:-}" && -n "${PGID:-}" ]]; then
+        if ! measure_execution_time setup_application_user; then
+            log_warning "User setup failed, will run as root" "${component}"
+        fi
+    else
+        log_info "PUID/PGID not specified, application will run as root" "${component}"
+    fi
+
     # Final performance monitoring
     monitor_performance
 
@@ -897,9 +1047,13 @@ main() {
     log_success "JellyNotify container initialization completed successfully" "${component}"
     log_info "Starting application..." "${component}"
 
-    # Execute the main command passed to the script
+    # Execute the main command passed to the script with proper user context
     # This preserves all original arguments and handles them properly
-    exec "$@"
+    if [[ -n "${APP_USER:-}" ]]; then
+        exec_as_app_user "$@"
+    else
+        exec "$@"
+    fi
 }
 
 #=============================================================================
