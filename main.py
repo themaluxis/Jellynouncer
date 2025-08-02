@@ -463,9 +463,18 @@ class JellyfinAPI:
 
             server_url = self.config.get('jellyfin.server_url')
             api_key = self.config.get('jellyfin.api_key')
+            user_id = self.config.get('jellyfin.user_id')
 
-            if not server_url or not api_key:
-                raise ValueError("Jellyfin server URL and API key are required")
+            if not server_url or not api_key or not user_id:
+                missing = []
+                if not server_url: missing.append("server_url")
+                if not api_key: missing.append("api_key")
+                if not user_id: missing.append("user_id")
+                raise ValueError(f"Missing required Jellyfin configuration: {', '.join(missing)}")
+
+            # Remove trailing slash from server URL if present
+            if server_url.endswith('/'):
+                server_url = server_url[:-1]
 
             # Use API key authentication
             self.client.config.data["auth.ssl"] = server_url.startswith('https')
