@@ -473,7 +473,8 @@ class JellyfinAPI:
                 "Servers": [{
                     "AccessToken": api_key,
                     "address": server_url,
-                    "Id": "jellyfin-webhook-service"
+                    "UserId": user_id,
+                    "Id": "jellynotify-webhook-service"
                 }]
             }
 
