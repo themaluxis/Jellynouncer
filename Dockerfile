@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY main.py .
+COPY docker-entrypoint.sh /usr/local/bin/
 COPY templates/ ./templates/
 COPY config/ ./config/
 COPY scripts/ ./scripts/
@@ -23,7 +24,8 @@ COPY scripts/ ./scripts/
 RUN mkdir -p /app/data /app/logs && \
     chmod 755 /app/data /app/logs && \
     chmod +x /app/scripts/*.sh 2>/dev/null || true && \
-    chmod +x /app/scripts/*.py 2>/dev/null || true
+    chmod +x /app/scripts/*.py 2>/dev/null || true && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
@@ -31,6 +33,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Expose port
 EXPOSE 8080
+
+# Set entrypoint to our script
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 # Run the application directly
 CMD ["python", "main.py"]

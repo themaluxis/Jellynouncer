@@ -22,7 +22,6 @@ from pydantic import BaseModel
 import uvicorn
 
 
-# Configuration and Models
 @dataclass
 class MediaItem:
     """Represents a media item with all its metadata"""
@@ -55,6 +54,24 @@ class MediaItem:
     tmdb_id: Optional[str] = None
     tvdb_id: Optional[str] = None
 
+    # Enhanced metadata from API
+    date_created: Optional[str] = None
+    date_modified: Optional[str] = None
+    runtime_ticks: Optional[int] = None
+    official_rating: Optional[str] = None
+    genres: Optional[List[str]] = None
+    studios: Optional[List[str]] = None
+    tags: Optional[List[str]] = None
+
+    # Music-specific metadata
+    album: Optional[str] = None
+    artists: Optional[List[str]] = None
+    album_artist: Optional[str] = None
+
+    # Photo-specific metadata
+    width: Optional[int] = None
+    height: Optional[int] = None
+
     # Metadata
     timestamp: Optional[str] = None
     file_path: Optional[str] = None
@@ -65,6 +82,16 @@ class MediaItem:
     def __post_init__(self):
         if self.timestamp is None:
             self.timestamp = datetime.now(timezone.utc).isoformat()
+
+        # Initialize list fields if None
+        if self.genres is None:
+            self.genres = []
+        if self.studios is None:
+            self.studios = []
+        if self.tags is None:
+            self.tags = []
+        if self.artists is None:
+            self.artists = []
 
         # Generate content hash if not provided
         if self.content_hash is None:
@@ -275,38 +302,57 @@ class DatabaseManager:
 
             # Create media_items table with additional fields for optimization
             await db.execute("""
-                CREATE TABLE IF NOT EXISTS media_items (
-                    item_id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    item_type TEXT NOT NULL,
-                    year INTEGER,
-                    series_name TEXT,
-                    season_number INTEGER,
-                    episode_number INTEGER,
-                    overview TEXT,
-                    video_height INTEGER,
-                    video_width INTEGER,
-                    video_codec TEXT,
-                    video_profile TEXT,
-                    video_range TEXT,
-                    video_framerate REAL,
-                    aspect_ratio TEXT,
-                    audio_codec TEXT,
-                    audio_channels INTEGER,
-                    audio_language TEXT,
-                    audio_bitrate INTEGER,
-                    imdb_id TEXT,
-                    tmdb_id TEXT,
-                    tvdb_id TEXT,
-                    timestamp TEXT,
-                    file_path TEXT,
-                    file_size INTEGER,
-                    content_hash TEXT,
-                    last_modified TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+            CREATE TABLE IF NOT EXISTS media_items (
+                item_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                item_type TEXT NOT NULL,
+                year INTEGER,
+                series_name TEXT,
+                season_number INTEGER,
+                episode_number INTEGER,
+                overview TEXT,
+                
+                video_height INTEGER,
+                video_width INTEGER,
+                video_codec TEXT,
+                video_profile TEXT,
+                video_range TEXT,
+                video_framerate REAL,
+                aspect_ratio TEXT,
+                
+                audio_codec TEXT,
+                audio_channels INTEGER,
+                audio_language TEXT,
+                audio_bitrate INTEGER,
+                
+                imdb_id TEXT,
+                tmdb_id TEXT,
+                tvdb_id TEXT,
+                
+                date_created TEXT,
+                date_modified TEXT,
+                runtime_ticks INTEGER,
+                official_rating TEXT,
+                genres TEXT,
+                studios TEXT,
+                tags TEXT,
+                
+                album TEXT,
+                artists TEXT,
+                album_artist TEXT,
+                
+                width INTEGER,
+                height INTEGER,
+                
+                timestamp TEXT,
+                file_path TEXT,
+                file_size INTEGER,
+                content_hash TEXT,
+                last_modified TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
             # Create indexes
             await db.execute("CREATE INDEX IF NOT EXISTS idx_item_type ON media_items(item_type)")
@@ -314,6 +360,7 @@ class DatabaseManager:
             await db.execute("CREATE INDEX IF NOT EXISTS idx_updated_at ON media_items(updated_at)")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_content_hash ON media_items(content_hash)")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_last_modified ON media_items(last_modified)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_date_created ON media_items(date_created)")
 
             await db.commit()
 
@@ -327,7 +374,18 @@ class DatabaseManager:
             row = await cursor.fetchone()
 
             if row:
-                return MediaItem(**dict(row))
+                # Convert to dict
+                item_dict = dict(row)
+
+                # Deserialize list fields from JSON strings
+                for field in ['genres', 'studios', 'tags', 'artists']:
+                    if field in item_dict and isinstance(item_dict[field], str):
+                        try:
+                            item_dict[field] = json.loads(item_dict[field])
+                        except (json.JSONDecodeError, TypeError):
+                            item_dict[field] = []
+
+                return MediaItem(**item_dict)
             return None
 
     async def get_item_hash(self, item_id: str) -> Optional[str]:
@@ -349,6 +407,11 @@ class DatabaseManager:
                 # Convert dataclass to dict
                 item_dict = asdict(item)
                 item_dict['updated_at'] = datetime.now(timezone.utc).isoformat()
+
+                # Serialize list fields to JSON strings
+                for field in ['genres', 'studios', 'tags', 'artists']:
+                    if field in item_dict and isinstance(item_dict[field], list):
+                        item_dict[field] = json.dumps(item_dict[field])
 
                 # Prepare SQL
                 columns = list(item_dict.keys())
@@ -384,6 +447,11 @@ class DatabaseManager:
                     # Convert dataclass to dict
                     item_dict = asdict(item)
                     item_dict['updated_at'] = datetime.now(timezone.utc).isoformat()
+
+                    # Serialize list fields to JSON strings
+                    for field in ['genres', 'studios', 'tags', 'artists']:
+                        if field in item_dict and isinstance(item_dict[field], list):
+                            item_dict[field] = json.dumps(item_dict[field])
 
                     # Prepare SQL
                     columns = list(item_dict.keys())
@@ -535,8 +603,8 @@ class JellyfinAPI:
             try:
                 response = self.client.jellyfin.user_items(params={
                     'recursive': True,
-                    'includeItemTypes': "Movie,Series,Season,Episode",
-                    'fields': "Overview,MediaStreams,ProviderIds,Path,MediaSources",
+                    'includeItemTypes': "Movie,Series,Season,Episode,MusicVideo,Audio,MusicAlbum,MusicArtist,Book,Photo,BoxSet",
+                    'fields': "Overview,MediaStreams,ProviderIds,Path,MediaSources,DateCreated,DateModified,ProductionYear,RunTimeTicks,OfficialRating,Genres,Studios,Tags,IndexNumber,ParentIndexNumber,Album,Artists,AlbumArtist,Width,Height",
                     'startIndex': start_index,
                     'limit': batch_size
                 })
@@ -581,17 +649,46 @@ class JellyfinAPI:
         # Get provider IDs
         provider_ids = jellyfin_item.get('ProviderIds', {})
 
-        # Get date modified
+        # Extract basic metadata
+        date_created = jellyfin_item.get('DateCreated')
         date_modified = jellyfin_item.get('DateModified')
+        runtime_ticks = jellyfin_item.get('RunTimeTicks')
+        official_rating = jellyfin_item.get('OfficialRating')
 
+        # Extract list metadata
+        genres = jellyfin_item.get('Genres', [])
+        studios = [studio.get('Name') for studio in jellyfin_item.get('Studios', [])] if isinstance(
+            jellyfin_item.get('Studios'), list) else []
+        tags = jellyfin_item.get('Tags', [])
+
+        # Music-specific metadata
+        album = jellyfin_item.get('Album')
+        artists = jellyfin_item.get('Artists', [])
+        album_artist = jellyfin_item.get('AlbumArtist')
+
+        # Photo-specific metadata
+        width = jellyfin_item.get('Width')
+        height = jellyfin_item.get('Height')
+
+        # Handle index numbers based on item type
+        season_number = None
+        episode_number = None
+
+        if jellyfin_item.get('Type') == 'Season':
+            season_number = jellyfin_item.get('IndexNumber')
+        elif jellyfin_item.get('Type') == 'Episode':
+            episode_number = jellyfin_item.get('IndexNumber')
+            season_number = jellyfin_item.get('ParentIndexNumber')
+
+        # Create the MediaItem object
         item = MediaItem(
             item_id=jellyfin_item['Id'],
             name=jellyfin_item.get('Name', ''),
             item_type=jellyfin_item.get('Type', ''),
             year=jellyfin_item.get('ProductionYear'),
             series_name=jellyfin_item.get('SeriesName'),
-            season_number=jellyfin_item.get('IndexNumber') if jellyfin_item.get('Type') == 'Season' else None,
-            episode_number=jellyfin_item.get('IndexNumber') if jellyfin_item.get('Type') == 'Episode' else None,
+            season_number=season_number,
+            episode_number=episode_number,
             overview=jellyfin_item.get('Overview'),
 
             # Video properties
@@ -614,11 +711,29 @@ class JellyfinAPI:
             tmdb_id=provider_ids.get('Tmdb'),
             tvdb_id=provider_ids.get('Tvdb'),
 
+            # Enhanced metadata from API
+            date_created=date_created,
+            date_modified=date_modified,
+            runtime_ticks=runtime_ticks,
+            official_rating=official_rating,
+            genres=genres,
+            studios=studios,
+            tags=tags,
+
+            # Music-specific metadata
+            album=album,
+            artists=artists,
+            album_artist=album_artist,
+
+            # Photo-specific metadata
+            width=width,
+            height=height,
+
             # File info
             file_path=jellyfin_item.get('Path'),
             file_size=jellyfin_item.get('Size'),
 
-            # Metadata for change tracking
+            # Last modified is used for change tracking
             last_modified=date_modified
         )
 
@@ -1217,7 +1332,28 @@ class WebhookService:
             # Provider IDs
             imdb_id=payload.Provider_imdb,
             tmdb_id=payload.Provider_tmdb,
-            tvdb_id=payload.Provider_tvdb
+            tvdb_id=payload.Provider_tvdb,
+
+            # New fields with defaults
+            date_created=None,
+            date_modified=None,
+            runtime_ticks=None,
+            official_rating=None,
+            genres=[],
+            studios=[],
+            tags=[],
+            album=None,
+            artists=[],
+            album_artist=None,
+            width=payload.Video_0_Width,  # Reuse video width if available
+            height=payload.Video_0_Height,  # Reuse video height if available
+
+            # Metadata fields
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            file_path=None,
+            file_size=None,
+            last_modified=None
+            # content_hash will be auto-generated in __post_init__
         )
 
     async def health_check(self) -> Dict[str, Any]:
