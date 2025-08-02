@@ -2,10 +2,38 @@
   "embeds": [
     {
       "title": "{% if is_online %}🟢 Jellyfin Server Online{% else %}🔴 Jellyfin Server Offline{% endif %}",
-      "description": "{% if is_online %}Jellyfin server connection has been restored.{% else %}Unable to connect to Jellyfin server. Will retry every minute.{% endif %}",
+      "description": "{% if is_online %}🎉 Jellyfin server connection has been restored and is operating normally.\n\n📊 **Service Status**: All systems operational\n🔄 **Notifications**: Resuming normal operation\n📺 **Media Access**: Available{% else %}⚠️ Unable to connect to Jellyfin server. The service will continue monitoring and attempt to reconnect automatically.\n\n🔍 **Status**: Connection lost\n⏰ **Retry Interval**: Every 60 seconds\n📱 **Notifications**: Queued until reconnection{% endif %}",
       "color": {% if is_online %}65280{% else %}16711680{% endif %},
+      "fields": [
+        {
+          "name": "🌐 Server Details",
+          "value": "**URL**: {{ jellyfin_url }}\n**Status**: {% if is_online %}✅ Connected{% else %}❌ Disconnected{% endif %}",
+          "inline": true
+        },
+        {
+          "name": "🕐 Timestamp",
+          "value": "{{ timestamp[:19] | replace('T', ' ') }} UTC",
+          "inline": true
+        }
+        {% if is_online %}
+        ,{
+          "name": "🔄 Next Steps",
+          "value": "• Resuming webhook processing\n• Checking for missed notifications\n• Performing recovery sync",
+          "inline": false
+        }
+        {% else %}
+        ,{
+          "name": "📋 Automatic Actions",
+          "value": "• Monitoring connection status\n• Queuing notifications\n• Will notify when restored",
+          "inline": false
+        }
+        {% endif %}
+      ],
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/web/favicon.ico"
+      },
       "footer": {
-        "text": "Jellyfin Monitor Service",
+        "text": "JellyNotify Monitor Service • Automated System Notification",
         "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
       },
       "timestamp": "{{ timestamp }}"

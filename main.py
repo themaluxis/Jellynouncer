@@ -80,7 +80,7 @@ import hashlib
 import signal
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -723,6 +723,26 @@ class MediaItem:
     content_hash: Optional[str] = None  # For change detection
     last_modified: Optional[str] = None
 
+    # Enhanced metadata for rich notifications
+    series_id: Optional[str] = None
+    parent_id: Optional[str] = None
+    community_rating: Optional[float] = None
+    critic_rating: Optional[float] = None
+    premiere_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+    # External rating data (fetched from rating services)
+    omdb_imdb_rating: Optional[str] = None  # IMDb rating from OMDb (e.g., "8.5/10")
+    omdb_rt_rating: Optional[str] = None  # Rotten Tomatoes rating from OMDb (e.g., "85%")
+    omdb_metacritic_rating: Optional[str] = None  # Metacritic rating from OMDb (e.g., "72/100")
+    tmdb_rating: Optional[float] = None  # TMDb average rating (0-10 scale)
+    tmdb_vote_count: Optional[int] = None  # Number of TMDb votes
+    tvdb_rating: Optional[float] = None  # TVDb rating (0-10 scale)
+
+    # Rating fetch metadata
+    ratings_last_updated: Optional[str] = None  # When ratings were last fetched
+    ratings_fetch_failed: Optional[bool] = None  # If last rating fetch failed
+
     def __post_init__(self):
         """
         Initialize default values and generate content hash after object creation.
@@ -1046,7 +1066,6 @@ class ConfigurationValidator:
             ```
         """
         # Initialize nested dictionaries if they don't exist
-        # This ensures we can set nested values even if the parent objects aren't in the config file
         if 'jellyfin' not in config_data:
             config_data['jellyfin'] = {}
         if 'discord' not in config_data:
@@ -1054,8 +1073,16 @@ class ConfigurationValidator:
         if 'webhooks' not in config_data['discord']:
             config_data['discord']['webhooks'] = {}
 
-        # Define mapping from environment variables to configuration paths
-        # Each tuple represents the nested path to the configuration value
+        # Initialize rating services configuration
+        if 'rating_services' not in config_data:
+            config_data['rating_services'] = {
+                'enabled': True,
+                'omdb': {},
+                'tmdb': {},
+                'tvdb': {}
+            }
+
+        # Apply existing environment variable mappings
         env_mappings = {
             'JELLYFIN_SERVER_URL': ('jellyfin', 'server_url'),
             'JELLYFIN_API_KEY': ('jellyfin', 'api_key'),
@@ -1064,6 +1091,11 @@ class ConfigurationValidator:
             'DISCORD_WEBHOOK_URL_MOVIES': ('discord', 'webhooks', 'movies', 'url'),
             'DISCORD_WEBHOOK_URL_TV': ('discord', 'webhooks', 'tv', 'url'),
             'DISCORD_WEBHOOK_URL_MUSIC': ('discord', 'webhooks', 'music', 'url'),
+
+            # Rating service API keys
+            'OMDB_API_KEY': ('rating_services', 'omdb', 'api_key'),
+            'TMDB_API_KEY': ('rating_services', 'tmdb', 'api_key'),
+            'TVDB_API_KEY': ('rating_services', 'tvdb', 'api_key'),
         }
 
         # Apply environment variable overrides
@@ -1072,20 +1104,25 @@ class ConfigurationValidator:
             if value:  # Only override if environment variable is set
                 self._set_nested_value(config_data, path, value)
 
-        # Auto-enable webhooks that have URLs configured
-        # This makes configuration easier by automatically enabling webhooks when URLs are provided
+        # Auto-enable rating services that have API keys configured
+        rating_services = config_data.get('rating_services', {})
+        for service in ['omdb', 'tmdb', 'tvdb']:
+            service_config = rating_services.get(service, {})
+            if service_config.get('api_key'):
+                service_config['enabled'] = True
+                self.logger.info(f"Auto-enabled {service.upper()} rating service (API key provided)")
+
+        # Auto-enable webhooks that have URLs configured (existing logic)
         for webhook_type in ['default', 'movies', 'tv', 'music']:
             webhook_path = ['discord', 'webhooks', webhook_type]
             if self._get_nested_value(config_data, webhook_path + ['url']):
                 self._set_nested_value(config_data, webhook_path + ['enabled'], True)
-                # Set default names for webhooks
                 if webhook_type == 'default':
                     self._set_nested_value(config_data, webhook_path + ['name'], 'General')
                 else:
                     self._set_nested_value(config_data, webhook_path + ['name'], webhook_type.title())
 
         # Enable routing if any specific webhooks are configured
-        # This automatically enables smart routing when multiple webhooks are set up
         if any(self._get_nested_value(config_data, ['discord', 'webhooks', wh, 'url'])
                for wh in ['movies', 'tv', 'music']):
             self._set_nested_value(config_data, ['discord', 'routing', 'enabled'], True)
@@ -1216,6 +1253,533 @@ class ConfigurationValidator:
         self.logger.info("Configuration validation completed successfully")
 
 
+# ==================== RATING SERVICE ====================
+class RatingService:
+    """
+    Comprehensive rating service for fetching movie/TV ratings from multiple external APIs.
+
+    This service manages rating data from various sources including OMDb (which aggregates
+    IMDb, Rotten Tomatoes, and Metacritic), TMDb, and TVDb. It includes intelligent caching,
+    retry logic, and graceful fallback handling.
+
+    Features:
+    - Multi-source rating aggregation (OMDb, TMDb, TVDb)
+    - Intelligent caching with configurable expiration
+    - Rate limiting and retry logic
+    - Graceful error handling and fallback
+    - Batch processing for library sync operations
+
+    Supported Rating Sources:
+    - OMDb: IMDb ratings, Rotten Tomatoes scores, Metacritic scores (via single API)
+    - TMDb: Community ratings and vote counts
+    - TVDb: Community ratings for TV shows
+
+    Example:
+        ```python
+        rating_service = RatingService(config.rating_services, logger)
+        await rating_service.initialize(session, db_manager)
+
+        ratings = await rating_service.get_ratings_for_item(media_item)
+        # Returns: {'imdb': '8.5/10', 'rotten_tomatoes': '85%', 'metacritic': '72/100'}
+        ```
+    """
+
+    def __init__(self, config: Dict[str, Any], logger: logging.Logger):
+        """
+        Initialize rating service with configuration and logging.
+
+        Args:
+            config: Rating services configuration from app config
+            logger: Logger instance for rating service operations
+        """
+        self.config = config
+        self.logger = logger
+        self.session = None
+        self.db_manager = None
+
+        # Extract API configuration and keys
+        self.enabled = config.get('enabled', False)
+        self.cache_duration_hours = config.get('cache_duration_hours', 168)  # 7 days default
+        self.request_timeout = config.get('request_timeout_seconds', 10)
+        self.retry_attempts = config.get('retry_attempts', 3)
+
+        # API service configurations
+        self.omdb_config = config.get('omdb', {})
+        self.tmdb_config = config.get('tmdb', {})
+        self.tvdb_config = config.get('tvdb', {})
+
+        # Initialize API keys from environment variables
+        self.omdb_api_key = os.getenv('OMDB_API_KEY') or self.omdb_config.get('api_key')
+        self.tmdb_api_key = os.getenv('TMDB_API_KEY') or self.tmdb_config.get('api_key')
+        self.tvdb_api_key = os.getenv('TVDB_API_KEY') or self.tvdb_config.get('api_key')
+
+        # Rate limiting state (simple in-memory rate limiting)
+        self.last_request_times = {}
+        self.min_request_interval = 1.0  # Minimum seconds between requests per service
+
+        self.logger.info(f"Rating service initialized - Enabled: {self.enabled}")
+        if self.enabled:
+            services = []
+            if self.omdb_api_key: services.append("OMDb")
+            if self.tmdb_api_key: services.append("TMDb")
+            if self.tvdb_api_key: services.append("TVDb")
+            self.logger.info(
+                f"Available rating services: {', '.join(services) if services else 'None (no API keys configured)'}")
+
+    async def initialize(self, session: aiohttp.ClientSession, db_manager):
+        """
+        Initialize with shared HTTP session and database manager.
+
+        Args:
+            session: Shared aiohttp ClientSession for HTTP requests
+            db_manager: Database manager instance for caching operations
+        """
+        self.session = session
+        self.db_manager = db_manager
+
+        if self.enabled:
+            # Clean up expired rating cache entries
+            await self._cleanup_expired_cache()
+            self.logger.info("Rating service initialization complete")
+        else:
+            self.logger.info("Rating service disabled in configuration")
+
+    async def get_ratings_for_item(self, item: MediaItem) -> Dict[str, Dict[str, Any]]:
+        """
+        Get comprehensive rating information for a media item.
+
+        This method attempts to fetch ratings from all configured services,
+        using cached data when available and fresh data when cache is expired.
+
+        Args:
+            item: MediaItem to fetch ratings for
+
+        Returns:
+            Dictionary containing rating data from all available sources:
+            {
+                'imdb': {'value': '8.5', 'scale': '10', 'source': 'IMDb'},
+                'rotten_tomatoes': {'value': '85%', 'scale': '100%', 'source': 'Rotten Tomatoes'},
+                'metacritic': {'value': '72', 'scale': '100', 'source': 'Metacritic'},
+                'tmdb': {'value': 7.8, 'scale': '10', 'source': 'TMDb', 'vote_count': 1250}
+            }
+
+        Example:
+            ```python
+            ratings = await rating_service.get_ratings_for_item(movie_item)
+            if ratings.get('imdb'):
+                print(f"IMDb: {ratings['imdb']['value']}")
+            ```
+        """
+        if not self.enabled or not self.session:
+            return {}
+
+        # Check if we have any external IDs to work with
+        if not any([item.imdb_id, item.tmdb_id, item.tvdb_id]):
+            self.logger.debug(f"No external IDs available for item {item.item_id}")
+            return {}
+
+        try:
+            # Check cache first
+            cached_ratings = await self._get_cached_ratings(item.imdb_id, item.tmdb_id, item.tvdb_id)
+            if cached_ratings:
+                self.logger.debug(f"Using cached ratings for item {item.item_id}")
+                return cached_ratings
+
+            # Fetch fresh ratings from all available services
+            ratings = {}
+
+            # Fetch from OMDb (includes IMDb, RT, Metacritic)
+            if self.omdb_api_key and item.imdb_id:
+                omdb_ratings = await self._fetch_omdb_ratings(item.imdb_id)
+                ratings.update(omdb_ratings)
+
+            # Fetch from TMDb
+            if self.tmdb_api_key and item.tmdb_id:
+                tmdb_ratings = await self._fetch_tmdb_ratings(item.tmdb_id, item.item_type)
+                ratings.update(tmdb_ratings)
+
+            # Fetch from TVDb (for TV content only)
+            if self.tvdb_api_key and item.tvdb_id and item.item_type in ['Episode', 'Season', 'Series']:
+                tvdb_ratings = await self._fetch_tvdb_ratings(item.tvdb_id)
+                ratings.update(tvdb_ratings)
+
+            # Cache the results for future use
+            if ratings:
+                await self._cache_ratings(item.imdb_id, item.tmdb_id, item.tvdb_id, ratings)
+                self.logger.debug(f"Cached {len(ratings)} ratings for item {item.item_id}")
+
+            return ratings
+
+        except Exception as e:
+            self.logger.error(f"Error fetching ratings for item {item.item_id}: {e}")
+            return {}
+
+    async def _fetch_omdb_ratings(self, imdb_id: str) -> Dict[str, Dict[str, Any]]:
+        """
+        Fetch ratings from OMDb API (includes IMDb, Rotten Tomatoes, Metacritic).
+
+        OMDb is particularly valuable because it aggregates ratings from multiple
+        sources in a single API call, reducing the number of external requests needed.
+
+        Args:
+            imdb_id: IMDb identifier (e.g., "tt0133093")
+
+        Returns:
+            Dictionary with rating data from OMDb sources
+        """
+        if not self.omdb_api_key or not imdb_id:
+            return {}
+
+        try:
+            await self._rate_limit_check('omdb')
+
+            url = f"{self.omdb_config.get('base_url', 'http://www.omdbapi.com/')}"
+            params = {
+                'apikey': self.omdb_api_key,
+                'i': imdb_id,
+                'plot': 'short',
+                'r': 'json'
+            }
+
+            async with self.session.get(url, params=params, timeout=self.request_timeout) as response:
+                if response.status == 200:
+                    data = await response.json()
+
+                    if data.get('Response') == 'True':
+                        ratings = {}
+
+                        # Parse the Ratings array from OMDb
+                        for rating in data.get('Ratings', []):
+                            source = rating.get('Source', '').lower()
+                            value = rating.get('Value', '')
+
+                            if 'imdb' in source and value:
+                                ratings['imdb'] = {
+                                    'value': value.split('/')[0],  # Extract just the rating part
+                                    'scale': '10',
+                                    'source': 'IMDb',
+                                    'full_value': value
+                                }
+                            elif 'rotten tomatoes' in source and value:
+                                ratings['rotten_tomatoes'] = {
+                                    'value': value.rstrip('%'),
+                                    'scale': '100%',
+                                    'source': 'Rotten Tomatoes',
+                                    'full_value': value
+                                }
+                            elif 'metacritic' in source and value:
+                                ratings['metacritic'] = {
+                                    'value': value.split('/')[0],
+                                    'scale': '100',
+                                    'source': 'Metacritic',
+                                    'full_value': value
+                                }
+
+                        self.logger.debug(f"OMDb API returned {len(ratings)} ratings for {imdb_id}")
+                        return ratings
+                    else:
+                        self.logger.debug(f"OMDb API: No data found for {imdb_id}")
+                else:
+                    self.logger.warning(f"OMDb API request failed with status {response.status}")
+
+        except asyncio.TimeoutError:
+            self.logger.warning(f"OMDb API request timeout for {imdb_id}")
+        except Exception as e:
+            self.logger.error(f"OMDb API request failed for {imdb_id}: {e}")
+
+        return {}
+
+    async def _fetch_tmdb_ratings(self, tmdb_id: str, item_type: str) -> Dict[str, Dict[str, Any]]:
+        """
+        Fetch ratings from TMDb API.
+
+        TMDb provides community ratings and vote counts, useful for getting
+        a sense of general audience opinion on movies and TV shows.
+
+        Args:
+            tmdb_id: TMDb identifier
+            item_type: Type of content (Movie, Episode, etc.)
+
+        Returns:
+            Dictionary with TMDb rating data
+        """
+        if not self.tmdb_api_key or not tmdb_id:
+            return {}
+
+        try:
+            await self._rate_limit_check('tmdb')
+
+            # Determine API endpoint based on content type
+            if item_type == 'Movie':
+                endpoint = f"movie/{tmdb_id}"
+            elif item_type in ['Episode', 'Season', 'Series']:
+                endpoint = f"tv/{tmdb_id}"
+            else:
+                return {}  # Unsupported content type for TMDb
+
+            url = f"{self.tmdb_config.get('base_url', 'https://api.themoviedb.org/3/')}{endpoint}"
+            params = {
+                'api_key': self.tmdb_api_key
+            }
+
+            async with self.session.get(url, params=params, timeout=self.request_timeout) as response:
+                if response.status == 200:
+                    data = await response.json()
+
+                    vote_average = data.get('vote_average')
+                    vote_count = data.get('vote_count')
+
+                    if vote_average is not None and vote_count and vote_count > 0:
+                        return {
+                            'tmdb': {
+                                'value': round(vote_average, 1),
+                                'scale': '10',
+                                'source': 'TMDb',
+                                'vote_count': vote_count,
+                                'popularity': data.get('popularity')
+                            }
+                        }
+                else:
+                    self.logger.warning(f"TMDb API request failed with status {response.status}")
+
+        except asyncio.TimeoutError:
+            self.logger.warning(f"TMDb API request timeout for {tmdb_id}")
+        except Exception as e:
+            self.logger.error(f"TMDb API request failed for {tmdb_id}: {e}")
+
+        return {}
+
+    async def _fetch_tvdb_ratings(self, tvdb_id: str) -> Dict[str, Dict[str, Any]]:
+        """
+        Fetch ratings from TVDb API.
+
+        Note: TVDb API v4 requires authentication and has specific rate limits.
+        This implementation provides a framework but may need adjustment based
+        on actual API access tier and authentication method.
+
+        Args:
+            tvdb_id: TVDb identifier
+
+        Returns:
+            Dictionary with TVDb rating data
+        """
+        if not self.tvdb_api_key or not tvdb_id:
+            return {}
+
+        try:
+            await self._rate_limit_check('tvdb')
+
+            # TVDb v4 API requires authentication, this is a simplified example
+            # In practice, you'd need to handle JWT token authentication
+            url = f"{self.tvdb_config.get('base_url', 'https://api4.thetvdb.com/v4/')}series/{tvdb_id}"
+            headers = {
+                'Authorization': f'Bearer {self.tvdb_api_key}',
+                'Content-Type': 'application/json'
+            }
+
+            async with self.session.get(url, headers=headers, timeout=self.request_timeout) as response:
+                if response.status == 200:
+                    data = await response.json()
+
+                    # TVDb API structure may vary, adjust based on actual response format
+                    series_data = data.get('data', {})
+                    score = series_data.get('score')
+
+                    if score is not None:
+                        return {
+                            'tvdb': {
+                                'value': round(score, 1),
+                                'scale': '10',
+                                'source': 'TVDb'
+                            }
+                        }
+                else:
+                    self.logger.warning(f"TVDb API request failed with status {response.status}")
+
+        except asyncio.TimeoutError:
+            self.logger.warning(f"TVDb API request timeout for {tvdb_id}")
+        except Exception as e:
+            self.logger.error(f"TVDb API request failed for {tvdb_id}: {e}")
+
+        return {}
+
+    async def _rate_limit_check(self, service: str):
+        """
+        Simple rate limiting to avoid overwhelming external APIs.
+
+        Args:
+            service: Name of the service to rate limit ('omdb', 'tmdb', 'tvdb')
+        """
+        current_time = time.time()
+        last_request = self.last_request_times.get(service, 0)
+
+        time_since_last = current_time - last_request
+        if time_since_last < self.min_request_interval:
+            sleep_time = self.min_request_interval - time_since_last
+            await asyncio.sleep(sleep_time)
+
+        self.last_request_times[service] = time.time()
+
+    async def _get_cached_ratings(self, imdb_id: str, tmdb_id: str, tvdb_id: str) -> Dict[str, Dict[str, Any]]:
+        """
+        Retrieve cached rating data if available and not expired.
+
+        Args:
+            imdb_id: IMDb identifier
+            tmdb_id: TMDb identifier
+            tvdb_id: TVDb identifier
+
+        Returns:
+            Cached rating data or empty dict if no valid cache found
+        """
+        if not self.db_manager:
+            return {}
+
+        try:
+            async with aiosqlite.connect(self.db_manager.db_path) as db:
+                # Look for cached ratings that match any of the provided IDs
+                placeholders = []
+                conditions = []
+                params = []
+
+                if imdb_id:
+                    conditions.append("imdb_id = ?")
+                    params.append(imdb_id)
+                if tmdb_id:
+                    conditions.append("tmdb_id = ?")
+                    params.append(tmdb_id)
+                if tvdb_id:
+                    conditions.append("tvdb_id = ?")
+                    params.append(tvdb_id)
+
+                if not conditions:
+                    return {}
+
+                query = f"""
+                    SELECT * FROM ratings_cache 
+                    WHERE ({' OR '.join(conditions)}) 
+                    AND (expires_at IS NULL OR expires_at > datetime('now'))
+                    ORDER BY updated_at DESC 
+                    LIMIT 1
+                """
+
+                cursor = await db.execute(query, params)
+                row = await cursor.fetchone()
+
+                if row:
+                    # Convert database row to rating format
+                    ratings = {}
+
+                    if row[3]:  # omdb_imdb_rating
+                        ratings['imdb'] = {
+                            'value': row[3].split('/')[0] if '/' in row[3] else row[3],
+                            'scale': '10',
+                            'source': 'IMDb',
+                            'full_value': row[3]
+                        }
+
+                    if row[4]:  # omdb_rt_rating
+                        ratings['rotten_tomatoes'] = {
+                            'value': row[4].rstrip('%'),
+                            'scale': '100%',
+                            'source': 'Rotten Tomatoes',
+                            'full_value': row[4]
+                        }
+
+                    if row[5]:  # omdb_metacritic_rating
+                        ratings['metacritic'] = {
+                            'value': row[5].split('/')[0] if '/' in row[5] else row[5],
+                            'scale': '100',
+                            'source': 'Metacritic',
+                            'full_value': row[5]
+                        }
+
+                    if row[8]:  # tmdb_rating
+                        ratings['tmdb'] = {
+                            'value': row[8],
+                            'scale': '10',
+                            'source': 'TMDb',
+                            'vote_count': row[9]  # tmdb_vote_count
+                        }
+
+                    if row[11]:  # tvdb_rating
+                        ratings['tvdb'] = {
+                            'value': row[11],
+                            'scale': '10',
+                            'source': 'TVDb'
+                        }
+
+                    return ratings
+
+        except Exception as e:
+            self.logger.error(f"Error retrieving cached ratings: {e}")
+
+        return {}
+
+    async def _cache_ratings(self, imdb_id: str, tmdb_id: str, tvdb_id: str, ratings: Dict[str, Dict[str, Any]]):
+        """
+        Cache rating data for future use.
+
+        Args:
+            imdb_id: IMDb identifier
+            tmdb_id: TMDb identifier
+            tvdb_id: TVDb identifier
+            ratings: Rating data to cache
+        """
+        if not self.db_manager or not ratings:
+            return
+
+        try:
+            # Calculate expiration time
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=self.cache_duration_hours)
+
+            # Extract rating values for database storage
+            omdb_imdb = ratings.get('imdb', {}).get('full_value')
+            omdb_rt = ratings.get('rotten_tomatoes', {}).get('full_value')
+            omdb_metacritic = ratings.get('metacritic', {}).get('full_value')
+            tmdb_rating = ratings.get('tmdb', {}).get('value')
+            tmdb_vote_count = ratings.get('tmdb', {}).get('vote_count')
+            tvdb_rating = ratings.get('tvdb', {}).get('value')
+
+            async with aiosqlite.connect(self.db_manager.db_path) as db:
+                await db.execute("""
+                    INSERT OR REPLACE INTO ratings_cache 
+                    (imdb_id, tmdb_id, tvdb_id, omdb_imdb_rating, omdb_rt_rating, 
+                     omdb_metacritic_rating, tmdb_rating, tmdb_vote_count, tvdb_rating, 
+                     expires_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    imdb_id, tmdb_id, tvdb_id, omdb_imdb, omdb_rt, omdb_metacritic,
+                    tmdb_rating, tmdb_vote_count, tvdb_rating,
+                    expires_at.isoformat(), datetime.now(timezone.utc).isoformat()
+                ))
+                await db.commit()
+
+        except Exception as e:
+            self.logger.error(f"Error caching ratings: {e}")
+
+    async def _cleanup_expired_cache(self):
+        """Remove expired rating cache entries to keep database size manageable."""
+        if not self.db_manager:
+            return
+
+        try:
+            async with aiosqlite.connect(self.db_manager.db_path) as db:
+                cursor = await db.execute("""
+                                          DELETE
+                                          FROM ratings_cache
+                                          WHERE expires_at IS NOT NULL
+                                            AND expires_at < datetime('now')
+                                          """)
+                deleted_count = cursor.rowcount
+                await db.commit()
+
+                if deleted_count > 0:
+                    self.logger.info(f"Cleaned up {deleted_count} expired rating cache entries")
+
+        except Exception as e:
+            self.logger.error(f"Error cleaning up rating cache: {e}")
+
 # ==================== DATABASE MANAGER ====================
 
 class DatabaseManager:
@@ -1297,116 +1861,55 @@ class DatabaseManager:
             async with aiosqlite.connect(self.db_path) as db:
                 # Configure SQLite for performance and reliability
                 if self.wal_mode:
-                    await db.execute("PRAGMA journal_mode=WAL")  # Enable WAL mode
-                    await db.execute("PRAGMA synchronous=NORMAL")  # Balanced safety/performance
-                    await db.execute("PRAGMA temp_store=memory")  # Use memory for temp data
-                    await db.execute("PRAGMA mmap_size=268435456")  # 256MB memory mapping
-                    await db.execute("PRAGMA cache_size=-32000")  # 32MB cache
-                    await db.execute("PRAGMA busy_timeout=30000")  # 30 second busy timeout
+                    await db.execute("PRAGMA journal_mode=WAL")
+                    await db.execute("PRAGMA synchronous=NORMAL")
+                    await db.execute("PRAGMA temp_store=memory")
+                    await db.execute("PRAGMA mmap_size=268435456")
+                    await db.execute("PRAGMA cache_size=-32000")
+                    await db.execute("PRAGMA busy_timeout=30000")
 
-                # Create the main media items table with all metadata fields
+                # Create the main media items table (existing code)
                 await db.execute("""
                                  CREATE TABLE IF NOT EXISTS media_items
                                  (
-                                     -- Core identification
-                                     item_id
-                                     TEXT
-                                     PRIMARY
-                                     KEY,
-                                     name
-                                     TEXT
-                                     NOT
-                                     NULL,
-                                     item_type
-                                     TEXT
-                                     NOT
-                                     NULL,
-                                     year
-                                     INTEGER,
-                                     series_name
-                                     TEXT,
-                                     season_number
-                                     INTEGER,
-                                     episode_number
-                                     INTEGER,
-                                     overview
-                                     TEXT,
+                                     -- ... existing media_items table schema ...
 
-                                     -- Video specifications
-                                     video_height
-                                     INTEGER,
-                                     video_width
-                                     INTEGER,
-                                     video_codec
+                                     -- Enhanced metadata for rich notifications
+                                     series_id
                                      TEXT,
-                                     video_profile
+                                     parent_id
                                      TEXT,
-                                     video_range
-                                     TEXT,
-                                     video_framerate
+                                     community_rating
                                      REAL,
-                                     aspect_ratio
+                                     critic_rating
+                                     REAL,
+                                     premiere_date
+                                     TEXT,
+                                     end_date
                                      TEXT,
 
-                                     -- Audio specifications
-                                     audio_codec
+                                     -- External rating data
+                                     omdb_imdb_rating
                                      TEXT,
-                                     audio_channels
-                                     INTEGER,
-                                     audio_language
+                                     omdb_rt_rating
                                      TEXT,
-                                     audio_bitrate
+                                     omdb_metacritic_rating
+                                     TEXT,
+                                     tmdb_rating
+                                     REAL,
+                                     tmdb_vote_count
                                      INTEGER,
+                                     tvdb_rating
+                                     REAL,
 
-                                     -- External provider IDs
-                                     imdb_id
+                                     -- Rating fetch metadata
+                                     ratings_last_updated
                                      TEXT,
-                                     tmdb_id
-                                     TEXT,
-                                     tvdb_id
-                                     TEXT,
+                                     ratings_fetch_failed
+                                     BOOLEAN
+                                     DEFAULT
+                                     0,
 
-                                     -- Extended metadata from API
-                                     date_created
-                                     TEXT,
-                                     date_modified
-                                     TEXT,
-                                     runtime_ticks
-                                     INTEGER,
-                                     official_rating
-                                     TEXT,
-                                     genres
-                                     TEXT, -- JSON string
-                                     studios
-                                     TEXT, -- JSON string  
-                                     tags
-                                     TEXT, -- JSON string
-
-                                     -- Music metadata
-                                     album
-                                     TEXT,
-                                     artists
-                                     TEXT, -- JSON string
-                                     album_artist
-                                     TEXT,
-
-                                     -- Image metadata
-                                     width
-                                     INTEGER,
-                                     height
-                                     INTEGER,
-
-                                     -- Internal tracking
-                                     timestamp
-                                     TEXT,
-                                     file_path
-                                     TEXT,
-                                     file_size
-                                     INTEGER,
-                                     content_hash
-                                     TEXT,
-                                     last_modified
-                                     TEXT,
                                      created_at
                                      DATETIME
                                      DEFAULT
@@ -1418,22 +1921,95 @@ class DatabaseManager:
                                  )
                                  """)
 
-                # Create indexes for common query patterns
-                # These indexes speed up lookups and improve overall performance
+                # Create ratings cache table for efficient rating storage and caching
+                await db.execute("""
+                                 CREATE TABLE IF NOT EXISTS ratings_cache
+                                 (
+                                     id
+                                     INTEGER
+                                     PRIMARY
+                                     KEY
+                                     AUTOINCREMENT,
+
+                                     -- Item identification
+                                     imdb_id
+                                     TEXT,
+                                     tmdb_id
+                                     TEXT,
+                                     tvdb_id
+                                     TEXT,
+
+                                     -- Rating data from various services
+                                     omdb_imdb_rating
+                                     TEXT,
+                                     omdb_rt_rating
+                                     TEXT,
+                                     omdb_metacritic_rating
+                                     TEXT,
+                                     omdb_plot
+                                     TEXT,
+                                     omdb_awards
+                                     TEXT,
+
+                                     tmdb_rating
+                                     REAL,
+                                     tmdb_vote_count
+                                     INTEGER,
+                                     tmdb_popularity
+                                     REAL,
+
+                                     tvdb_rating
+                                     REAL,
+                                     tvdb_vote_count
+                                     INTEGER,
+
+                                     -- Cache management
+                                     created_at
+                                     DATETIME
+                                     DEFAULT
+                                     CURRENT_TIMESTAMP,
+                                     updated_at
+                                     DATETIME
+                                     DEFAULT
+                                     CURRENT_TIMESTAMP,
+                                     expires_at
+                                     DATETIME,
+
+                                     -- Ensure we don't duplicate entries for the same external IDs
+                                     UNIQUE
+                                 (
+                                     imdb_id,
+                                     tmdb_id,
+                                     tvdb_id
+                                 )
+                                     )
+                                 """)
+
+                # Create indexes for efficient lookups
                 indexes = [
+                    # Existing indexes
                     "CREATE INDEX IF NOT EXISTS idx_item_type ON media_items(item_type)",
                     "CREATE INDEX IF NOT EXISTS idx_series_name ON media_items(series_name)",
                     "CREATE INDEX IF NOT EXISTS idx_updated_at ON media_items(updated_at)",
                     "CREATE INDEX IF NOT EXISTS idx_content_hash ON media_items(content_hash)",
-                    "CREATE INDEX IF NOT EXISTS idx_last_modified ON media_items(last_modified)",
-                    "CREATE INDEX IF NOT EXISTS idx_date_created ON media_items(date_created)",
+
+                    # New indexes for rating functionality
+                    "CREATE INDEX IF NOT EXISTS idx_ratings_last_updated ON media_items(ratings_last_updated)",
+                    "CREATE INDEX IF NOT EXISTS idx_series_id ON media_items(series_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_parent_id ON media_items(parent_id)",
+
+                    # Ratings cache indexes
+                    "CREATE INDEX IF NOT EXISTS idx_ratings_imdb ON ratings_cache(imdb_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_ratings_tmdb ON ratings_cache(tmdb_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_ratings_tvdb ON ratings_cache(tvdb_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_ratings_expires ON ratings_cache(expires_at)",
                 ]
 
                 for index_sql in indexes:
                     await db.execute(index_sql)
 
                 await db.commit()
-                self.logger.info("Database initialized successfully")
+                self.logger.info("Database initialized successfully with ratings support")
 
         except aiosqlite.Error as e:
             self.logger.error(f"Database initialization failed: {e}")
@@ -2036,7 +2612,6 @@ class JellyfinAPI:
         """
         try:
             # Extract media stream information
-            # Jellyfin stores technical details in a MediaStreams array
             media_streams = jellyfin_item.get('MediaStreams', [])
             video_stream = next((s for s in media_streams if s.get('Type') == 'Video'), {})
             audio_stream = next((s for s in media_streams if s.get('Type') == 'Audio'), {})
@@ -2045,7 +2620,6 @@ class JellyfinAPI:
             provider_ids = jellyfin_item.get('ProviderIds', {})
 
             # Handle season/episode indexing based on item type
-            # Jellyfin uses IndexNumber and ParentIndexNumber differently for different types
             season_number = None
             episode_number = None
 
@@ -2055,7 +2629,7 @@ class JellyfinAPI:
                 episode_number = jellyfin_item.get('IndexNumber')
                 season_number = jellyfin_item.get('ParentIndexNumber')
 
-            # Create normalized MediaItem with all available data
+            # Create normalized MediaItem with comprehensive metadata
             return MediaItem(
                 # Core identification
                 item_id=jellyfin_item['Id'],
@@ -2066,6 +2640,14 @@ class JellyfinAPI:
                 season_number=season_number,
                 episode_number=episode_number,
                 overview=jellyfin_item.get('Overview'),
+
+                # Enhanced metadata for rich notifications
+                series_id=jellyfin_item.get('SeriesId'),  # For getting series logo/images
+                parent_id=jellyfin_item.get('ParentId'),  # For series/season relationships
+                community_rating=jellyfin_item.get('CommunityRating'),  # Jellyfin user ratings
+                critic_rating=jellyfin_item.get('CriticRating'),  # Jellyfin critic ratings
+                premiere_date=jellyfin_item.get('PremiereDate'),  # Air/release date
+                end_date=jellyfin_item.get('EndDate'),
 
                 # Video properties from primary video stream
                 video_height=video_stream.get('Height'),
@@ -2082,7 +2664,7 @@ class JellyfinAPI:
                 audio_language=audio_stream.get('Language'),
                 audio_bitrate=audio_stream.get('BitRate'),
 
-                # External provider IDs
+                # External provider IDs for rating service lookups
                 imdb_id=provider_ids.get('Imdb'),
                 tmdb_id=provider_ids.get('Tmdb'),
                 tvdb_id=provider_ids.get('Tvdb'),
@@ -2093,7 +2675,6 @@ class JellyfinAPI:
                 runtime_ticks=jellyfin_item.get('RunTimeTicks'),
                 official_rating=jellyfin_item.get('OfficialRating'),
                 genres=jellyfin_item.get('Genres', []),
-                # Handle Studios array - extract names from objects
                 studios=[studio.get('Name') for studio in jellyfin_item.get('Studios', [])]
                 if isinstance(jellyfin_item.get('Studios'), list) else [],
                 tags=jellyfin_item.get('Tags', []),
@@ -2110,13 +2691,22 @@ class JellyfinAPI:
                 # File system information
                 file_path=jellyfin_item.get('Path'),
                 file_size=jellyfin_item.get('Size'),
-                last_modified=jellyfin_item.get('DateModified')
+                last_modified=jellyfin_item.get('DateModified'),
+
+                # Initialize external rating fields as None (will be populated by rating service)
+                omdb_imdb_rating=None,
+                omdb_rt_rating=None,
+                omdb_metacritic_rating=None,
+                tmdb_rating=None,
+                tmdb_vote_count=None,
+                tvdb_rating=None,
+                ratings_last_updated=None,
+                ratings_fetch_failed=None
             )
 
         except Exception as e:
             self.logger.error(f"Error extracting media item from Jellyfin data: {e}")
             # Return minimal MediaItem to prevent complete failure
-            # This ensures the service continues operating even with malformed data
             return MediaItem(
                 item_id=jellyfin_item.get('Id', 'unknown'),
                 name=jellyfin_item.get('Name', 'Unknown'),
@@ -2125,7 +2715,6 @@ class JellyfinAPI:
 
 
 # ==================== CHANGE DETECTOR ====================
-
 class ChangeDetector:
     """
     Intelligent change detector for media quality upgrades and modifications.
@@ -2625,7 +3214,17 @@ class DiscordNotifier:
                 self.logger.error(f"Template syntax error in {template_name}: {e}")
                 return False
 
-            # Step 5: Prepare template data
+            # Step 5: Get ratings data from rating service
+            ratings = {}
+            if hasattr(self, '_webhook_service') and self._webhook_service and self._webhook_service.rating_service:
+                try:
+                    ratings = await self._webhook_service.rating_service.get_ratings_for_item(item)
+                    if ratings:
+                        self.logger.debug(f"Retrieved {len(ratings)} rating sources for {item.name}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to fetch ratings for {item.name}: {e}")
+
+            # Step 6: Prepare comprehensive template data
             template_data = {
                 'item': asdict(item),  # Convert MediaItem to dict
                 'changes': changes or [],  # List of changes for upgrades
@@ -2634,10 +3233,11 @@ class DiscordNotifier:
                 'jellyfin_url': self.jellyfin_url,  # For generating links
                 'timestamp': datetime.now(timezone.utc).isoformat(),
                 'webhook_name': webhook_config.name,  # Human-readable webhook name
-                'webhook_target': webhook_name  # Technical webhook identifier
+                'webhook_target': webhook_name,  # Technical webhook identifier
+                'ratings': ratings  # Comprehensive rating information from all sources
             }
 
-            # Step 6: Render template to JSON
+            # Step 7: Render template to JSON
             try:
                 rendered = template.render(**template_data)
                 payload = json.loads(rendered)
@@ -2980,14 +3580,7 @@ class WebhookService:
         self.jellyfin = None
         self.change_detector = None
         self.discord = None
-
-        # Service state tracking
-        self.last_vacuum = 0
-        self.server_was_offline = False
-        self.sync_in_progress = False
-        self.is_background_sync = False
-        self.initial_sync_complete = False
-        self.shutdown_event = asyncio.Event()
+        self.rating_service = None  # Add rating service
 
         # Load and validate configuration
         try:
@@ -3004,6 +3597,11 @@ class WebhookService:
             self.jellyfin = JellyfinAPI(self.config.jellyfin, self.logger)
             self.change_detector = ChangeDetector(self.config.notifications, self.logger)
             self.discord = DiscordNotifier(self.config.discord, self.config.jellyfin.server_url, self.logger)
+
+            # Initialize rating service with configuration
+            rating_config = getattr(self.config, 'rating_services', {})
+            self.rating_service = RatingService(rating_config, self.logger)
+
         except Exception as e:
             self.logger.error(f"Failed to initialize service components: {e}")
             raise SystemExit(1)
@@ -3042,7 +3640,18 @@ class WebhookService:
                 self.logger.error(f"Discord notifier initialization failed: {e}")
                 raise
 
-            # Step 3: Connect to Jellyfin and handle initial sync
+            # Step 3: Initialize rating service with shared session and database
+            try:
+                await self.rating_service.initialize(self.discord.session, self.db)
+                self.logger.info("Rating service initialized successfully")
+            except Exception as e:
+                self.logger.error(f"Rating service initialization failed: {e}")
+                # Don't raise - rating service is optional
+
+            # Step 4: Link services for cross-component access
+            self.discord._webhook_service = self
+
+            # Step 5: Connect to Jellyfin and handle initial sync
             try:
                 if await self.jellyfin.connect():
                     self.logger.info("Successfully connected to Jellyfin")

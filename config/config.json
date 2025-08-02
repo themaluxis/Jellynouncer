@@ -8,6 +8,27 @@
     "device_name": "jellynotify-webhook-service",
     "device_id": "jellynotify-discord-webhook-001"
   },
+  "rating_services": {
+    "enabled": true,
+    "omdb": {
+      "enabled": false,
+      "api_key": null,
+      "base_url": "http://www.omdbapi.com/"
+    },
+    "tmdb": {
+      "enabled": false,
+      "api_key": null,
+      "base_url": "https://api.themoviedb.org/3/"
+    },
+    "tvdb": {
+      "enabled": false,
+      "api_key": null,
+      "base_url": "https://api4.thetvdb.com/v4/"
+    },
+    "cache_duration_hours": 168,
+    "request_timeout_seconds": 10,
+    "retry_attempts": 3
+  },
   "discord": {
     "webhooks": {
       "default": {

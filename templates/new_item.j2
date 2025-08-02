@@ -1,59 +1,92 @@
 {
   "embeds": [
     {
-      "title": "📺 New {{ item.item_type }} Added",
+      "title": "{% if item.item_type == 'Episode' %}📺 New Episode Added{% else %}🎬 New {{ item.item_type }} Added{% endif %}",
       "description": "{% if item.item_type == 'Episode' %}**{{ item.series_name }}** S{{ '%02d'|format(item.season_number or 0) }}E{{ '%02d'|format(item.episode_number or 0) }}\n{{ item.name }}{% else %}**{{ item.name }}**{% if item.year %} ({{ item.year }}){% endif %}{% endif %}",
       "color": {{ color }},
+      {% if item.item_type == 'Episode' and item.series_id %}
+      "author": {
+        "name": "{{ item.series_name }}",
+        "icon_url": "{{ jellyfin_url }}/Items/{{ item.series_id }}/Images/Logo?maxHeight=64&maxWidth=200",
+        "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.series_id }}"
+      },
+      {% endif %}
       "fields": [
+        {% set field_count = 0 %}
+        {# Technical specifications row (inline) #}
         {% if item.video_height %}
         {
           "name": "📐 Quality",
           "value": "{{ item.video_height }}p{% if item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}",
           "inline": true
-        },
+        }{% set field_count = field_count + 1 %}{% if field_count < 9 %},{% endif %}
         {% endif %}
-        {% if item.video_codec %}
+        {% if item.video_codec and field_count < 9 %}
         {
-          "name": "🎞️ Video Codec",
-          "value": "{{ item.video_codec.upper() }}{% if item.video_profile %} ({{ item.video_profile }}){% endif %}",
+          "name": "🎞️ Video",
+          "value": "{{ item.video_codec.upper() }}{% if item.video_profile %} {{ item.video_profile }}{% endif %}",
           "inline": true
-        },
+        }{% set field_count = field_count + 1 %}{% if field_count < 9 %},{% endif %}
         {% endif %}
-        {% if item.audio_codec %}
+        {% if item.audio_codec and field_count < 9 %}
         {
           "name": "🔊 Audio",
-          "value": "{{ item.audio_codec.upper() }}{% if item.audio_channels %} {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% if item.audio_language %} ({{ item.audio_language.upper() }}){% endif %}",
+          "value": "{{ item.audio_codec.upper() }}{% if item.audio_channels %} {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}",
           "inline": true
-        },
+        }{% set field_count = field_count + 1 %}{% if field_count < 9 %},{% endif %}
         {% endif %}
-        {% if item.video_range and item.video_range == 'HDR' %}
+
+        {# Metadata row (inline) #}
+        {% if item.runtime_ticks and field_count < 9 %}
         {
-          "name": "🌈 HDR Support",
-          "value": "✅ Yes",
+          "name": "⏱️ Runtime",
+          "value": "{{ (item.runtime_ticks // 600000000) }}m",
           "inline": true
-        },
+        }{% set field_count = field_count + 1 %}{% if field_count < 9 %},{% endif %}
         {% endif %}
-        {% if item.aspect_ratio %}
+        {% if item.official_rating and field_count < 9 %}
         {
-          "name": "📺 Aspect Ratio",
-          "value": "{{ item.aspect_ratio }}",
+          "name": "🏷️ Rating",
+          "value": "{{ item.official_rating }}",
           "inline": true
-        },
+        }{% set field_count = field_count + 1 %}{% if field_count < 9 %},{% endif %}
         {% endif %}
-        {% if item.video_framerate %}
+        {% if item.premiere_date and field_count < 9 %}
         {
-          "name": "🎬 Frame Rate",
-          "value": "{{ '%.2f'|format(item.video_framerate) }} fps",
+          "name": "📅 {% if item.item_type == 'Episode' %}Air Date{% else %}Release{% endif %}",
+          "value": "{{ item.premiere_date[:10] }}",
           "inline": true
-        },
+        }{% set field_count = field_count + 1 %}{% if field_count < 9 %},{% endif %}
         {% endif %}
+
+        {# External ratings (non-inline for better mobile display) #}
+        {% if ratings and ratings|length > 0 %}
+        {
+          "name": "⭐ Ratings",
+          "value": "{% for rating_key, rating_data in ratings.items() %}{% if rating_key == 'imdb' %}**IMDb:** {{ rating_data.value }}/{{ rating_data.scale }}{% elif rating_key == 'rotten_tomatoes' %}**RT:** {{ rating_data.value }}%{% elif rating_key == 'metacritic' %}**MC:** {{ rating_data.value }}/{{ rating_data.scale }}{% elif rating_key == 'tmdb' %}**TMDb:** {{ rating_data.value }}/{{ rating_data.scale }}{% if rating_data.vote_count %} ({{ rating_data.vote_count }} votes){% endif %}{% elif rating_key == 'tvdb' %}**TVDb:** {{ rating_data.value }}/{{ rating_data.scale }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}",
+          "inline": false
+        }{% if item.genres or item.overview or (item.imdb_id or item.tmdb_id or item.tvdb_id) %},{% endif %}
+        {% endif %}
+
+        {# Genre information (non-inline) #}
+        {% if item.genres and item.genres|length > 0 %}
+        {
+          "name": "🎭 Genres",
+          "value": "{{ item.genres[:3]|join(', ') }}{% if item.genres|length > 3 %} +{{ item.genres|length - 3 }} more{% endif %}",
+          "inline": false
+        }{% if item.overview or (item.imdb_id or item.tmdb_id or item.tvdb_id) %},{% endif %}
+        {% endif %}
+
+        {# Overview/Plot (non-inline, mobile-friendly) #}
         {% if item.overview and item.overview|length > 0 %}
         {
-          "name": "📖 Overview",
-          "value": "{{ (item.overview[:300] + '...') if item.overview|length > 300 else item.overview }}",
+          "name": "📖 {% if item.item_type == 'Episode' %}Episode Summary{% else %}Overview{% endif %}",
+          "value": "{{ (item.overview[:350] + '...') if item.overview|length > 350 else item.overview }}",
           "inline": false
-        },
+        }{% if item.imdb_id or item.tmdb_id or item.tvdb_id %},{% endif %}
         {% endif %}
+
+        {# External links (non-inline) #}
         {% if item.imdb_id or item.tmdb_id or item.tvdb_id %}
         {
           "name": "🔗 External Links",
@@ -63,8 +96,13 @@
         {% endif %}
       ],
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?maxHeight=300&maxWidth=200"
+        "url": "{{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
       },
+      {% if item.item_type != 'Episode' %}
+      "image": {
+        "url": "{{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Backdrop?maxHeight=200&maxWidth=400"
+      },
+      {% endif %}
       "footer": {
         "text": "Added to Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC",
         "icon_url": "{{ jellyfin_url }}/web/favicon.ico"

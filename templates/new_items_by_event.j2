@@ -5,14 +5,24 @@
       "description": "The following items have been added to Jellyfin:",
       "color": 65280,
       "fields": [
-        {% for item_data in items %}
+        {% for item_data in items[:10] %}
         {
           "name": "{% if item_data.item.item_type == 'Episode' %}📺 {{ item_data.item.series_name }} S{{ '%02d'|format(item_data.item.season_number or 0) }}E{{ '%02d'|format(item_data.item.episode_number or 0) }}{% elif item_data.item.item_type == 'Movie' %}🎬 {{ item_data.item.name }}{% if item_data.item.year %} ({{ item_data.item.year }}){% endif %}{% elif item_data.item.item_type == 'Audio' or item_data.item.item_type == 'MusicAlbum' %}🎵 {{ item_data.item.name }}{% else %}📁 {{ item_data.item.name }}{% endif %}",
-          "value": "{% if item_data.item.video_height %}📐 {{ item_data.item.video_height }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}",
+          "value": "{% if item_data.item.item_type == 'Episode' %}{{ item_data.item.name }}{% if item_data.item.overview %}\n*{{ (item_data.item.overview[:100] + '...') if item_data.item.overview|length > 100 else item_data.item.overview }}*{% endif %}{% else %}{% if item_data.item.overview %}*{{ (item_data.item.overview[:120] + '...') if item_data.item.overview|length > 120 else item_data.item.overview }}*{% endif %}{% endif %}{% if item_data.item.video_height %}\n📐 {{ item_data.item.video_height }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.ratings and item_data.ratings|length > 0 %}\n⭐ {% for rating_key, rating_data in item_data.ratings.items() %}{% if rating_key == 'imdb' %}IMDb: {{ rating_data.value }}{% elif rating_key == 'rotten_tomatoes' %}RT: {{ rating_data.value }}%{% elif rating_key == 'tmdb' %}TMDb: {{ rating_data.value }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}",
           "inline": false
         }{% if not loop.last %},{% endif %}
         {% endfor %}
+        {% if items|length > 10 %}
+        ,{
+          "name": "➕ Additional Items",
+          "value": "...and {{ items|length - 10 }} more items were added to Jellyfin.",
+          "inline": false
+        }
+        {% endif %}
       ],
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      },
       "footer": {
         "text": "Added to Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC",
         "icon_url": "{{ jellyfin_url }}/web/favicon.ico"

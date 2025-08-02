@@ -8,52 +8,25 @@
         {% if 'movies' in categories %}
         {
           "name": "🎬 Movies",
-          "value": "{% if categories.movies.new|length > 0 %}**New ({{ categories.movies.new|length }})**: {% for item_data in categories.movies.new %}{{ item_data.item.name }}{% if item_data.item.year %} ({{ item_data.item.year }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}{% if categories.movies.new|length > 0 and categories.movies.upgraded|length > 0 %}\n{% endif %}{% if categories.movies.upgraded|length > 0 %}**Upgraded ({{ categories.movies.upgraded|length }})**: {% for item_data in categories.movies.upgraded %}{{ item_data.item.name }}{% if item_data.item.year %} ({{ item_data.item.year }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}",
+          "value": "{% if categories.movies.new|length > 0 %}**New ({{ categories.movies.new|length }})**: {% for item_data in categories.movies.new[:3] %}{{ item_data.item.name }}{% if item_data.item.year %} ({{ item_data.item.year }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% if categories.movies.new|length > 3 %}, +{{ categories.movies.new|length - 3 }} more{% endif %}{% endif %}{% if categories.movies.new|length > 0 and categories.movies.upgraded|length > 0 %}\n{% endif %}{% if categories.movies.upgraded|length > 0 %}**Upgraded ({{ categories.movies.upgraded|length }})**: {% for item_data in categories.movies.upgraded[:3] %}{{ item_data.item.name }}{% if item_data.item.year %} ({{ item_data.item.year }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% if categories.movies.upgraded|length > 3 %}, +{{ categories.movies.upgraded|length - 3 }} more{% endif %}{% endif %}",
           "inline": false
-        },
+        }{% if 'tv' in categories or 'music' in categories or 'other' in categories %},{% endif %}
         {% endif %}
-      ],
-      "thumbnail": {
-        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
-      },
-      "footer": {
-        "text": "Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
-      },
-      "timestamp": "{{ timestamp }}"
-    }
-  ]
-}
         {% if 'tv' in categories %}
         {
           "name": "📺 TV Shows",
-          "value": "{% if categories.tv.new|length > 0 %}**New ({{ categories.tv.new|length }})**: {% for item_data in categories.tv.new %}{{ item_data.item.series_name }} S{{ '%02d'|format(item_data.item.season_number or 0) }}E{{ '%02d'|format(item_data.item.episode_number or 0) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}{% if categories.tv.new|length > 0 and categories.tv.upgraded|length > 0 %}\n{% endif %}{% if categories.tv.upgraded|length > 0 %}**Upgraded ({{ categories.tv.upgraded|length }})**: {% for item_data in categories.tv.upgraded %}{{ item_data.item.series_name }} S{{ '%02d'|format(item_data.item.season_number or 0) }}E{{ '%02d'|format(item_data.item.episode_number or 0) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}",
+          "value": "{% if categories.tv.new|length > 0 %}**New Episodes ({{ categories.tv.new|length }})**: {% for item_data in categories.tv.new[:4] %}{{ item_data.item.series_name }} S{{ '%02d'|format(item_data.item.season_number or 0) }}E{{ '%02d'|format(item_data.item.episode_number or 0) }}{% if not loop.last %}, {% endif %}{% endfor %}{% if categories.tv.new|length > 4 %}, +{{ categories.tv.new|length - 4 }} more{% endif %}{% endif %}{% if categories.tv.new|length > 0 and categories.tv.upgraded|length > 0 %}\n{% endif %}{% if categories.tv.upgraded|length > 0 %}**Upgraded Episodes ({{ categories.tv.upgraded|length }})**: {% for item_data in categories.tv.upgraded[:4] %}{{ item_data.item.series_name }} S{{ '%02d'|format(item_data.item.season_number or 0) }}E{{ '%02d'|format(item_data.item.episode_number or 0) }}{% if not loop.last %}, {% endif %}{% endfor %}{% if categories.tv.upgraded|length > 4 %}, +{{ categories.tv.upgraded|length - 4 }} more{% endif %}{% endif %}",
           "inline": false
-        },
+        }{% if 'music' in categories or 'other' in categories %},{% endif %}
         {% endif %}
         {% if 'music' in categories %}
         {
           "name": "🎵 Music",
-          "value": "{% if categories.music.new|length > 0 %}**New ({{ categories.music.new|length }})**: {% for item_data in categories.music.new %}{{ item_data.item.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}{% if categories.music.new|length > 0 and categories.music.upgraded|length > 0 %}\n{% endif %}{% if categories.music.upgraded|length > 0 %}**Upgraded ({{ categories.music.upgraded|length }})**: {% for item_data in categories.music.upgraded %}{{ item_data.item.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}",
+          "value": "{% if categories.music.new|length > 0 %}**New Tracks ({{ categories.music.new|length }})**: {% for item_data in categories.music.new[:5] %}{{ item_data.item.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if categories.music.new|length > 5 %}, +{{ categories.music.new|length - 5 }} more{% endif %}{% endif %}{% if categories.music.new|length > 0 and categories.music.upgraded|length > 0 %}\n{% endif %}{% if categories.music.upgraded|length > 0 %}**Upgraded Tracks ({{ categories.music.upgraded|length }})**: {% for item_data in categories.music.upgraded[:5] %}{{ item_data.item.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if categories.music.upgraded|length > 5 %}, +{{ categories.music.upgraded|length - 5 }} more{% endif %}{% endif %}",
           "inline": false
-        },
+        }{% if 'other' in categories %},{% endif %}
         {% endif %}
         {% if 'other' in categories %}
         {
-          "name": "📁 Other",
-          "value": "{% if categories.other.new|length > 0 %}**New ({{ categories.other.new|length }})**: {% for item_data in categories.other.new %}{{ item_data.item.name }} ({{ item_data.item.item_type }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %}{% if categories.other.new|length > 0 and categories.other.upgraded|length > 0 %}\n{% endif %}{% if categories.other.upgraded|length > 0 %}**Upgraded ({{ categories.other.upgraded|length }})**: {% for item_data in categories.other.upgraded %}{{ item_data.item.name }} ({{ item_data.item.item_type }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %}",
-          "inline": false
-        },
-        {% endif %}
-      ],
-      "thumbnail": {
-        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
-      },
-      "footer": {
-        "text": "Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
-      },
-      "timestamp": "{{ timestamp }}"
-    }
-  ]
-}
+          "name": "📁 Other Content",
+          "value": "{% if categories.other.new|length > 0 %}**New Items ({{ categories.other.new|length }})**: {% for item_data in categories.other.new[:4] %}{{ item_data.item
