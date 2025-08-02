@@ -9,7 +9,6 @@
     "device_id": "jellynotify-discord-webhook-001"
   },
   "discord": {
-    "webhook_url": null,
     "webhooks": {
       "default": {
         "url": null,
