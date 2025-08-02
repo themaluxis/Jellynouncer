@@ -1,13 +1,16 @@
 FROM python:3.11-slim
 
-# Set working directory
-WORKDIR /app
+# Set persistent storage
+VOLUME /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
@@ -16,9 +19,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY main.py .
 COPY docker-entrypoint.sh /usr/local/bin/
-COPY templates/ ./defaults/templates/
-COPY config/ ./defaults/config/
-COPY scripts/ ./defaults/scripts/
+COPY templates/ /app/defaults/templates/
+COPY config/ /app/defaults/config/
+COPY scripts/ /app/defaults/scripts/
 
 # Create required directories
 RUN mkdir -p /app/data /app/logs && \

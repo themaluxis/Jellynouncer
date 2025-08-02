@@ -42,14 +42,8 @@ if [ -n "${PUID}" ] && [ -n "${PGID}" ]; then
     chown -R ${PUID}:${PGID} /app/config /app/templates /app/data /app/logs /app/scripts
 fi
 
-# Create symlinks to use the mounted volumes
-rm -rf /app/config/* /app/templates/*
-ln -sf /config/* /app/config/
-ln -sf /templates/* /app/templates/
-
 # Set proper permissions
 chmod -R 755 /app/config /app/templates /app/data /app/logs
-chmod -R 755 /config /templates
 
 echo "Configuration initialized. Starting application..."
 
