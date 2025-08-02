@@ -48,6 +48,7 @@ readonly SCRIPT_PID=$$
 
 # Logging configuration
 readonly LOG_TIMESTAMP_FORMAT="+%Y-%m-%d %H:%M:%S"
+readonly DEBUG_LOG_FILE="/app/logs/debug.log"
 
 # Application directories
 readonly APP_ROOT="/app"
@@ -96,7 +97,26 @@ readonly COLOR_BOLD='\033[1m'
 # ADVANCED LOGGING SYSTEM
 #=============================================================================
 
-# Advanced logging function with color-coded console output
+# Initialize debug logging if DEBUG is enabled
+init_debug_logging() {
+    if [[ "${DEBUG:-false}" == "true" ]]; then
+        # Ensure logs directory exists
+        mkdir -p "$(dirname "${DEBUG_LOG_FILE}")" 2>/dev/null || true
+
+        # Initialize debug log file with header
+        {
+            echo "========================================================================"
+            echo "JellyNotify Docker Entrypoint Debug Log - Started $(date)"
+            echo "Script: ${SCRIPT_NAME} v${SCRIPT_VERSION}"
+            echo "PID: ${SCRIPT_PID}"
+            echo "Host: $(hostname 2>/dev/null || echo 'unknown')"
+            echo "Debug Mode: ENABLED"
+            echo "========================================================================"
+        } > "${DEBUG_LOG_FILE}" 2>/dev/null || true
+    fi
+}
+
+# Advanced logging function with optional debug file output
 # Parameters: level, message, [component]
 log_message() {
     local level="${1:-INFO}"
@@ -117,8 +137,14 @@ log_message() {
     local color
     color=$(get_log_color "${level}")
 
-    # Output to stderr with color
+    # Always output to stderr with color
     echo -e "${color}${log_entry}${COLOR_RESET}" >&2
+
+    # Also write to debug log file if DEBUG mode is enabled
+    if [[ "${DEBUG:-false}" == "true" ]]; then
+        # Write to debug log file without color codes
+        echo "${log_entry}" >> "${DEBUG_LOG_FILE}" 2>/dev/null || true
+    fi
 }
 
 # Get color code for log level
@@ -174,6 +200,18 @@ cleanup_on_exit() {
     execution_time=$(awk "BEGIN {printf \"%.3f\", ${end_time} - ${START_TIME}}")
 
     log_info "Script execution completed in ${execution_time}s with exit code ${exit_code}" "CLEANUP"
+
+    # Write final debug log entry if debug mode is enabled
+    if [[ "${DEBUG:-false}" == "true" ]]; then
+        {
+            echo ""
+            echo "========================================================================"
+            echo "Script execution completed at $(date)"
+            echo "Exit code: ${exit_code}"
+            echo "Execution time: ${execution_time}s"
+            echo "========================================================================"
+        } >> "${DEBUG_LOG_FILE}" 2>/dev/null || true
+    fi
 
     # Clean up temporary files
     if [[ ${#TEMP_FILES[@]} -gt 0 ]]; then
@@ -805,6 +843,9 @@ main() {
     local component="MAIN"
 
     # Initialize logging as the first step
+
+    # Initialize debug logging if needed
+    init_debug_logging
 
     # Register cleanup handlers
     register_cleanup

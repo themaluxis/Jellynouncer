@@ -1,8 +1,5 @@
 FROM python:3.11-slim
 
-# Set persistent storage
-VOLUME ["/app/data", "/app/logs", "/app/config", "/app/templates"]
-
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
