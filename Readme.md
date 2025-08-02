@@ -1,5 +1,9 @@
 # JellyNotify
 
+> ⚠️ **ALPHA SOFTWARE - UNDER ACTIVE DEVELOPMENT** ⚠️
+> 
+> This project is in early alpha stage and is actively being developed. Expect breaking changes, bugs, and incomplete features. Use at your own risk in production environments. Feedback and contributions are welcome!
+
 JellyNotify is an intermediate webhook service that sits between Jellyfin and Discord, providing intelligent notifications for new media additions and quality upgrades.
 
 ## Features
