@@ -520,7 +520,7 @@ class JellyfinAPI:
         except Exception:
             return False
 
-    async def get_all_items(self, batch_size: int = 200,
+    async def get_all_items(self, batch_size: int = 1000,
                                         process_batch_callback: Callable = None) -> List[Dict[str, Any]]:
         """Get all media items from Jellyfin incrementally, processing each batch as it arrives"""
         if not await self.is_connected():
@@ -1113,7 +1113,7 @@ class WebhookService:
             else:
                 logging.info("Starting initial Jellyfin library sync...")
 
-            batch_size = self.config.get('sync.sync_batch_size', 100)
+            batch_size = self.config.get('sync.sync_batch_size', 1000)
 
             # Use the incremental API with callback for immediate processing
             await self.jellyfin.get_all_items(
@@ -1326,6 +1326,90 @@ async def webhook_endpoint(payload: WebhookPayload):
     """Main webhook endpoint for Jellyfin"""
     return await service.process_webhook(payload)
 
+
+@app.post("/webhook/debug")
+async def webhook_debug_endpoint(request: Request):
+    """Debug version of webhook endpoint that shows detailed error info"""
+    try:
+        # Get raw request body for debugging
+        raw_body = await request.body()
+        content_type = request.headers.get("content-type", "")
+
+        logging.info(f"DEBUG: Webhook received from {request.client.host}:{request.client.port}")
+        logging.info(f"DEBUG: Content-Type: {content_type}")
+        logging.info(f"DEBUG: Raw body length: {len(raw_body)} bytes")
+
+        # Parse JSON
+        try:
+            json_data = json.loads(raw_body)
+            logging.info(f"DEBUG: Parsed JSON keys: {list(json_data.keys())}")
+            logging.debug(f"DEBUG: Full JSON payload: {json.dumps(json_data, indent=2)}")
+        except json.JSONDecodeError as e:
+            logging.error(f"DEBUG: Failed to parse JSON: {e}")
+            logging.error(f"DEBUG: Raw body: {raw_body.decode('utf-8', errors='replace')}")
+            return {"error": "Invalid JSON", "raw_body": raw_body.decode('utf-8', errors='replace')}
+
+        # Try to validate with Pydantic model
+        try:
+            payload = WebhookPayload(**json_data)
+            logging.info(f"DEBUG: Successfully validated payload for item: {payload.ItemId}")
+            # Process normally
+            return await service.process_webhook(payload)
+        except ValidationError as e:
+            logging.error(f"DEBUG: Pydantic validation failed: {e}")
+
+            # Detailed error analysis
+            error_details = {
+                "validation_errors": [],
+                "received_payload": json_data,
+                "expected_fields": list(WebhookPayload.__fields__.keys()),
+                "missing_required_fields": [],
+                "type_errors": [],
+                "field_analysis": {}
+            }
+
+            for error in e.errors():
+                field_path = " -> ".join(str(x) for x in error['loc'])
+                error_msg = error['msg']
+                error_type = error['type']
+
+                error_details["validation_errors"].append({
+                    "field": field_path,
+                    "error": error_msg,
+                    "type": error_type
+                })
+
+                if error_type == 'missing':
+                    error_details["missing_required_fields"].append(field_path)
+                elif 'type' in error_type:
+                    error_details["type_errors"].append({
+                        "field": field_path,
+                        "error": error_msg,
+                        "received_value": json_data.get(error['loc'][0]) if error['loc'] else None
+                    })
+
+            # Analyze each field in the payload
+            for key, value in json_data.items():
+                error_details["field_analysis"][key] = {
+                    "received_type": type(value).__name__,
+                    "received_value": str(value)[:100],
+                    "is_expected_field": key in WebhookPayload.__fields__
+                }
+
+                if key in WebhookPayload.__fields__:
+                    expected_type = WebhookPayload.__fields__[key].type_
+                    error_details["field_analysis"][key]["expected_type"] = str(expected_type)
+
+            logging.error(f"DEBUG: Detailed error analysis: {json.dumps(error_details, indent=2)}")
+
+            return {
+                "status": "validation_failed",
+                "details": error_details
+            }
+
+    except Exception as e:
+        logging.error(f"DEBUG: Unexpected error: {e}", exc_info=True)
+        return {"error": str(e)}
 
 @app.get("/health")
 async def health_endpoint():
