@@ -528,6 +528,9 @@ update_config_json() {
         "movies_url:${DISCORD_WEBHOOK_URL_MOVIES:-null}"
         "tv_url:${DISCORD_WEBHOOK_URL_TV:-null}"
         "music_url:${DISCORD_WEBHOOK_URL_MUSIC:-null}"
+        "omdb_key:${OMDB_API_KEY:-null}"
+        "tmdb_key:${TMDB_API_KEY:-null}"
+        "tvdb_key:${TVDB_API_KEY:-null}"
     )
 
     # Build jq arguments array for better maintainability
@@ -560,7 +563,17 @@ update_config_json() {
         .discord.webhooks.music.enabled = (if $music_url != "null" then true else .discord.webhooks.music.enabled end) |
 
         # Enable routing if any specific webhooks are configured
-        .discord.routing.enabled = (if ($movies_url != "null" or $tv_url != "null" or $music_url != "null") then true else .discord.routing.enabled end)
+        .discord.routing.enabled = (if ($movies_url != "null" or $tv_url != "null" or $music_url != "null") then true else .discord.routing.enabled end) |
+
+        # Update rating service API keys and auto-enable only if previously null
+        .rating_services.omdb.api_key = (if $omdb_key != "null" then $omdb_key else .rating_services.omdb.api_key end) |
+        .rating_services.omdb.enabled = (if ($omdb_key != "null" and (.rating_services.omdb.api_key == null or .rating_services.omdb.api_key == "")) then true else .rating_services.omdb.enabled end) |
+
+        .rating_services.tmdb.api_key = (if $tmdb_key != "null" then $tmdb_key else .rating_services.tmdb.api_key end) |
+        .rating_services.tmdb.enabled = (if ($tmdb_key != "null" and (.rating_services.tmdb.api_key == null or .rating_services.tmdb.api_key == "")) then true else .rating_services.tmdb.enabled end) |
+
+        .rating_services.tvdb.api_key = (if $tvdb_key != "null" then $tvdb_key else .rating_services.tvdb.api_key end) |
+        .rating_services.tvdb.enabled = (if ($tvdb_key != "null" and (.rating_services.tvdb.api_key == null or .rating_services.tvdb.api_key == "")) then true else .rating_services.tvdb.enabled end)
     ' "${config_file}" > "${temp_config}" 2>/dev/null; then
 
         # Validate the generated JSON
