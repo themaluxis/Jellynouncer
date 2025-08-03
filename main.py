@@ -1956,11 +1956,111 @@ class DatabaseManager:
                     await db.execute("PRAGMA cache_size=-32000")
                     await db.execute("PRAGMA busy_timeout=30000")
 
-                # Create the main media items table (existing code)
+                # Create the main media items table with complete schema
                 await db.execute("""
                                  CREATE TABLE IF NOT EXISTS media_items
                                  (
-                                     -- ... existing media_items table schema ...
+                                     -- Core identification fields
+                                     item_id
+                                     TEXT
+                                     PRIMARY
+                                     KEY,
+                                     name
+                                     TEXT
+                                     NOT
+                                     NULL,
+                                     item_type
+                                     TEXT
+                                     NOT
+                                     NULL,
+
+                                     -- Basic metadata
+                                     year
+                                     INTEGER,
+                                     series_name
+                                     TEXT,
+                                     season_number
+                                     INTEGER,
+                                     episode_number
+                                     INTEGER,
+                                     overview
+                                     TEXT,
+
+                                     -- Video technical specifications
+                                     video_height
+                                     INTEGER,
+                                     video_width
+                                     INTEGER,
+                                     video_codec
+                                     TEXT,
+                                     video_profile
+                                     TEXT,
+                                     video_range
+                                     TEXT,
+                                     video_framerate
+                                     REAL,
+                                     aspect_ratio
+                                     TEXT,
+
+                                     -- Audio technical specifications
+                                     audio_codec
+                                     TEXT,
+                                     audio_channels
+                                     INTEGER,
+                                     audio_language
+                                     TEXT,
+                                     audio_bitrate
+                                     INTEGER,
+
+                                     -- External provider IDs
+                                     imdb_id
+                                     TEXT,
+                                     tmdb_id
+                                     TEXT,
+                                     tvdb_id
+                                     TEXT,
+
+                                     -- Enhanced metadata from API
+                                     date_created
+                                     TEXT,
+                                     date_modified
+                                     TEXT,
+                                     runtime_ticks
+                                     INTEGER,
+                                     official_rating
+                                     TEXT,
+                                     genres
+                                     TEXT, -- JSON string
+                                     studios
+                                     TEXT, -- JSON string
+                                     tags
+                                     TEXT, -- JSON string
+
+                                     -- Music-specific metadata
+                                     album
+                                     TEXT,
+                                     artists
+                                     TEXT, -- JSON string
+                                     album_artist
+                                     TEXT,
+
+                                     -- Photo-specific metadata
+                                     width
+                                     INTEGER,
+                                     height
+                                     INTEGER,
+
+                                     -- Internal tracking
+                                     timestamp
+                                     TEXT,
+                                     file_path
+                                     TEXT,
+                                     file_size
+                                     INTEGER,
+                                     content_hash
+                                     TEXT,
+                                     last_modified
+                                     TEXT,
 
                                      -- Enhanced metadata for rich notifications
                                      series_id
@@ -1998,6 +2098,7 @@ class DatabaseManager:
                                      DEFAULT
                                      0,
 
+                                     -- Timestamps
                                      created_at
                                      DATETIME
                                      DEFAULT
@@ -2075,13 +2176,13 @@ class DatabaseManager:
 
                 # Create indexes for efficient lookups
                 indexes = [
-                    # Existing indexes
+                    # Core indexes for media_items
                     "CREATE INDEX IF NOT EXISTS idx_item_type ON media_items(item_type)",
                     "CREATE INDEX IF NOT EXISTS idx_series_name ON media_items(series_name)",
                     "CREATE INDEX IF NOT EXISTS idx_updated_at ON media_items(updated_at)",
                     "CREATE INDEX IF NOT EXISTS idx_content_hash ON media_items(content_hash)",
 
-                    # New indexes for rating functionality
+                    # Enhanced indexes for rating functionality
                     "CREATE INDEX IF NOT EXISTS idx_ratings_last_updated ON media_items(ratings_last_updated)",
                     "CREATE INDEX IF NOT EXISTS idx_series_id ON media_items(series_id)",
                     "CREATE INDEX IF NOT EXISTS idx_parent_id ON media_items(parent_id)",
@@ -2105,6 +2206,32 @@ class DatabaseManager:
         except Exception as e:
             self.logger.error(f"Unexpected error during database initialization: {e}")
             raise
+
+    async def get_last_sync_time(self) -> Optional[str]:
+        """
+        Get the timestamp of the last database update for sync scheduling.
+
+        Returns:
+            ISO timestamp string of most recent update, or None if no items exist
+
+        Example:
+            ```python
+            last_sync = await db_manager.get_last_sync_time()
+            if last_sync:
+                print(f"Last sync: {last_sync}")
+            ```
+        """
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute("SELECT MAX(updated_at) FROM media_items")
+                row = await cursor.fetchone()
+                return row[0] if row and row[0] else None
+
+        except aiosqlite.Error as e:
+            self.logger.error(f"Database error retrieving last sync time: {e}")
+            return None
+        except Exception as e:
+            self.logger.er
 
     async def get_item(self, item_id: str) -> Optional[MediaItem]:
         """
@@ -3668,7 +3795,15 @@ class WebhookService:
         self.jellyfin = None
         self.change_detector = None
         self.discord = None
-        self.rating_service = None  # Add rating service
+        self.rating_service = None
+
+        # Initialize service state tracking attributes
+        self.last_vacuum = 0  # Timestamp of last database vacuum
+        self.server_was_offline = False  # Whether Jellyfin server was previously offline
+        self.sync_in_progress = False  # Whether library sync is currently running
+        self.is_background_sync = False  # Whether current sync is running in background
+        self.initial_sync_complete = False  # Whether initial startup sync finished
+        self.shutdown_event = asyncio.Event()  # AsyncIO event for coordinating shutdown
 
         # Load and validate configuration
         try:
