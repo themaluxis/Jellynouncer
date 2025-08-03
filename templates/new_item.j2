@@ -102,7 +102,7 @@
         "url": "{{ verified_thumbnail_url }}"
       }{% endif %},
       "footer": {
-        "text": "Added to Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC",
+        "text": "Added to Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC{% if tvdb_attribution_needed %}\nMetadata provided by TheTVDB{% endif %}",
         "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
       },
       "timestamp": "{{ timestamp }}"

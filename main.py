@@ -472,61 +472,56 @@ class SyncConfig(BaseModel):
 
 
 class RatingServiceConfig(BaseModel):
-    """
-    Configuration for individual rating service (OMDb, TMDb, TVDb).
-
-    This class represents configuration for a single external rating service,
-    including API credentials, endpoints, and operational settings.
-
-    Attributes:
-        enabled: Whether this rating service should be used
-        api_key: API key for the service (None if not configured)
-        base_url: Base URL for the service API
-    """
+    """Configuration for individual rating service (OMDb, TMDb, TVDb)."""
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(default=False, description="Whether rating service is enabled")
     api_key: Optional[str] = Field(default=None, description="API key for the service")
     base_url: str = Field(..., description="Base URL for the service API")
 
+
+class TVDBConfig(BaseModel):
+    """Enhanced TVDB configuration supporting both licensed and subscriber models."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=False, description="Whether TVDB service is enabled")
+    api_key: Optional[str] = Field(default=None, description="TVDB v4 API key")
+    subscriber_pin: Optional[str] = Field(default=None, description="TVDB subscriber PIN (for user-supported keys)")
+    base_url: str = Field(default="https://api4.thetvdb.com/v4", description="TVDB API v4 base URL")
+    access_mode: str = Field(default="auto", description="Access mode: 'auto', 'subscriber', or 'licensed'")
+
     @field_validator('api_key')
     @classmethod
     def validate_api_key(cls, v: Optional[str]) -> Optional[str]:
-        """
-        Validate API key format (basic validation).
-
-        Args:
-            v: API key to validate
-
-        Returns:
-            Validated API key or None
-        """
+        """Validate API key format."""
         if v is None:
             return None
-
         if not v.strip():
             return None
-
-        # Basic validation - API keys should be non-empty strings
         return v.strip()
+
+    @field_validator('subscriber_pin')
+    @classmethod
+    def validate_subscriber_pin(cls, v: Optional[str]) -> Optional[str]:
+        """Validate subscriber PIN format."""
+        if v is None:
+            return None
+        if not v.strip():
+            return None
+        return v.strip()
+
+    @field_validator('access_mode')
+    @classmethod
+    def validate_access_mode(cls, v: str) -> str:
+        """Validate access mode."""
+        valid_modes = ['auto', 'subscriber', 'licensed']
+        if v.lower() not in valid_modes:
+            raise ValueError(f"Access mode must be one of: {valid_modes}")
+        return v.lower()
 
 
 class RatingServicesConfig(BaseModel):
-    """
-    Configuration for all external rating services.
-
-    This class manages configuration for all supported external rating services
-    including OMDb, TMDb, and TVDb APIs.
-
-    Attributes:
-        enabled: Global enable/disable for all rating services
-        omdb: OMDb API configuration
-        tmdb: TMDb API configuration
-        tvdb: TVDb API configuration
-        cache_duration_hours: How long to cache rating data
-        request_timeout_seconds: Timeout for HTTP requests
-        retry_attempts: Number of retry attempts for failed requests
-    """
+    """Configuration for all external rating services."""
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(default=True, description="Global rating services enabled flag")
@@ -544,11 +539,11 @@ class RatingServicesConfig(BaseModel):
             base_url="https://api.themoviedb.org/3/"
         )
     )
-    tvdb: RatingServiceConfig = Field(
-        default_factory=lambda: RatingServiceConfig(
+    tvdb: TVDBConfig = Field(
+        default_factory=lambda: TVDBConfig(
             enabled=False,
             api_key=None,
-            base_url="https://api4.thetvdb.com/v4/"
+            subscriber_pin=None
         )
     )
     cache_duration_hours: int = Field(default=168, ge=1, le=8760, description="Rating cache duration in hours")
@@ -1274,7 +1269,10 @@ class ConfigurationValidator:
             # Rating service API keys
             'OMDB_API_KEY': ('rating_services', 'omdb', 'api_key'),
             'TMDB_API_KEY': ('rating_services', 'tmdb', 'api_key'),
+
+            # TVDB v4 API configuration (updated)
             'TVDB_API_KEY': ('rating_services', 'tvdb', 'api_key'),
+            'TVDB_SUBSCRIBER_PIN': ('rating_services', 'tvdb', 'subscriber_pin'),
         }
 
         # Apply environment variable overrides
@@ -1285,11 +1283,35 @@ class ConfigurationValidator:
 
         # Auto-enable rating services that have API keys configured
         rating_services = config_data.get('rating_services', {})
-        for service in ['omdb', 'tmdb', 'tvdb']:
+        for service in ['omdb', 'tmdb']:
             service_config = rating_services.get(service, {})
             if service_config.get('api_key'):
                 service_config['enabled'] = True
                 self.logger.info(f"Auto-enabled {service.upper()} rating service (API key provided)")
+
+        # Special handling for TVDB (enhanced logic)
+        tvdb_config = rating_services.get('tvdb', {})
+        tvdb_api_key = tvdb_config.get('api_key')
+        tvdb_pin = tvdb_config.get('subscriber_pin')
+
+        if tvdb_api_key:
+            tvdb_config['enabled'] = True
+
+            # Determine access mode based on available credentials
+            if tvdb_pin:
+                tvdb_config['access_mode'] = 'subscriber'
+                self.logger.info("Auto-enabled TVDB rating service (subscriber mode: API key + PIN provided)")
+            else:
+                tvdb_config['access_mode'] = 'licensed'
+                self.logger.info("Auto-enabled TVDB rating service (licensed mode: API key only provided)")
+
+            # Set different cache durations based on access mode
+            if tvdb_pin:
+                # More aggressive caching for subscriber mode (7 days)
+                config_data.setdefault('rating_services', {})['cache_duration_hours'] = 168
+            else:
+                # Less aggressive caching for licensed mode (24 hours)
+                config_data.setdefault('rating_services', {})['cache_duration_hours'] = 24
 
         # Auto-enable webhooks that have URLs configured (existing logic)
         for webhook_type in ['default', 'movies', 'tv', 'music']:
@@ -1654,13 +1676,7 @@ class RatingService:
     """
 
     def __init__(self, config: RatingServicesConfig, logger: logging.Logger):
-        """
-        Initialize rating service with configuration and logging.
-
-        Args:
-            config: Rating services configuration from app config
-            logger: Logger instance for rating service operations
-        """
+        """Initialize rating service with configuration and logging."""
         self.config = config
         self.logger = logger
         self.session = None
@@ -1675,38 +1691,45 @@ class RatingService:
         # API service configurations
         self.omdb_config = config.omdb
         self.tmdb_config = config.tmdb
-        self.tvdb_config = config.tvdb
+        self.tvdb_config = config.tvdb  # Updated to use TVDBConfig
 
-        # Initialize API keys from configuration (environment variables are handled in config validation)
+        # Initialize API keys from configuration
         self.omdb_api_key = self.omdb_config.api_key
         self.tmdb_api_key = self.tmdb_config.api_key
-        self.tvdb_api_key = self.tvdb_config.api_key
 
-        # Rate limiting state (simple in-memory rate limiting)
+        # Initialize TVDB API v4 client
+        self.tvdb_api = None
+        if self.tvdb_config.enabled:
+            self.tvdb_api = TVDBAPIv4(self.tvdb_config, logger)
+
+        # Rate limiting state
         self.last_request_times = {}
-        self.min_request_interval = 1.0  # Minimum seconds between requests per service
+        self.min_request_interval = 1.0
 
         self.logger.info(f"Rating service initialized - Enabled: {self.enabled}")
         if self.enabled:
             services = []
-            if self.omdb_config.enabled and self.omdb_api_key: services.append("OMDb")
-            if self.tmdb_config.enabled and self.tmdb_api_key: services.append("TMDb")
-            if self.tvdb_config.enabled and self.tvdb_api_key: services.append("TVDb")
+            if self.omdb_config.enabled and self.omdb_api_key:
+                services.append("OMDb")
+            if self.tmdb_config.enabled and self.tmdb_api_key:
+                services.append("TMDb")
+            if self.tvdb_config.enabled and self.tvdb_api:
+                services.append(f"TVDb v4 ({self.tvdb_api.access_mode})")
+
             self.logger.info(
-                f"Available rating services: {', '.join(services) if services else 'None (no API keys configured)'}")
+                f"Available rating services: {', '.join(services) if services else 'None (no API keys configured)'}"
+            )
 
     async def initialize(self, session: aiohttp.ClientSession, db_manager):
-        """
-        Initialize with shared HTTP session and database manager.
-
-        Args:
-            session: Shared aiohttp ClientSession for HTTP requests
-            db_manager: Database manager instance for caching operations
-        """
+        """Initialize with shared HTTP session and database manager."""
         self.session = session
         self.db_manager = db_manager
 
         if self.enabled:
+            # Initialize TVDB API v4 if enabled
+            if self.tvdb_api:
+                await self.tvdb_api.initialize(session)
+
             # Clean up expired rating cache entries
             await self._cleanup_expired_cache()
             self.logger.info("Rating service initialization complete")
@@ -1920,55 +1943,24 @@ class RatingService:
 
     async def _fetch_tvdb_ratings(self, tvdb_id: str) -> Dict[str, Dict[str, Any]]:
         """
-        Fetch ratings from TVDb API.
-
-        Note: TVDb API v4 requires authentication and has specific rate limits.
-        This implementation provides a framework but may need adjustment based
-        on actual API access tier and authentication method.
+        Fetch ratings from TVDB API v4 with correct authentication.
 
         Args:
-            tvdb_id: TVDb identifier
+            tvdb_id: TVDB identifier
 
         Returns:
-            Dictionary with TVDb rating data
+            Dictionary with TVDB rating data
         """
-        if not self.tvdb_config.enabled or not self.tvdb_api_key or not tvdb_id:
+        if not self.tvdb_api or not tvdb_id:
             return {}
 
         try:
-            await self._rate_limit_check('tvdb')
-
-            # TVDb v4 API requires authentication, this is a simplified example
-            # In practice, you'd need to handle JWT token authentication
-            url = f"{self.tvdb_config.base_url}series/{tvdb_id}"
-            headers = {
-                'Authorization': f'Bearer {self.tvdb_api_key}',
-                'Content-Type': 'application/json'
-            }
-
-            async with self.session.get(url, headers=headers, timeout=self.request_timeout) as response:
-                if response.status == 200:
-                    data = await response.json()
-
-                    # TVDb API structure may vary, adjust based on actual response format
-                    series_data = data.get('data', {})
-                    score = series_data.get('score')
-
-                    if score is not None:
-                        return {
-                            'tvdb': {
-                                'value': round(score, 1),
-                                'scale': '10',
-                                'source': 'TVDb'
-                            }
-                        }
-                else:
-                    self.logger.warning(f"TVDb API request failed with status {response.status}")
-
-        except asyncio.TimeoutError:
-            self.logger.warning(f"TVDb API request timeout for {tvdb_id}")
+            rating_data = await self.tvdb_api.get_series_rating(tvdb_id)
+            if rating_data:
+                self.logger.debug(f"TVDB API v4 returned rating for series {tvdb_id}")
+                return rating_data
         except Exception as e:
-            self.logger.error(f"TVDb API request failed for {tvdb_id}: {e}")
+            self.logger.error(f"TVDB API v4 request failed for {tvdb_id}: {e}")
 
         return {}
 
@@ -2149,8 +2141,682 @@ class RatingService:
         except Exception as e:
             self.logger.error(f"Error cleaning up rating cache: {e}")
 
-# ==================== DATABASE MANAGER ====================
 
+class TVDBAPIv4:
+    """
+    Complete TVDB API v4 implementation supporting both licensed and subscriber access modes.
+    """
+
+    def __init__(self, config: TVDBConfig, logger: logging.Logger):
+        """Initialize TVDB API v4 client."""
+        self.config = config
+        self.logger = logger
+        self.session = None
+
+        # Authentication state
+        self.token = None
+        self.token_expires_at = None
+        self.last_auth_attempt = 0
+
+        # Determine access mode
+        self.access_mode = self._determine_access_mode()
+
+        # Rate limiting based on access mode
+        if self.access_mode == 'subscriber':
+            self.min_request_interval = 2.0  # Conservative for subscriber access
+        else:
+            self.min_request_interval = 1.0  # More relaxed for licensed access
+
+        self.last_request_time = {}
+
+        self.logger.info(f"TVDB API v4 initialized in {self.access_mode} mode")
+
+    def _determine_access_mode(self) -> str:
+        """Determine the access mode based on configuration."""
+        if self.config.access_mode != 'auto':
+            return self.config.access_mode
+
+        # Auto-detection logic
+        if self.config.subscriber_pin:
+            return 'subscriber'
+        elif self.config.api_key:
+            return 'licensed'
+        else:
+            return 'disabled'
+
+    async def initialize(self, session: aiohttp.ClientSession):
+        """Initialize with shared HTTP session."""
+        self.session = session
+
+        if self.access_mode != 'disabled':
+            await self._authenticate()
+
+    async def _authenticate(self) -> bool:
+        """
+        Authenticate with TVDB API v4 to get JWT token.
+
+        Returns:
+            True if authentication successful, False otherwise
+        """
+        if not self.config.api_key:
+            self.logger.error("TVDB API key not configured")
+            return False
+
+        # Avoid rapid re-authentication attempts
+        current_time = time.time()
+        if current_time - self.last_auth_attempt < 30:
+            return False
+
+        self.last_auth_attempt = current_time
+
+        try:
+            # Prepare authentication payload
+            auth_payload = {
+                "apikey": self.config.api_key
+            }
+
+            # Add PIN for subscriber mode
+            if self.access_mode == 'subscriber' and self.config.subscriber_pin:
+                auth_payload["pin"] = self.config.subscriber_pin
+
+            self.logger.debug(f"Authenticating with TVDB API v4 in {self.access_mode} mode")
+
+            async with self.session.post(
+                    f"{self.config.base_url}/login",
+                    json=auth_payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=self.request_timeout
+            ) as response:
+
+                if response.status == 200:
+                    data = await response.json()
+
+                    if "data" in data and "token" in data["data"]:
+                        self.token = data["data"]["token"]
+                        # JWT tokens are valid for 1 month
+                        self.token_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+                        self.logger.info(f"TVDB API v4 authentication successful ({self.access_mode} mode)")
+                        return True
+                    else:
+                        self.logger.error(f"TVDB API v4 auth failed: No token in response - {data}")
+                        return False
+
+                elif response.status == 401:
+                    error_text = await response.text()
+                    if self.access_mode == 'subscriber':
+                        self.logger.error(f"TVDB API v4 auth failed: Invalid API key or subscriber PIN - {error_text}")
+                    else:
+                        self.logger.error(f"TVDB API v4 auth failed: Invalid API key - {error_text}")
+                    return False
+
+                else:
+                    error_text = await response.text()
+                    self.logger.error(f"TVDB API v4 auth failed: HTTP {response.status} - {error_text}")
+                    return False
+
+        except asyncio.TimeoutError:
+            self.logger.error("TVDB API v4 authentication timeout")
+            return False
+        except Exception as e:
+            self.logger.error(f"TVDB API v4 authentication error: {e}")
+            return False
+
+    async def _ensure_authenticated(self) -> bool:
+        """Ensure we have a valid authentication token."""
+        # Check if token exists and is not expired (refresh 1 day before expiry)
+        if (self.token and self.token_expires_at and
+                datetime.now(timezone.utc) < self.token_expires_at - timedelta(days=1)):
+            return True
+
+        # Re-authenticate
+        return await self._authenticate()
+
+    async def _rate_limit_check(self) -> None:
+        """Implement rate limiting based on access mode."""
+        current_time = time.time()
+        service_key = f"tvdb_{self.access_mode}"
+
+        last_request = self.last_request_time.get(service_key, 0)
+        time_since_last = current_time - last_request
+
+        if time_since_last < self.min_request_interval:
+            sleep_time = self.min_request_interval - time_since_last
+            await asyncio.sleep(sleep_time)
+
+        self.last_request_time[service_key] = time.time()
+
+    async def get_series_rating(self, tvdb_id: str) -> Dict[str, Any]:
+        """
+        Get series rating from TVDB API v4.
+
+        Args:
+            tvdb_id: TVDB series ID
+
+        Returns:
+            Dictionary with rating data and attribution info
+        """
+        if self.access_mode == 'disabled':
+            return {}
+
+        if not await self._ensure_authenticated():
+            self.logger.error("TVDB API v4 authentication failed, skipping rating fetch")
+            return {}
+
+        try:
+            await self._rate_limit_check()
+
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json"
+            }
+
+            async with self.session.get(
+                    f"{self.config.base_url}/series/{tvdb_id}",
+                    headers=headers,
+                    timeout=self.request_timeout
+            ) as response:
+
+                if response.status == 200:
+                    data = await response.json()
+
+                    if "data" in data:
+                        series_data = data["data"]
+                        score = series_data.get("score")
+
+                        if score is not None:
+                            return {
+                                'tvdb': {
+                                    'value': round(score, 1),
+                                    'scale': '10',
+                                    'source': 'TVDb',
+                                    'access_mode': self.access_mode,
+                                    'attribution_required': True,
+                                    'attribution_text': 'Metadata provided by TheTVDB',
+                                    'attribution_url': 'https://thetvdb.com'
+                                }
+                            }
+
+                elif response.status == 401:
+                    self.logger.warning(f"TVDB API v4 token expired, attempting re-authentication")
+                    if await self._authenticate():
+                        # Retry once with new token
+                        return await self.get_series_rating(tvdb_id)
+
+                elif response.status == 404:
+                    self.logger.debug(f"TVDB series not found: {tvdb_id}")
+
+                else:
+                    error_text = await response.text()
+                    self.logger.warning(f"TVDB API v4 request failed: HTTP {response.status} - {error_text}")
+
+        except asyncio.TimeoutError:
+            self.logger.warning(f"TVDB API v4 request timeout for series {tvdb_id}")
+        except Exception as e:
+            self.logger.error(f"TVDB API v4 request error for series {tvdb_id}: {e}")
+
+        return {}
+
+    # These functions are currrently unused but could be used later to replace metadata from Jellyfin directly.
+    async def get_series_info(self, tvdb_id: str) -> Dict[str, Any]:
+        """
+        Get basic series information from TVDB API v4.
+
+        Args:
+            tvdb_id: TVDB series ID
+
+        Returns:
+            Dictionary with basic series information
+        """
+        if self.access_mode == 'disabled':
+            return {}
+
+        if not await self._ensure_authenticated():
+            return {}
+
+        try:
+            await self._rate_limit_check()
+
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json"
+            }
+
+            async with self.session.get(
+                    f"{self.config.base_url}/series/{tvdb_id}",
+                    headers=headers,
+                    timeout=self.request_timeout
+            ) as response:
+
+                if response.status == 200:
+                    data = await response.json()
+
+                    if "data" in data:
+                        series_data = data["data"]
+
+                        return {
+                            'id': series_data.get('id'),
+                            'name': series_data.get('name'),
+                            'slug': series_data.get('slug'),
+                            'overview': series_data.get('overview'),
+                            'firstAired': series_data.get('firstAired'),
+                            'lastAired': series_data.get('lastAired'),
+                            'status': series_data.get('status', {}).get('name'),
+                            'country': series_data.get('country'),
+                            'originalCountry': series_data.get('originalCountry'),
+                            'originalLanguage': series_data.get('originalLanguage'),
+                            'defaultSeasonType': series_data.get('defaultSeasonType'),
+                            'isOrderRandomized': series_data.get('isOrderRandomized'),
+                            'score': series_data.get('score'),
+                            'image': series_data.get('image'),
+                            'nameTranslations': series_data.get('nameTranslations', []),
+                            'overviewTranslations': series_data.get('overviewTranslations', []),
+                            'aliases': series_data.get('aliases', []),
+                            'genres': [genre.get('name') for genre in series_data.get('genres', [])],
+                            'companies': [
+                                {
+                                    'id': company.get('company', {}).get('id'),
+                                    'name': company.get('company', {}).get('name'),
+                                    'companyType': company.get('companyType', {}).get('companyTypeName')
+                                }
+                                for company in series_data.get('companies', [])
+                            ],
+                            'originalNetwork': series_data.get('originalNetwork', {}).get('name'),
+                            'latestNetwork': series_data.get('latestNetwork', {}).get('name'),
+                            'averageRuntime': series_data.get('averageRuntime'),
+                            'seasonTypes': [
+                                {
+                                    'id': season_type.get('id'),
+                                    'name': season_type.get('name'),
+                                    'type': season_type.get('type')
+                                }
+                                for season_type in series_data.get('seasonTypes', [])
+                            ],
+                            'attribution_required': True,
+                            'attribution_text': 'Metadata provided by TheTVDB',
+                            'attribution_url': 'https://thetvdb.com'
+                        }
+
+                elif response.status == 401:
+                    self.logger.warning("TVDB API v4 token expired during series info fetch")
+                    if await self._authenticate():
+                        return await self.get_series_info(tvdb_id)
+
+                elif response.status == 404:
+                    self.logger.debug(f"TVDB series not found: {tvdb_id}")
+
+                else:
+                    error_text = await response.text()
+                    self.logger.warning(f"TVDB series info request failed: HTTP {response.status} - {error_text}")
+
+        except asyncio.TimeoutError:
+            self.logger.warning(f"TVDB series info request timeout for {tvdb_id}")
+        except Exception as e:
+            self.logger.error(f"TVDB series info request error for {tvdb_id}: {e}")
+
+        return {}
+
+    async def get_series_extended_info(self, tvdb_id: str) -> Dict[str, Any]:
+        """
+        Get extended series information from TVDB API v4.
+
+        Args:
+            tvdb_id: TVDB series ID
+
+        Returns:
+            Dictionary with extended series information including artwork, trailers, etc.
+        """
+        if self.access_mode == 'disabled':
+            return {}
+
+        if not await self._ensure_authenticated():
+            return {}
+
+        try:
+            await self._rate_limit_check()
+
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json"
+            }
+
+            async with self.session.get(
+                    f"{self.config.base_url}/series/{tvdb_id}/extended",
+                    headers=headers,
+                    timeout=self.request_timeout
+            ) as response:
+
+                if response.status == 200:
+                    data = await response.json()
+
+                    if "data" in data:
+                        series_data = data["data"]
+
+                        return {
+                            # Basic info (same as get_series_info)
+                            'id': series_data.get('id'),
+                            'name': series_data.get('name'),
+                            'slug': series_data.get('slug'),
+                            'overview': series_data.get('overview'),
+                            'firstAired': series_data.get('firstAired'),
+                            'lastAired': series_data.get('lastAired'),
+                            'status': series_data.get('status', {}).get('name'),
+                            'score': series_data.get('score'),
+
+                            # Extended info
+                            'nextAired': series_data.get('nextAired'),
+                            'year': series_data.get('year'),
+                            'episodes': [
+                                {
+                                    'id': episode.get('id'),
+                                    'name': episode.get('name'),
+                                    'overview': episode.get('overview'),
+                                    'aired': episode.get('aired'),
+                                    'seasonNumber': episode.get('seasonNumber'),
+                                    'number': episode.get('number'),
+                                    'absoluteNumber': episode.get('absoluteNumber'),
+                                    'runtime': episode.get('runtime'),
+                                    'image': episode.get('image')
+                                }
+                                for episode in series_data.get('episodes', [])
+                            ],
+                            'artworks': [
+                                {
+                                    'id': artwork.get('id'),
+                                    'image': artwork.get('image'),
+                                    'type': artwork.get('type'),
+                                    'language': artwork.get('language'),
+                                    'score': artwork.get('score'),
+                                    'width': artwork.get('width'),
+                                    'height': artwork.get('height')
+                                }
+                                for artwork in series_data.get('artworks', [])
+                            ],
+                            'trailers': [
+                                {
+                                    'id': trailer.get('id'),
+                                    'name': trailer.get('name'),
+                                    'url': trailer.get('url'),
+                                    'language': trailer.get('language'),
+                                    'runtime': trailer.get('runtime')
+                                }
+                                for trailer in series_data.get('trailers', [])
+                            ],
+                            'characters': [
+                                {
+                                    'id': character.get('id'),
+                                    'name': character.get('name'),
+                                    'peopleId': character.get('peopleId'),
+                                    'seriesId': character.get('seriesId'),
+                                    'movie': character.get('movie'),
+                                    'movieId': character.get('movieId'),
+                                    'episodeId': character.get('episodeId'),
+                                    'type': character.get('type'),
+                                    'image': character.get('image'),
+                                    'sort': character.get('sort'),
+                                    'isFeatured': character.get('isFeatured'),
+                                    'peopleType': character.get('peopleType'),
+                                    'personName': character.get('personName'),
+                                    'tagOptions': character.get('tagOptions')
+                                }
+                                for character in series_data.get('characters', [])
+                            ],
+                            'remoteIds': [
+                                {
+                                    'id': remote_id.get('id'),
+                                    'type': remote_id.get('type'),
+                                    'sourceName': remote_id.get('sourceName')
+                                }
+                                for remote_id in series_data.get('remoteIds', [])
+                            ],
+                            'seasons': [
+                                {
+                                    'id': season.get('id'),
+                                    'name': season.get('name'),
+                                    'number': season.get('number'),
+                                    'nameTranslations': season.get('nameTranslations', []),
+                                    'overviewTranslations': season.get('overviewTranslations', []),
+                                    'image': season.get('image'),
+                                    'imageType': season.get('imageType'),
+                                    'companies': season.get('companies', []),
+                                    'seriesId': season.get('seriesId'),
+                                    'type': season.get('type', {}).get('name'),
+                                    'year': season.get('year')
+                                }
+                                for season in series_data.get('seasons', [])
+                            ],
+                            'tags': [
+                                {
+                                    'id': tag.get('id'),
+                                    'name': tag.get('name'),
+                                    'tagName': tag.get('tagName'),
+                                    'helpText': tag.get('helpText')
+                                }
+                                for tag in series_data.get('tags', [])
+                            ],
+                            'contentRatings': [
+                                {
+                                    'id': rating.get('id'),
+                                    'name': rating.get('name'),
+                                    'country': rating.get('country'),
+                                    'contentType': rating.get('contentType'),
+                                    'order': rating.get('order'),
+                                    'fullname': rating.get('fullname')
+                                }
+                                for rating in series_data.get('contentRatings', [])
+                            ],
+                            'lists': [
+                                {
+                                    'id': list_item.get('id'),
+                                    'name': list_item.get('name'),
+                                    'overview': list_item.get('overview'),
+                                    'url': list_item.get('url'),
+                                    'isOfficial': list_item.get('isOfficial')
+                                }
+                                for list_item in series_data.get('lists', [])
+                            ],
+                            'attribution_required': True,
+                            'attribution_text': 'Metadata provided by TheTVDB',
+                            'attribution_url': 'https://thetvdb.com'
+                        }
+
+                elif response.status == 401:
+                    self.logger.warning("TVDB API v4 token expired during extended info fetch")
+                    if await self._authenticate():
+                        return await self.get_series_extended_info(tvdb_id)
+
+                elif response.status == 404:
+                    self.logger.debug(f"TVDB series not found: {tvdb_id}")
+
+                else:
+                    error_text = await response.text()
+                    self.logger.warning(f"TVDB extended info request failed: HTTP {response.status} - {error_text}")
+
+        except asyncio.TimeoutError:
+            self.logger.warning(f"TVDB extended info request timeout for {tvdb_id}")
+        except Exception as e:
+            self.logger.error(f"TVDB extended info request error for {tvdb_id}: {e}")
+
+        return {}
+
+    async def get_series_episodes(self, tvdb_id: str, season_type: str = "default") -> List[Dict[str, Any]]:
+        """
+        Get episodes for a series from TVDB API v4.
+
+        Args:
+            tvdb_id: TVDB series ID
+            season_type: Type of season ordering (default, dvd, absolute, etc.)
+
+        Returns:
+            List of episode dictionaries
+        """
+        if self.access_mode == 'disabled':
+            return []
+
+        if not await self._ensure_authenticated():
+            return []
+
+        try:
+            await self._rate_limit_check()
+
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json"
+            }
+
+            # Build query parameters
+            params = {}
+            if season_type != "default":
+                params['season-type'] = season_type
+
+            # Construct URL with parameters
+            url = f"{self.config.base_url}/series/{tvdb_id}/episodes/default"
+            if params:
+                query_string = "&".join([f"{k}={v}" for k, v in params.items()])
+                url += f"?{query_string}"
+
+            async with self.session.get(
+                    url,
+                    headers=headers,
+                    timeout=self.request_timeout
+            ) as response:
+
+                if response.status == 200:
+                    data = await response.json()
+
+                    if "data" in data and "episodes" in data["data"]:
+                        episodes = []
+
+                        for episode in data["data"]["episodes"]:
+                            episodes.append({
+                                'id': episode.get('id'),
+                                'name': episode.get('name'),
+                                'overview': episode.get('overview'),
+                                'aired': episode.get('aired'),
+                                'seasonNumber': episode.get('seasonNumber'),
+                                'number': episode.get('number'),
+                                'absoluteNumber': episode.get('absoluteNumber'),
+                                'runtime': episode.get('runtime'),
+                                'image': episode.get('image'),
+                                'imageType': episode.get('imageType'),
+                                'isMovie': episode.get('isMovie'),
+                                'seasons': episode.get('seasons', []),
+                                'nameTranslations': episode.get('nameTranslations', []),
+                                'overviewTranslations': episode.get('overviewTranslations', []),
+                                'year': episode.get('year'),
+                                'seriesId': episode.get('seriesId'),
+                                'series': episode.get('series', {}).get('name'),
+                                'lastUpdated': episode.get('lastUpdated'),
+                                'finaleType': episode.get('finaleType'),
+                                'attribution_required': True,
+                                'attribution_text': 'Metadata provided by TheTVDB',
+                                'attribution_url': 'https://thetvdb.com'
+                            })
+
+                        return episodes
+
+                elif response.status == 401:
+                    self.logger.warning("TVDB API v4 token expired during episodes fetch")
+                    if await self._authenticate():
+                        return await self.get_series_episodes(tvdb_id, season_type)
+
+                elif response.status == 404:
+                    self.logger.debug(f"TVDB series episodes not found: {tvdb_id}")
+
+                else:
+                    error_text = await response.text()
+                    self.logger.warning(f"TVDB episodes request failed: HTTP {response.status} - {error_text}")
+
+        except asyncio.TimeoutError:
+            self.logger.warning(f"TVDB episodes request timeout for {tvdb_id}")
+        except Exception as e:
+            self.logger.error(f"TVDB episodes request error for {tvdb_id}: {e}")
+
+        return []
+
+    async def search_series(self, query: str, type: str = "series") -> List[Dict[str, Any]]:
+        """
+        Search for series on TVDB API v4.
+
+        Args:
+            query: Search query string
+            type: Type of search (series, movie, person, company)
+
+        Returns:
+            List of search result dictionaries
+        """
+        if self.access_mode == 'disabled':
+            return []
+
+        if not await self._ensure_authenticated():
+            return []
+
+        try:
+            await self._rate_limit_check()
+
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json"
+            }
+
+            # URL encode the query
+            from urllib.parse import quote_plus
+            encoded_query = quote_plus(query)
+
+            async with self.session.get(
+                    f"{self.config.base_url}/search?query={encoded_query}&type={type}",
+                    headers=headers,
+                    timeout=self.request_timeout
+            ) as response:
+
+                if response.status == 200:
+                    data = await response.json()
+
+                    if "data" in data:
+                        results = []
+
+                        for result in data["data"]:
+                            results.append({
+                                'id': result.get('id'),
+                                'name': result.get('name'),
+                                'slug': result.get('slug'),
+                                'image': result.get('image'),
+                                'firstAired': result.get('first_air_time'),
+                                'overview': result.get('overview'),
+                                'status': result.get('status'),
+                                'type': result.get('type'),
+                                'year': result.get('year'),
+                                'country': result.get('country'),
+                                'network': result.get('network'),
+                                'remote_ids': result.get('remote_ids', []),
+                                'translations': result.get('translations', {}),
+                                'attribution_required': True,
+                                'attribution_text': 'Metadata provided by TheTVDB',
+                                'attribution_url': 'https://thetvdb.com'
+                            })
+
+                        return results
+
+                elif response.status == 401:
+                    self.logger.warning("TVDB API v4 token expired during search")
+                    if await self._authenticate():
+                        return await self.search_series(query, type)
+
+                elif response.status == 404:
+                    self.logger.debug(f"TVDB search returned no results for: {query}")
+
+                else:
+                    error_text = await response.text()
+                    self.logger.warning(f"TVDB search request failed: HTTP {response.status} - {error_text}")
+
+        except asyncio.TimeoutError:
+            self.logger.warning(f"TVDB search request timeout for query: {query}")
+        except Exception as e:
+            self.logger.error(f"TVDB search request error for query '{query}': {e}")
+
+        return []
+
+
+# ==================== DATABASE MANAGER ====================
 class DatabaseManager:
     """
     Enhanced SQLite database manager with WAL mode and comprehensive error handling.
@@ -3683,6 +4349,14 @@ class DiscordNotifier:
                         self.logger.debug(f"Retrieved {len(ratings)} rating sources for {item.name}")
                 except Exception as e:
                     self.logger.warning(f"Failed to fetch ratings for {item.name}: {e}")
+
+            # Check if TVDB ratings are included and add attribution flag
+            tvdb_attribution_needed = False
+            if ratings:
+                for rating_key, rating_data in ratings.items():
+                    if rating_key == 'tvdb' and rating_data.get('attribution_required'):
+                        tvdb_attribution_needed = True
+                        break
 
             # Template data (ENHANCED)
             template_data = {
