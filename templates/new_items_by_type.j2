@@ -20,10 +20,13 @@
           "inline": false
         }
         {% endif %}
-      ],
+      ]{% set first_movie = new_items|first %}{% if first_movie %},
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
-      }
+        "url": "{{ jellyfin_url }}/Items/{{ first_movie.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
+      },
+      "image": {
+        "url": "{{ jellyfin_url }}/Items/{{ first_movie.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
+      }{% endif %}
     }{% if has_upgraded %},{% endif %}
     {% if has_upgraded %}
     {
@@ -45,10 +48,13 @@
           "inline": false
         }
         {% endif %}
-      ],
+      ]{% set first_upgraded_movie = upgraded_items|first %}{% if first_upgraded_movie %},
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
-      }
+        "url": "{{ jellyfin_url }}/Items/{{ first_upgraded_movie.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
+      },
+      "image": {
+        "url": "{{ jellyfin_url }}/Items/{{ first_upgraded_movie.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
+      }{% endif %}
     }
     {% endif %}
     {% elif category == 'tv' %}
@@ -71,10 +77,10 @@
           "inline": false
         }
         {% endif %}
-      ],
+      ]{% set first_episode = new_items|first %}{% if first_episode %},
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
-      }
+        "url": "{% if first_episode.item.series_id %}{{ jellyfin_url }}/Items/{{ first_episode.item.series_id }}/Images/Primary?maxHeight=400&maxWidth=300{% else %}{{ jellyfin_url }}/Items/{{ first_episode.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300{% endif %}"
+      }{% endif %}
     }{% if has_upgraded %},{% endif %}
     {% if has_upgraded %}
     {
@@ -96,10 +102,10 @@
           "inline": false
         }
         {% endif %}
-      ],
+      ]{% set first_upgraded_episode = upgraded_items|first %}{% if first_upgraded_episode %},
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
-      }
+        "url": "{% if first_upgraded_episode.item.series_id %}{{ jellyfin_url }}/Items/{{ first_upgraded_episode.item.series_id }}/Images/Primary?maxHeight=400&maxWidth=300{% else %}{{ jellyfin_url }}/Items/{{ first_upgraded_episode.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300{% endif %}"
+      }{% endif %}
     }
     {% endif %}
     {% elif category == 'music' %}
@@ -122,10 +128,10 @@
           "inline": false
         }
         {% endif %}
-      ],
+      ]{% set first_music = new_items|first %}{% if first_music %},
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
-      }
+        "url": "{{ jellyfin_url }}/Items/{{ first_music.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
+      }{% endif %}
     }{% if has_upgraded %},{% endif %}
     {% if has_upgraded %}
     {
@@ -147,10 +153,10 @@
           "inline": false
         }
         {% endif %}
-      ],
+      ]{% set first_upgraded_music = upgraded_items|first %}{% if first_upgraded_music %},
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
-      }
+        "url": "{{ jellyfin_url }}/Items/{{ first_upgraded_music.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
+      }{% endif %}
     }
     {% endif %}
     {% else %}
@@ -173,13 +179,42 @@
           "inline": false
         }
         {% endif %}
-      ],
+      ]{% set first_item = new_items|first %}{% if first_item %},
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
-      }
+        "url": "{{ jellyfin_url }}/Items/{{ first_item.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
+      }{% endif %}
     }{% if has_upgraded %},{% endif %}
     {% if has_upgraded %}
     {
       "title": "⬆️ Items Upgraded ({{ upgraded_items|length }})",
       "description": "The following items have been upgraded in Jellyfin:",
-      "colo
+      "color": 16766720,
+      "fields": [
+        {% for item_data in upgraded_items[:8] %}
+        {
+          "name": "{{ item_data.item.name }}{% if item_data.item.item_type %} ({{ item_data.item.item_type }}){% endif %}",
+          "value": "{% if item_data.item.video_height %}📐 {{ item_data.item.video_height }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.changes|length > 0 %}\n\n**🔄 Upgrades**: {% for change in item_data.changes[:2] %}{% if change.type == 'resolution' %}{{ change.old_value or 'Unknown' }}p→**{{ change.new_value or 'Unknown' }}p**{% elif change.type == 'codec' %}{{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_codec' %}Audio: {{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_channels' %}{{ change.old_value or 0 }}ch→**{{ change.new_value or 0 }}ch**{% elif change.type == 'hdr_status' %}{{ change.old_value or 'SDR' }}→**{{ change.new_value or 'SDR' }}**{% else %}{{ change.description }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% if item_data.changes|length > 2 %} +{{ item_data.changes|length - 2 }} more{% endif %}{% endif %}{% if item_data.ratings and item_data.ratings|length > 0 %}\n⭐ {% for rating_key, rating_data in item_data.ratings.items() %}{% if rating_key == 'imdb' %}**IMDb**: {{ rating_data.value }}{% elif rating_key == 'tmdb' %}**TMDb**: {{ rating_data.value }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}",
+          "inline": false
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+        {% if upgraded_items|length > 8 %}
+        ,{
+          "name": "⬆️ Additional Upgrades",
+          "value": "...and {{ upgraded_items|length - 8 }} more items were upgraded.",
+          "inline": false
+        }
+        {% endif %}
+      ]{% set first_upgraded_item = upgraded_items|first %}{% if first_upgraded_item %},
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/Items/{{ first_upgraded_item.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
+      }{% endif %}
+    }
+    {% endif %}
+    {% endif %},
+    "footer": {
+      "text": "{% if category == 'movies' %}Movies{% elif category == 'tv' %}TV Shows{% elif category == 'music' %}Music{% else %}Items{% endif %} • {{ timestamp[:19] | replace('T', ' ') }} UTC{% if tvdb_attribution_needed %}\nMetadata provided by TheTVDB{% endif %}",
+      "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
+    },
+    "timestamp": "{{ timestamp }}"
+  ]
+}

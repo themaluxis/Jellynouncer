@@ -30,7 +30,7 @@
         {% endif %}
       ],
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/web/favicon.ico"
+        "url": "{% if is_online %}{{ jellyfin_url }}/web/assets/img/banner-light.png{% else %}{{ jellyfin_url }}/web/favicon.ico{% endif %}"
       },
       "footer": {
         "text": "JellyNotify Monitor Service • Automated System Notification",

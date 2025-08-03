@@ -29,4 +29,25 @@
         {% if 'other' in categories %}
         {
           "name": "📁 Other Content",
-          "value": "{% if categories.other.new|length > 0 %}**New Items ({{ categories.other.new|length }})**: {% for item_data in categories.other.new[:4] %}{{ item_data.item
+          "value": "{% if categories.other.new|length > 0 %}**New Items ({{ categories.other.new|length }})**: {% for item_data in categories.other.new[:4] %}{{ item_data.item.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if categories.other.new|length > 4 %}, +{{ categories.other.new|length - 4 }} more{% endif %}{% endif %}{% if categories.other.new|length > 0 and categories.other.upgraded|length > 0 %}\n{% endif %}{% if categories.other.upgraded|length > 0 %}**Upgraded Items ({{ categories.other.upgraded|length }})**: {% for item_data in categories.other.upgraded[:4] %}{{ item_data.item.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if categories.other.upgraded|length > 4 %}, +{{ categories.other.upgraded|length - 4 }} more{% endif %}{% endif %}",
+          "inline": false
+        }
+        {% endif %}
+      ]{% set first_movie = categories.movies.new|first if 'movies' in categories and categories.movies.new|length > 0 else categories.movies.upgraded|first if 'movies' in categories and categories.movies.upgraded|length > 0 else none %}{% set first_series_or_episode = categories.tv.new|selectattr('item.item_type', 'equalto', 'Series')|first if 'tv' in categories and categories.tv.new|length > 0 else categories.tv.new|first if 'tv' in categories and categories.tv.new|length > 0 else categories.tv.upgraded|selectattr('item.item_type', 'equalto', 'Series')|first if 'tv' in categories and categories.tv.upgraded|length > 0 else categories.tv.upgraded|first if 'tv' in categories and categories.tv.upgraded|length > 0 else none %}{% set first_music = categories.music.new|first if 'music' in categories and categories.music.new|length > 0 else categories.music.upgraded|first if 'music' in categories and categories.music.upgraded|length > 0 else none %}{% set first_other = categories.other.new|first if 'other' in categories and categories.other.new|length > 0 else categories.other.upgraded|first if 'other' in categories and categories.other.upgraded|length > 0 else none %}{% if first_movie or first_series_or_episode or first_music or first_other %},
+      "thumbnail": {
+        "url": "{% if first_movie %}{{ jellyfin_url }}/Items/{{ first_movie.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300{% elif first_series_or_episode and first_series_or_episode.item.item_type == 'Series' %}{{ jellyfin_url }}/Items/{{ first_series_or_episode.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300{% elif first_series_or_episode and first_series_or_episode.item.series_id %}{{ jellyfin_url }}/Items/{{ first_series_or_episode.item.series_id }}/Images/Primary?maxHeight=400&maxWidth=300{% elif first_music %}{{ jellyfin_url }}/Items/{{ first_music.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300{% elif first_other %}{{ jellyfin_url }}/Items/{{ first_other.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300{% else %}{{ jellyfin_url }}/web/assets/img/banner-light.png{% endif %}"
+      }{% endif %}{% if first_movie %},
+      "image": {
+        "url": "{{ jellyfin_url }}/Items/{{ first_movie.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
+      }{% elif first_series_or_episode and first_series_or_episode.item.item_type == 'Series' %},
+      "image": {
+        "url": "{{ jellyfin_url }}/Items/{{ first_series_or_episode.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
+      }{% endif %},
+      "footer": {
+        "text": "Jellyfin Library Updates • {{ timestamp[:19] | replace('T', ' ') }} UTC{% if tvdb_attribution_needed %}\nMetadata provided by TheTVDB{% endif %}",
+        "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
+      },
+      "timestamp": "{{ timestamp }}"
+    }
+  ]
+}
