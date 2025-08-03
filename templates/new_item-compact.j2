@@ -1,0 +1,18 @@
+{
+  "embeds": [
+    {
+      "title": "{% if item.item_type == 'Episode' %}📺{% elif item.item_type == 'Movie' %}🎬{% elif item.item_type == 'Audio' %}🎵{% elif item.item_type == 'Photo' %}📷{% else %}📁{% endif %} New {{ item.item_type }}",
+      "description": "{% if item.item_type == 'Episode' %}**{{ item.series_name }}** S{{ '%02d'|format(item.season_number or 0) }}E{{ '%02d'|format(item.episode_number or 0) }} • {{ item.name }}{% elif item.item_type == 'Audio' %}**{{ item.name }}**{% if item.artists and item.artists|length > 0 %} by {{ item.artists[0] }}{% elif item.album_artist %} by {{ item.album_artist }}{% endif %}{% if item.album %} • {{ item.album }}{% endif %}{% else %}**{{ item.name }}**{% if item.year %} ({{ item.year }}){% endif %}{% endif %}{% if item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist', 'Photo'] and (item.video_height or item.video_codec or item.audio_codec) %}\n{% if item.video_height %}📐{{ item.video_height }}p{% if item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}{% endif %}{% if item.video_codec %}{% if item.video_height %} • {% endif %}🎞️{{ item.video_codec.upper() }}{% endif %}{% if item.audio_codec %}{% if item.video_height or item.video_codec %} • {% endif %}🔊{{ item.audio_codec.upper() }}{% if item.audio_channels %} {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% elif item.item_type == 'Audio' and (item.audio_codec or item.runtime_ticks) %}{% if item.audio_codec %}\n🔊{{ item.audio_codec.upper() }}{% if item.audio_channels %} {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item.runtime_ticks %}{% if item.audio_codec %} • {% else %}\n{% endif %}⏱️{{ ((item.runtime_ticks / 10000000) / 60) | round(1) }}min{% endif %}{% elif item.item_type == 'Photo' and (item.width or item.height or item.file_size) %}{% if item.width and item.height %}\n📐{{ item.width }}×{{ item.height }}{% endif %}{% if item.file_size %}{% if item.width and item.height %} • {% else %}\n{% endif %}💾{{ "%.1f"|format(item.file_size / 1048576) }}MB{% endif %}{% endif %}{% if item.file_size and item.item_type not in ['Audio', 'Photo'] %}\n💾{{ "%.1f"|format(item.file_size / 1073741824) }}GB{% endif %}",
+      "color": {{ color }},
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?maxHeight=150&maxWidth=100"
+      },
+      "footer": {
+        "text": "{{ timestamp[:19] | replace('T', ' ') }} UTC",
+        "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
+      },
+      "timestamp": "{{ timestamp }}",
+      "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.item_id }}"
+    }
+  ]
+}

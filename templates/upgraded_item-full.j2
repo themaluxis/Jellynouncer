@@ -1,0 +1,137 @@
+{
+  "embeds": [
+    {
+      "title": "⬆️ {{ item.item_type }} {% if changes|length == 1 %}{{ changes[0].type|title }} {% endif %}Upgraded",
+      "description": "{% if item.item_type == 'Episode' %}**{{ item.series_name }}** S{{ '%02d'|format(item.season_number or 0) }}E{{ '%02d'|format(item.episode_number or 0) }}\n{{ item.name }}{% elif item.item_type == 'Audio' %}{% if item.album %}**{{ item.album }}**{% if item.album_artist %} by {{ item.album_artist }}{% endif %}\n{% endif %}{{ item.name }}{% if item.artists and item.artists|length > 0 %} by {{ item.artists|join(', ') }}{% endif %}{% else %}**{{ item.name }}**{% if item.year %} ({{ item.year }}){% endif %}{% endif %}{% if item.overview and item.overview|length > 0 %}\n\n*{{ (item.overview[:150] + '...') if item.overview|length > 150 else item.overview }}*{% endif %}",
+      "color": {{ color }},
+      {% if item.item_type == 'Episode' and item.series_id %}
+      "author": {
+        "name": "{{ item.series_name }}",
+        "icon_url": "{{ jellyfin_url }}/Items/{{ item.series_id }}/Images/Logo?maxHeight=64&maxWidth=200",
+        "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.series_id }}"
+      },
+      {% endif %}
+      "fields": [
+        {# Upgrade Summary (non-inline for emphasis) #}
+        {
+          "name": "🔄 Upgrade Summary",
+          "value": "{% for change in changes[:5] %}**{% if change.type == 'resolution' %}📐 Resolution:{% elif change.type == 'codec' %}🎞️ Video Codec:{% elif change.type == 'audio_codec' %}🔊 Audio Codec:{% elif change.type == 'audio_channels' %}🔊 Audio Channels:{% elif change.type == 'hdr_status' %}🌈 HDR Status:{% elif change.type == 'file_size' %}💾 File:{% elif change.type == 'provider_ids' %}🔗 Metadata:{% else %}🔄 {{ change.type|title }}:{% endif %}** {% if change.type == 'resolution' %}{{ change.old_value or 'Unknown' }}p → **{{ change.new_value or 'Unknown' }}p**{% elif change.type == 'codec' %}{{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_codec' %}{{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_channels' %}{{ change.old_value or 0 }} ch → **{{ change.new_value or 0 }} ch**{% elif change.type == 'hdr_status' %}{{ change.old_value or 'SDR' }} → **{{ change.new_value or 'SDR' }}**{% elif change.type == 'file_size' %}File replaced{% if item.file_size %} ({{ "%.1f"|format(item.file_size / 1073741824) }}GB){% endif %}{% elif change.type == 'provider_ids' %}External IDs updated{% else %}{{ change.description or 'Updated' }}{% endif %}{% if not loop.last %}\n{% endif %}{% endfor %}{% if changes|length > 5 %}\n*...and {{ changes|length - 5 }} more changes*{% endif %}",
+          "inline": false
+        },
+
+        {# Current Technical Specifications (inline for quick overview) #}
+        {% if item.video_height and item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist'] %}
+        {
+          "name": "📐 Current Quality",
+          "value": "{{ item.video_height }}p{% if item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}{% if item.video_width %} ({{ item.video_width }}×{{ item.video_height }}){% endif %}",
+          "inline": true
+        },
+        {% endif %}
+        {% if item.video_codec and item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist'] %}
+        {
+          "name": "🎞️ Current Video",
+          "value": "{{ item.video_codec.upper() }}{% if item.video_profile %} {{ item.video_profile }}{% endif %}{% if item.video_framerate %} @ {{ item.video_framerate }}fps{% endif %}",
+          "inline": true
+        },
+        {% endif %}
+        {% if item.audio_codec %}
+        {
+          "name": "🔊 Current Audio",
+          "value": "{{ item.audio_codec.upper() }}{% if item.audio_channels %} {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% if item.audio_language %} ({{ item.audio_language }}){% endif %}",
+          "inline": true
+        },
+        {% endif %}
+
+        {# Current Video Technical Details (non-inline) #}
+        {% if item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist'] and (item.video_codec or item.video_height or item.aspect_ratio) %}
+        {
+          "name": "🎥 Current Video Details",
+          "value": "{% if item.video_height %}**Resolution:** {{ item.video_height }}p{% if item.video_width %} ({{ item.video_width }}×{{ item.video_height }}){% endif %}{% endif %}{% if item.video_codec %}\n**Codec:** {{ item.video_codec.upper() }}{% if item.video_profile %} ({{ item.video_profile }}){% endif %}{% endif %}{% if item.video_range and item.video_range != 'SDR' %}\n**HDR:** {{ item.video_range }}{% endif %}{% if item.aspect_ratio %}\n**Aspect Ratio:** {{ item.aspect_ratio }}{% endif %}{% if item.video_framerate %}\n**Frame Rate:** {{ item.video_framerate }} fps{% endif %}",
+          "inline": false
+        },
+        {% endif %}
+
+        {# Current Audio Technical Details (non-inline) #}
+        {% if item.audio_codec or item.audio_channels or item.audio_bitrate %}
+        {
+          "name": "🔊 Current Audio Details",
+          "value": "{% if item.audio_codec %}**Codec:** {{ item.audio_codec.upper() }}{% endif %}{% if item.audio_channels %}\n**Channels:** {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% if item.audio_language %}\n**Language:** {{ item.audio_language }}{% endif %}{% if item.audio_bitrate %}\n**Bitrate:** {{ item.audio_bitrate }} kbps{% endif %}",
+          "inline": false
+        },
+        {% endif %}
+
+        {# Music-specific Information #}
+        {% if item.item_type in ['Audio', 'MusicAlbum', 'MusicArtist'] %}
+        {
+          "name": "🎵 Music Information",
+          "value": "{% if item.album %}**Album:** {{ item.album }}{% endif %}{% if item.album_artist %}\n**Album Artist:** {{ item.album_artist }}{% endif %}{% if item.artists and item.artists|length > 0 %}\n**Artists:** {{ item.artists|join(', ') }}{% endif %}{% if item.runtime_ticks %}\n**Duration:** {{ ((item.runtime_ticks / 10000000) / 60) | round(1) }} minutes{% endif %}",
+          "inline": false
+        },
+        {% endif %}
+
+        {# Photo-specific Information #}
+        {% if item.item_type == 'Photo' and (item.width or item.height) %}
+        {
+          "name": "📷 Photo Information",
+          "value": "{% if item.width and item.height %}**Dimensions:** {{ item.width }}×{{ item.height }}{% endif %}{% if item.file_size %}\n**File Size:** {{ "%.2f"|format(item.file_size / 1048576) }} MB{% endif %}",
+          "inline": false
+        },
+        {% endif %}
+
+        {# Updated File Information #}
+        {% if item.file_size or item.runtime_ticks or item.date_modified %}
+        {
+          "name": "💾 Current File Information",
+          "value": "{% if item.file_size %}**Size:** {{ "%.2f"|format(item.file_size / 1073741824) }} GB{% endif %}{% if item.runtime_ticks and item.item_type not in ['Audio', 'Photo'] %}\n**Duration:** {% set hours = (item.runtime_ticks / 10000000 / 3600) | int %}{% set minutes = ((item.runtime_ticks / 10000000 % 3600) / 60) | int %}{% if hours > 0 %}{{ hours }}h {% endif %}{{ minutes }}m{% endif %}{% if item.date_modified %}\n**Last Modified:** {{ item.date_modified[:10] }}{% endif %}{% if item.date_created %}\n**Originally Added:** {{ item.date_created[:10] }}{% endif %}",
+          "inline": false
+        },
+        {% endif %}
+
+        {# External Provider IDs #}
+        {% if item.imdb_id or item.tmdb_id or item.tvdb_id %}
+        {
+          "name": "🔗 External Links",
+          "value": "{% if item.imdb_id %}[IMDb](https://www.imdb.com/title/{{ item.imdb_id }}){% endif %}{% if item.tmdb_id %}{% if item.imdb_id %} • {% endif %}[TMDb](https://www.themoviedb.org/{% if item.item_type == 'Movie' %}movie{% else %}tv{% endif %}/{{ item.tmdb_id }}){% endif %}{% if item.tvdb_id %}{% if item.imdb_id or item.tmdb_id %} • {% endif %}[TVDb](https://www.thetvdb.com/dereferrer/{% if item.item_type in ['Episode', 'Season', 'Series'] %}series{% else %}movie{% endif %}/{{ item.tvdb_id }}){% endif %}",
+          "inline": false
+        },
+        {% endif %}
+
+        {# Content Metadata #}
+        {% if item.genres or item.studios or item.official_rating %}
+        {
+          "name": "📋 Content Information",
+          "value": "{% if item.official_rating %}**Rating:** {{ item.official_rating }}{% endif %}{% if item.genres and item.genres|length > 0 %}\n**Genres:** {{ item.genres[:5]|join(', ') }}{% if item.genres|length > 5 %} (+{{ item.genres|length - 5 }} more){% endif %}{% endif %}{% if item.studios and item.studios|length > 0 %}\n**Studios:** {{ item.studios[:3]|join(', ') }}{% if item.studios|length > 3 %} (+{{ item.studios|length - 3 }} more){% endif %}{% endif %}{% if item.premiere_date %}\n**Release Date:** {{ item.premiere_date[:10] }}{% endif %}",
+          "inline": false
+        },
+        {% endif %}
+
+        {# Ratings Information (only if available) #}
+        {% if item.community_rating or item.critic_rating or item.omdb_imdb_rating or item.omdb_rt_rating or item.tmdb_rating %}
+        {
+          "name": "⭐ Ratings",
+          "value": "{% if item.community_rating %}**Community:** {{ item.community_rating }}/10{% endif %}{% if item.critic_rating %}{% if item.community_rating %} • {% endif %}**Critics:** {{ item.critic_rating }}/10{% endif %}{% if item.omdb_imdb_rating %}\n**IMDb:** {{ item.omdb_imdb_rating }}{% endif %}{% if item.omdb_rt_rating %}{% if item.omdb_imdb_rating %} • {% endif %}**RT:** {{ item.omdb_rt_rating }}{% endif %}{% if item.tmdb_rating %}{% if item.omdb_imdb_rating or item.omdb_rt_rating %} • {% endif %}**TMDb:** {{ item.tmdb_rating }}/10{% if item.tmdb_vote_count %} ({{ item.tmdb_vote_count }} votes){% endif %}{% endif %}",
+          "inline": false
+        },
+        {% endif %}
+
+        {# Tags (if present) #}
+        {% if item.tags and item.tags|length > 0 %}
+        {
+          "name": "🏷️ Tags",
+          "value": "{{ item.tags[:8]|join(', ') }}{% if item.tags|length > 8 %} (+{{ item.tags|length - 8 }} more){% endif %}",
+          "inline": false
+        }
+        {% endif %}
+      ],
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?maxHeight=300&maxWidth=200"
+      },
+      "footer": {
+        "text": "Upgraded in Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC{% if item.tvdb_id %}\nMetadata provided by TheTVDB{% endif %}",
+        "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
+      },
+      "timestamp": "{{ timestamp }}",
+      "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.item_id }}"
+    }
+  ]
+}
