@@ -370,10 +370,10 @@ graph TD
     
     %% API Endpoints
     DD[REST API Endpoints] --> C
-    DD --> EE[/webhook - Main Entry]
-    DD --> FF[/health - Status Check]
-    DD --> GG[/sync - Manual Sync]
-    DD --> HH[/stats - Analytics]
+    EE["/webhook - Main Entry"] --> C
+    FF["/health - Status Check"] --> C
+    GG["/sync - Manual Sync"] --> C
+    HH["/stats - Analytics"] --> C
     
     %% Styling
     classDef external fill:#e1f5fe
