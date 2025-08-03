@@ -318,40 +318,141 @@ sudo systemctl start jellynouncer
 
 ```mermaid
 graph TD
-    A[Jellyfin Media Server] -->|Webhook| B[Jellynouncer Service]
-    B --> C[Change Detection Engine]
-    C --> D[Database Storage]
-    B --> E[Discord Notification Router]
-    E --> F[Template Renderer]
-    F --> G[Discord Webhook API]
-    G --> H[Discord Channel 1 - Movies]
-    G --> I[Discord Channel 2 - TV Shows]
-    G --> J[Discord Channel 3 - Music]
+    %% External Systems
+    A[Jellyfin Media Server] -->|Webhook Payload| B[FastAPI Application]
     
-    B --> K[External APIs]
-    K --> L[OMDb/TMDb/TVDB]
+    %% Main Service Layer
+    B --> C[WebhookService - Main Orchestrator]
+    
+    %% Core Processing Components
+    C --> D[JellyfinAPI Client]
+    C --> E[Change Detection Engine]
+    C --> F[Database Manager]
+    C --> G[Discord Notification Router]
+    C --> H[Rating Services]
+    
+    %% Database Operations
+    E --> F
+    E --> I[Content Hash Comparison]
+    I --> F[(SQLite Database)]
+    F --> J[Media Item Storage]
+    F --> K[Change History]
+    F --> L[Rating Cache]
+    
+    %% External API Integration
+    H --> M[OMDb API]
+    H --> N[TMDb API] 
+    H --> O[TVDB API]
+    H --> F
+    
+    %% Discord Integration
+    G --> P[Webhook Router]
+    P --> Q[Template Renderer]
+    Q --> R[Jinja2 Templates]
+    R --> S[Discord Embed JSON]
+    
+    %% Multiple Discord Webhooks
+    S --> T[Discord Webhook API]
+    T --> U[Discord Channel 1 - Movies]
+    T --> V[Discord Channel 2 - TV Shows]
+    T --> W[Discord Channel 3 - Music]
+    T --> X[Discord Channel 4 - General]
+    
+    %% Configuration Management
+    Y[Configuration Files] --> Z[ConfigurationValidator]
+    Z --> C
+    
+    %% Background Services
+    C --> AA[Background Sync]
+    C --> BB[Health Monitoring]
+    C --> CC[Database Maintenance]
+    AA --> D
+    
+    %% API Endpoints
+    DD[REST API Endpoints] --> C
+    DD --> EE[/webhook - Main Entry]
+    DD --> FF[/health - Status Check]
+    DD --> GG[/sync - Manual Sync]
+    DD --> HH[/stats - Analytics]
+    
+    %% Styling
+    classDef external fill:#e1f5fe
+    classDef core fill:#f3e5f5  
+    classDef database fill:#e8f5e8
+    classDef discord fill:#fff3e0
+    classDef api fill:#fce4ec
+    
+    class A,M,N,O,U,V,W,X external
+    class C,D,E,G,H,P,Q core
+    class F,I,J,K,L database
+    class R,S,T discord
+    class B,DD,EE,FF,GG,HH api
+```
+
+### Detailed Component Flow
+
+#### 1. **Webhook Reception & Validation**
+```
+Jellyfin Server → FastAPI App → WebhookService → Payload Validation
+```
+
+#### 2. **Media Processing Pipeline**
+```
+Webhook Payload → Media Item Extraction → Database Lookup → Change Detection
+```
+
+#### 3. **Change Detection Logic**
+```
+Current Item → Content Hash → Database Comparison → Change Classification → Notification Decision
+```
+
+#### 4. **External Data Enrichment**
+```
+Media Item → Rating Services → [OMDb/TMDb/TVDB APIs] → Enhanced Metadata → Database Cache
+```
+
+#### 5. **Discord Notification Flow**
+```
+Notification Decision → Webhook Router → Template Selection → Jinja2 Rendering → Discord API → Multiple Channels
+```
+
+#### 6. **Background Operations**
+```
+Library Sync → Jellyfin API → Database Updates → Health Monitoring → Maintenance Tasks
 ```
 
 ### Smart Change Detection
 
 1. **Content Analysis**: When Jellyfin sends a webhook, Jellynouncer analyzes the media item's technical specifications
-2. **Database Comparison**: Compares against stored data to determine if this is new content or an upgrade
-3. **Change Classification**: Identifies specific improvements (resolution, codec, audio, HDR)
-4. **Notification Decision**: Decides whether changes are significant enough to warrant notification
+2. **Content Hash Generation**: Creates a unique fingerprint based on important media properties  
+3. **Database Comparison**: Compares against stored data to determine if this is new content or an upgrade
+4. **Change Classification**: Identifies specific improvements (resolution, codec, audio, HDR)
+5. **Significance Filtering**: Decides whether changes are significant enough to warrant notification
 
-### Multi-Webhook Routing
+### Multi-Webhook Routing & Template Processing
 
 1. **Content Type Detection**: Analyzes the item type (Movie, Episode, Audio, etc.)
 2. **Routing Rules**: Applies configured routing rules to select appropriate webhook
 3. **Fallback Logic**: Uses fallback webhook if specific webhook is unavailable
 4. **Template Selection**: Chooses appropriate template based on content and notification type
+5. **Data Collection**: Gathers all available metadata for the media item
+6. **Template Loading**: Loads appropriate Jinja2 template
+7. **Rendering**: Processes template with media data to generate Discord embed JSON
+8. **Validation**: Validates generated JSON meets Discord API requirements
 
-### Template Processing
+### External API Integration
 
-1. **Data Collection**: Gathers all available metadata for the media item
-2. **Template Loading**: Loads appropriate Jinja2 template
-3. **Rendering**: Processes template with media data to generate Discord embed JSON
-4. **Validation**: Validates generated JSON meets Discord API requirements
+1. **Rating Enrichment**: Fetches additional ratings and metadata from external sources
+2. **Caching Strategy**: Stores external data locally to reduce API calls and improve performance
+3. **Fallback Handling**: Gracefully handles API failures without breaking notifications
+4. **Rate Limiting**: Respects external API rate limits to maintain service reliability
+
+### Background Services
+
+1. **Library Synchronization**: Periodically syncs with Jellyfin to ensure database consistency
+2. **Health Monitoring**: Continuously monitors service health and external API availability  
+3. **Database Maintenance**: Performs cleanup, optimization, and backup operations
+4. **Configuration Watching**: Monitors configuration changes and applies updates dynamically
 
 ## 📡 API Endpoints
 
