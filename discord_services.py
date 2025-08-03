@@ -431,7 +431,8 @@ class DiscordNotifier:
                 'thumbnail_url': thumbnail_url,
                 'jellyfin_url': self.jellyfin_url,
                 'ratings': ratings,
-                'tvdb_url_info': tvdb_url_info
+                'tvdb_url_info': tvdb_url_info,
+                'timestamp': datetime.now(timezone.utc).isoformat()  # Add missing timestamp
             }
 
             if self.debug_enabled:
@@ -458,8 +459,8 @@ class DiscordNotifier:
                         "embed_count": len(payload.get('embeds', [])) if payload.get('embeds') else 0
                     }, "DiscordNotifier")
 
-                    # Log the complete payload that will be sent to Discord
-                    _debug_log("📤 Complete Discord webhook payload", payload, "DiscordNotifier")
+                    # Log the complete JSON payload being sent to Discord
+                    _debug_log("📤 DISCORD WEBHOOK JSON PAYLOAD", payload, "DiscordNotifier")
 
             except Exception as e:
                 if self.debug_enabled:
