@@ -909,4 +909,4 @@ curl -v "http://your-jellyfin-server:8096/health"
 
 ---
 
-For more information about templates, see the [Templates README](../templates/Readme.md). For general usage and setup instructions, see the main project README.
+For more information about templates, see the [Templates README](../templates/README.md). For general usage and setup instructions, see the main project README.

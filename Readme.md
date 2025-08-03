@@ -235,7 +235,7 @@ For advanced configuration, create a `config/config.json` file:
 }
 ```
 
-**📖 [Complete Configuration Guide →](config/README.md)**
+**📖 [Complete Configuration Guide →](config/Readme.md)**
 
 ## 🔧 Manual Installation
 
@@ -515,7 +515,7 @@ Jellynouncer uses Jinja2 templates to generate Discord embeds. Templates can be 
 }
 ```
 
-**📖 [Complete Template Guide →](templates/README.md)**
+**📖 [Complete Template Guide →](templates/Readme.md)**
 
 ## 🛠️ Troubleshooting
 
@@ -598,9 +598,9 @@ When debug mode is enabled, you'll see additional information:
 
 | Document | Description |
 |----------|-------------|
-| [Configuration Guide](config/README.md) | Complete configuration options and examples |
-| [Template Guide](templates/README.md) | Template customization and examples |
-| [Advanced Templates](templates/README-AdvancedTemplates.md) | Advanced template features and techniques |
+| [Configuration Guide](config/Readme.md) | Complete configuration options and examples |
+| [Template Guide](templates/Readme.md) | Template customization and examples |
+| [Advanced Templates](templates/Readme-AdvancedTemplates.md) | Advanced template features and techniques |
 
 ## 🤝 Contributing
 
