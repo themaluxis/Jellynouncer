@@ -15,18 +15,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application files
-COPY main.py .
-COPY config_models.py .
-COPY webhook_models.py .
-COPY media_models.py .
-COPY database_manager.py .
-COPY jellyfin_api.py .
-COPY discord_services.py .
-COPY rating_services.py .
-COPY change_detector.py .
-COPY webhook_service.py .
-COPY utils.py .
+# Copy all Python application files except backup files
+COPY *.py .
+# Remove any backup files that might have been copied
+RUN rm -f *.bak 2>/dev/null || true
+
+# Copy entrypoint script
 COPY docker-entrypoint.sh /usr/local/bin/
 
 # Create defaults directory structure
@@ -51,7 +45,7 @@ EXPOSE 8080
 ENTRYPOINT ["docker-entrypoint.sh"]
 
 # Health check
-HEALTHCHECK --interval=60s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=300s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8080/health || exit 1
 
 # Run the application directly
