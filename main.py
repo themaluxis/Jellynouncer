@@ -471,6 +471,91 @@ class SyncConfig(BaseModel):
     api_request_delay: float = Field(default=0.1, ge=0.0, le=5.0)
 
 
+class RatingServiceConfig(BaseModel):
+    """
+    Configuration for individual rating service (OMDb, TMDb, TVDb).
+
+    This class represents configuration for a single external rating service,
+    including API credentials, endpoints, and operational settings.
+
+    Attributes:
+        enabled: Whether this rating service should be used
+        api_key: API key for the service (None if not configured)
+        base_url: Base URL for the service API
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=False, description="Whether rating service is enabled")
+    api_key: Optional[str] = Field(default=None, description="API key for the service")
+    base_url: str = Field(..., description="Base URL for the service API")
+
+    @field_validator('api_key')
+    @classmethod
+    def validate_api_key(cls, v: Optional[str]) -> Optional[str]:
+        """
+        Validate API key format (basic validation).
+
+        Args:
+            v: API key to validate
+
+        Returns:
+            Validated API key or None
+        """
+        if v is None:
+            return None
+
+        if not v.strip():
+            return None
+
+        # Basic validation - API keys should be non-empty strings
+        return v.strip()
+
+
+class RatingServicesConfig(BaseModel):
+    """
+    Configuration for all external rating services.
+
+    This class manages configuration for all supported external rating services
+    including OMDb, TMDb, and TVDb APIs.
+
+    Attributes:
+        enabled: Global enable/disable for all rating services
+        omdb: OMDb API configuration
+        tmdb: TMDb API configuration
+        tvdb: TVDb API configuration
+        cache_duration_hours: How long to cache rating data
+        request_timeout_seconds: Timeout for HTTP requests
+        retry_attempts: Number of retry attempts for failed requests
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=True, description="Global rating services enabled flag")
+    omdb: RatingServiceConfig = Field(
+        default_factory=lambda: RatingServiceConfig(
+            enabled=False,
+            api_key=None,
+            base_url="http://www.omdbapi.com/"
+        )
+    )
+    tmdb: RatingServiceConfig = Field(
+        default_factory=lambda: RatingServiceConfig(
+            enabled=False,
+            api_key=None,
+            base_url="https://api.themoviedb.org/3/"
+        )
+    )
+    tvdb: RatingServiceConfig = Field(
+        default_factory=lambda: RatingServiceConfig(
+            enabled=False,
+            api_key=None,
+            base_url="https://api4.thetvdb.com/v4/"
+        )
+    )
+    cache_duration_hours: int = Field(default=168, ge=1, le=8760, description="Rating cache duration in hours")
+    request_timeout_seconds: int = Field(default=10, ge=1, le=60, description="HTTP request timeout")
+    retry_attempts: int = Field(default=3, ge=1, le=10, description="Number of retry attempts")
+
+
 class AppConfig(BaseModel):
     """
     Top-level application configuration that combines all sub-configurations.
@@ -487,6 +572,7 @@ class AppConfig(BaseModel):
         notifications: Notification behavior settings
         server: Web server configuration
         sync: Library synchronization settings
+        rating_services: External rating services configuration
 
     Example:
         ```python
@@ -494,6 +580,7 @@ class AppConfig(BaseModel):
         config = AppConfig(
             jellyfin=JellyfinConfig(...),
             discord=DiscordConfig(...),
+            rating_services=RatingServicesConfig(...),
             # ... other configs with defaults
         )
         ```
@@ -507,6 +594,7 @@ class AppConfig(BaseModel):
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
     sync: SyncConfig = Field(default_factory=SyncConfig)
+    rating_services: RatingServicesConfig = Field(default_factory=RatingServicesConfig)
 
 
 # ==================== WEBHOOK PAYLOAD MODELS ====================
@@ -1284,7 +1372,7 @@ class RatingService:
         ```
     """
 
-    def __init__(self, config: Dict[str, Any], logger: logging.Logger):
+    def __init__(self, config: RatingServicesConfig, logger: logging.Logger):
         """
         Initialize rating service with configuration and logging.
 
@@ -1298,20 +1386,20 @@ class RatingService:
         self.db_manager = None
 
         # Extract API configuration and keys
-        self.enabled = config.get('enabled', False)
-        self.cache_duration_hours = config.get('cache_duration_hours', 168)  # 7 days default
-        self.request_timeout = config.get('request_timeout_seconds', 10)
-        self.retry_attempts = config.get('retry_attempts', 3)
+        self.enabled = config.enabled
+        self.cache_duration_hours = config.cache_duration_hours
+        self.request_timeout = config.request_timeout_seconds
+        self.retry_attempts = config.retry_attempts
 
         # API service configurations
-        self.omdb_config = config.get('omdb', {})
-        self.tmdb_config = config.get('tmdb', {})
-        self.tvdb_config = config.get('tvdb', {})
+        self.omdb_config = config.omdb
+        self.tmdb_config = config.tmdb
+        self.tvdb_config = config.tvdb
 
-        # Initialize API keys from environment variables
-        self.omdb_api_key = os.getenv('OMDB_API_KEY') or self.omdb_config.get('api_key')
-        self.tmdb_api_key = os.getenv('TMDB_API_KEY') or self.tmdb_config.get('api_key')
-        self.tvdb_api_key = os.getenv('TVDB_API_KEY') or self.tvdb_config.get('api_key')
+        # Initialize API keys from configuration (environment variables are handled in config validation)
+        self.omdb_api_key = self.omdb_config.api_key
+        self.tmdb_api_key = self.tmdb_config.api_key
+        self.tvdb_api_key = self.tvdb_config.api_key
 
         # Rate limiting state (simple in-memory rate limiting)
         self.last_request_times = {}
@@ -1320,9 +1408,9 @@ class RatingService:
         self.logger.info(f"Rating service initialized - Enabled: {self.enabled}")
         if self.enabled:
             services = []
-            if self.omdb_api_key: services.append("OMDb")
-            if self.tmdb_api_key: services.append("TMDb")
-            if self.tvdb_api_key: services.append("TVDb")
+            if self.omdb_config.enabled and self.omdb_api_key: services.append("OMDb")
+            if self.tmdb_config.enabled and self.tmdb_api_key: services.append("TMDb")
+            if self.tvdb_config.enabled and self.tvdb_api_key: services.append("TVDb")
             self.logger.info(
                 f"Available rating services: {', '.join(services) if services else 'None (no API keys configured)'}")
 
@@ -1427,13 +1515,13 @@ class RatingService:
         Returns:
             Dictionary with rating data from OMDb sources
         """
-        if not self.omdb_api_key or not imdb_id:
+        if not self.omdb_config.enabled or not self.omdb_api_key or not imdb_id:
             return {}
 
         try:
             await self._rate_limit_check('omdb')
 
-            url = f"{self.omdb_config.get('base_url', 'http://www.omdbapi.com/')}"
+            url = self.omdb_config.base_url
             params = {
                 'apikey': self.omdb_api_key,
                 'i': imdb_id,
@@ -1503,7 +1591,7 @@ class RatingService:
         Returns:
             Dictionary with TMDb rating data
         """
-        if not self.tmdb_api_key or not tmdb_id:
+        if not self.tmdb_config.enabled or not self.tmdb_api_key or not tmdb_id:
             return {}
 
         try:
@@ -1517,7 +1605,7 @@ class RatingService:
             else:
                 return {}  # Unsupported content type for TMDb
 
-            url = f"{self.tmdb_config.get('base_url', 'https://api.themoviedb.org/3/')}{endpoint}"
+            url = f"{self.tmdb_config.base_url}{endpoint}"
             params = {
                 'api_key': self.tmdb_api_key
             }
@@ -1563,7 +1651,7 @@ class RatingService:
         Returns:
             Dictionary with TVDb rating data
         """
-        if not self.tvdb_api_key or not tvdb_id:
+        if not self.tvdb_config.enabled or not self.tvdb_api_key or not tvdb_id:
             return {}
 
         try:
@@ -1571,7 +1659,7 @@ class RatingService:
 
             # TVDb v4 API requires authentication, this is a simplified example
             # In practice, you'd need to handle JWT token authentication
-            url = f"{self.tvdb_config.get('base_url', 'https://api4.thetvdb.com/v4/')}series/{tvdb_id}"
+            url = f"{self.tvdb_config.base_url}series/{tvdb_id}"
             headers = {
                 'Authorization': f'Bearer {self.tvdb_api_key}',
                 'Content-Type': 'application/json'
@@ -3599,8 +3687,7 @@ class WebhookService:
             self.discord = DiscordNotifier(self.config.discord, self.config.jellyfin.server_url, self.logger)
 
             # Initialize rating service with configuration
-            rating_config = getattr(self.config, 'rating_services', {})
-            self.rating_service = RatingService(rating_config, self.logger)
+            self.rating_service = RatingService(self.config.rating_services, self.logger)
 
         except Exception as e:
             self.logger.error(f"Failed to initialize service components: {e}")
