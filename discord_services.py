@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """
-Discord Services Module
+Debug Enhanced Discord Services Module
 
-This module contains the Discord-related services including notification management
-and thumbnail verification. These services are tightly coupled and work together
-to provide rich Discord notifications with verified media thumbnails.
-
-Classes:
-    ThumbnailManager: Manages thumbnail URL generation and verification
-    DiscordNotifier: Handles Discord webhook notifications with multi-webhook support
+This module contains debug-enhanced versions of the original Discord services
+with comprehensive debug logging when DEBUG environment variable is set to true.
+All original function and class names are preserved.
 """
 
 import asyncio
@@ -75,7 +71,7 @@ class ThumbnailManager:
                 "item_name": item.name,
                 "item_type": item.item_type,
                 "series_id": getattr(item, 'series_id', None),
-                "season_id": getattr(item, 'season_id', None)
+                "parent_id": getattr(item, 'parent_id', None)
             }, "ThumbnailManager")
 
         # Define fallback URLs based on item type
@@ -85,8 +81,8 @@ class ThumbnailManager:
             # Episode → Season → Series → Default
             if item.item_id:
                 fallback_urls.append(f"{self.jellyfin_url}/Items/{item.item_id}/Images/Primary")
-            if getattr(item, 'season_id', None):
-                fallback_urls.append(f"{self.jellyfin_url}/Items/{item.season_id}/Images/Primary")
+            if getattr(item, 'parent_id', None):
+                fallback_urls.append(f"{self.jellyfin_url}/Items/{item.parent_id}/Images/Primary")
             if getattr(item, 'series_id', None):
                 fallback_urls.append(f"{self.jellyfin_url}/Items/{item.series_id}/Images/Primary")
         elif item.item_type == "Series":
@@ -262,6 +258,9 @@ class DiscordNotifier:
         # Jinja2 template environment (initialized later)
         self.template_env = None
 
+        # Reference to webhook service for cross-component access
+        self._webhook_service = None
+
         # Debug flag from environment
         self.debug_enabled = os.getenv('DEBUG', 'false').lower() == 'true'
 
@@ -273,16 +272,17 @@ class DiscordNotifier:
                 "webhook_names": list(self.webhooks.keys())
             }, "DiscordNotifier")
 
-    async def initialize(self, templates_config: TemplatesConfig) -> None:
+    async def initialize(self, templates_config: TemplatesConfig, session: aiohttp.ClientSession) -> None:
         """Initialize HTTP session, Jinja2 templates, and thumbnail manager with debug logging."""
         if self.debug_enabled:
             _debug_log("Initializing Discord notifier components", {
                 "templates_directory": templates_config.directory,
-                "templates_auto_reload": templates_config.auto_reload
+                "templates_auto_reload": templates_config.auto_reload,
+                "session_provided": session is not None
             }, "DiscordNotifier")
 
-        # Initialize HTTP session
-        self.session = aiohttp.ClientSession()
+        # Store the provided HTTP session
+        self.session = session
 
         # Initialize thumbnail manager
         self.thumbnail_manager = ThumbnailManager(self.jellyfin_url, self.session, self.logger)
