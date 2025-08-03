@@ -277,7 +277,6 @@ class DiscordNotifier:
         if self.debug_enabled:
             _debug_log("Initializing Discord notifier components", {
                 "templates_directory": templates_config.directory,
-                "templates_auto_reload": templates_config.auto_reload,
                 "session_provided": session is not None
             }, "DiscordNotifier")
 
@@ -291,12 +290,12 @@ class DiscordNotifier:
         try:
             self.template_env = Environment(
                 loader=FileSystemLoader(templates_config.directory),
-                auto_reload=templates_config.auto_reload
+                auto_reload=True  # Enable auto-reload for development
             )
             if self.debug_enabled:
                 _debug_log("✅ Jinja2 template environment initialized successfully", {
                     "template_directory": templates_config.directory,
-                    "auto_reload": templates_config.auto_reload
+                    "auto_reload": True
                 }, "DiscordNotifier")
         except Exception as e:
             error_info = {
