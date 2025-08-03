@@ -1,520 +1,551 @@
-# JellyNotify
+# Jellynouncer
 
-> ⚠️ **ALPHA SOFTWARE - UNDER ACTIVE DEVELOPMENT** ⚠️
-> 
-> This project is in early alpha stage and is actively being developed. Expect breaking changes, bugs, and incomplete features. Use at your own risk in production environments. Feedback and contributions are welcome!
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://hub.docker.com/r/your-username/jellynouncer)
+[![GitHub Issues](https://img.shields.io/github/issues/MarkusMcNugen/Jellynouncer)](https://github.com/MarkusMcNugen/Jellynouncer/issues)
+[![GitHub Stars](https://img.shields.io/github/stars/MarkusMcNugen/Jellynouncer?style=social)](https://github.com/MarkusMcNugen/Jellynouncer/stargazers)
 
-JellyNotify is an intermediate webhook service that sits between Jellyfin and Discord, providing intelligent notifications for new media additions and quality upgrades.
+**Jellynouncer** is a Discord webhook service for Jellyfin media server notifications. It detects new content and quality upgrades, routing notifications to different Discord channels based on content type with customizable embed messages.
 
-## Features
+## Table of Contents
 
-- 🎬 **Smart Change Detection**: Differentiate between new items and upgrades (resolution, codec, audio, HDR)
-- 🔍 **Full Jellyfin Integration**: Complete library sync with rich metadata extraction
-- 🎨 **Customizable Templates**: Jinja2-powered Discord embed templates
-- 📊 **SQLite Database**: WAL mode enabled for concurrent access and performance
-- ⚡ **Rate Limit Handling**: Respects Discord's webhook rate limits
-- 🔄 **Auto-Recovery**: Monitors Jellyfin server status and notifies on outages
-- 🐳 **Docker Ready**: Complete containerized solution
-- 📩 **Smart Notification Grouping**: Reduce notification spam by grouping similar media updates
+- [Key Features](#-key-features)
+- [Quick Start](#-quick-start)
+  - [Docker Compose (Recommended)](#docker-compose-recommended)
+  - [Docker Run](#docker-run)
+- [Prerequisites](#-prerequisites)
+- [Configuration](#️-configuration)
+- [Manual Installation](#-manual-installation)
+- [How It Works](#-how-it-works)
+- [API Endpoints](#-api-endpoints)
+- [Templates](#-templates)
+- [Troubleshooting](#-troubleshooting)
+- [Contributing](#-contributing)
+- [License](#-license)
+- [Support](#-support)
 
-## Quick Start
+![Jellynouncer Demo](https://via.placeholder.com/800x400/1a1a1a/ffffff?text=Jellynouncer+Discord+Notifications)
 
-### 1. Clone and Setup
+## ✨ Key Features
+
+### 🧠 **Smart Change Detection**
+- **New vs. Upgraded Content**: Distinguishes between new media and quality upgrades of existing content
+- **Technical Analysis**: Detects resolution improvements (1080p → 4K), codec upgrades (H.264 → H.265), audio enhancements (Stereo → 7.1), and HDR additions
+- **Content Hashing**: Uses content fingerprinting to avoid duplicate notifications while catching meaningful changes
+
+### 🚀 **Multi-Webhook Routing** 
+- **Content-Type Routing**: Routes movies, TV shows, and music to different Discord channels
+- **Smart Fallback**: Configurable fallback webhooks ensure no notifications are lost
+- **Flexible Configuration**: Support for unlimited custom webhooks with granular control
+
+### 🎨 **Template System**
+- **Jinja2 Templates**: Customizable Discord embed templates using Jinja2
+- **Rich Media Information**: Display technical specs, plot summaries, cast information, and ratings
+- **Grouped Notifications**: Batch multiple items into organized notifications
+- **Multiple Template Types**: Different templates for individual items, grouped content, and upgrade notifications
+
+### ⚡ **Reliability Features**
+- **Rate Limiting**: Rate limiting prevents Discord API blocks
+- **Retry Logic**: Exponential backoff retry handling for network resilience  
+- **Background Sync**: Periodic library synchronization catches missed webhook events
+- **Health Monitoring**: Health checks and diagnostic endpoints
+
+### 🔧 **Production Ready**
+- **Docker-First**: Optimized for containerized deployments with Docker Compose support
+- **Configuration Management**: YAML/JSON configuration with environment variable overrides
+- **Logging**: Structured logging with rotation and multiple output destinations
+- **Database Persistence**: SQLite with WAL mode for concurrent access
+
+## 🚀 Quick Start
+
+### Docker Compose (Recommended)
+
+1. **Create your directory structure:**
+   ```bash
+   mkdir jellynouncer && cd jellynouncer
+   mkdir config data logs templates
+   ```
+
+2. **Create `docker-compose.yml`:**
+   ```yaml
+   version: '3.8'
+   
+   services:
+     jellynouncer:
+       image: your-username/jellynouncer:latest
+       container_name: jellynouncer
+       restart: unless-stopped
+       ports:
+         - "8080:8080"
+       environment:
+         # Required Configuration
+         - JELLYFIN_SERVER_URL=http://your-jellyfin-server:8096
+         - JELLYFIN_API_KEY=your_jellyfin_api_key_here
+         - JELLYFIN_USER_ID=your_user_id_here
+         - DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your/webhook/url
+         
+         # Optional: Separate webhooks for different content types
+         - DISCORD_WEBHOOK_URL_MOVIES=https://discord.com/api/webhooks/your/movies/webhook
+         - DISCORD_WEBHOOK_URL_TV=https://discord.com/api/webhooks/your/tv/webhook
+         - DISCORD_WEBHOOK_URL_MUSIC=https://discord.com/api/webhooks/your/music/webhook
+         
+         # Optional: External rating services
+         - OMDB_API_KEY=your_omdb_api_key_here
+         - TMDB_API_KEY=your_tmdb_api_key_here
+         - TVDB_API_KEY=your_tvdb_api_key_here
+         
+         # System Configuration
+         - PUID=1000
+         - PGID=1000
+         - TZ=America/New_York
+       volumes:
+         - ./config:/app/config:rw
+         - ./data:/app/data:rw
+         - ./logs:/app/logs:rw
+         - ./templates:/app/templates:rw
+       healthcheck:
+         test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+         interval: 30s
+         timeout: 10s
+         retries: 3
+         start_period: 10s
+   ```
+
+3. **Start the service:**
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Configure Jellyfin Webhook:**
+   - Install the [Jellyfin Webhook Plugin](https://github.com/jellyfin/jellyfin-plugin-webhook)
+   - Add webhook URL: `http://your-server:8080/webhook`
+   - Select events: `Item Added`
+
+### Docker Run
 
 ```bash
-git clone <repository-url>
-cd jellyfin-discord-webhook
+docker run -d \
+  --name jellynouncer \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -e JELLYFIN_SERVER_URL=http://your-jellyfin-server:8096 \
+  -e JELLYFIN_API_KEY=your_jellyfin_api_key_here \
+  -e JELLYFIN_USER_ID=your_user_id_here \
+  -e DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your/webhook/url \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -v ./config:/app/config:rw \
+  -v ./data:/app/data:rw \
+  -v ./logs:/app/logs:rw \
+  -v ./templates:/app/templates:rw \
+  your-username/jellynouncer:latest
 ```
 
-### 2. Environment Configuration
+## 📋 Prerequisites
 
-Create a `.env` file:
+### Required
+- **Jellyfin Server**: Version 10.8+ with Webhook Plugin installed
+- **Discord**: Server with webhook permissions
+- **Docker**: For containerized deployment
 
-```env
-JELLYFIN_SERVER_URL=http://your-jellyfin-server:8096
-JELLYFIN_API_KEY=your_jellyfin_api_key_here
-JELLYFIN_USER_ID=your_user_id_here
+### Getting API Keys
 
-# Single webhook (default behavior)
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your/webhook/url
+#### Jellyfin API Key
+1. Go to Jellyfin Dashboard → API Keys
+2. Click "+" to create new key
+3. Copy the generated key
 
-# Optional: Separate webhooks for movies and TV shows
-DISCORD_WEBHOOK_URL_MOVIES=https://discord.com/api/webhooks/your/movies/webhook/url
-DISCORD_WEBHOOK_URL_TV=https://discord.com/api/webhooks/your/tv/webhook/url
-DISCORD_WEBHOOK_URL_MUSIC=https://discord.com/api/webhooks/your/music/webhook/url
-```
-
-**Getting Jellyfin API Key:**
-1. Log into Jellyfin web interface as admin
-2. Go to Dashboard → Advanced → API Keys
-3. Create new API Key
-4. Copy the generated key
-
-**Getting User ID:**
-1. In Jellyfin web interface, go to Users
+#### Jellyfin User ID
+1. Go to Jellyfin Dashboard → Users
 2. Click on your user
-3. Look at the URL - the user ID is the long string after `/users/`
+3. Copy the ID from the browser URL
 
-### 3. Configure Jellyfin Webhook Plugin
+#### Discord Webhook URL
+1. Go to Discord Server → Server Settings → Integrations
+2. Click "Create Webhook" or "View Webhooks"
+3. Create webhook for desired channel
+4. Copy webhook URL
 
-1. Install the Jellyfin Webhook Plugin
-2. Go to Dashboard → Plugins → Webhook
-3. Add a new "Generic" destination
-4. Set URL to: `http://your-docker-host:8080/webhook`
-5. Enable "Item Added" notification type
-6. Use the template from `templates/Default_Jellyfin_Webhook_Template.txt`
+#### Optional: External Rating APIs
+- **OMDb**: Free key at [omdbapi.com](http://www.omdbapi.com/apikey.aspx) (1000 requests/day)
+- **TMDb**: Free key at [themoviedb.org](https://www.themoviedb.org/settings/api)
+- **TVDB**: API key at [thetvdb.com](https://thetvdb.com/api-information)
 
-### 4. Deploy with Docker
+## ⚙️ Configuration
 
-```bash
-docker-compose up -d
-```
+### Environment Variables
 
-## Multiple Discord Webhooks
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `JELLYFIN_SERVER_URL` | ✅ | Jellyfin server URL |
+| `JELLYFIN_API_KEY` | ✅ | Jellyfin API key |
+| `JELLYFIN_USER_ID` | ✅ | Jellyfin user ID |
+| `DISCORD_WEBHOOK_URL` | ✅ | Default Discord webhook URL |
+| `DISCORD_WEBHOOK_URL_MOVIES` | ❌ | Movies-specific webhook URL |
+| `DISCORD_WEBHOOK_URL_TV` | ❌ | TV shows-specific webhook URL |
+| `DISCORD_WEBHOOK_URL_MUSIC` | ❌ | Music-specific webhook URL |
+| `OMDB_API_KEY` | ❌ | OMDb API key for movie ratings |
+| `TMDB_API_KEY` | ❌ | TMDb API key for movie/TV data |
+| `TVDB_API_KEY` | ❌ | TVDB API key for TV show data |
+| `PUID` | ❌ | User ID for file permissions (default: 1000) |
+| `PGID` | ❌ | Group ID for file permissions (default: 1000) |
+| `TZ` | ❌ | Timezone (default: UTC) |
+| `LOG_LEVEL` | ❌ | Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO) |
 
-The service supports routing different content types to different Discord webhooks:
+### Configuration Files
 
-### Configuration
-
-#### Option 1: Single Webhook (Default)
-Just set `DISCORD_WEBHOOK_URL` and all notifications go to one channel.
-
-#### Option 2: Multiple Webhooks with Routing
-1. Set multiple webhook URLs in environment variables
-2. Enable routing in `config.json`
-3. Configure which content types go to which webhooks
+For advanced configuration, create a `config/config.json` file:
 
 ```json
 {
+  "jellyfin": {
+    "server_url": "http://jellyfin:8096",
+    "api_key": "your_api_key_here",
+    "user_id": "your_user_id_here"
+  },
   "discord": {
     "webhooks": {
-      "default": {
-        "url": null,
-        "name": "General",
-        "enabled": true,
-        "grouping": {
-          "mode": "none",
-          "delay_minutes": 5,
-          "max_items": 25
-        }
-      },
       "movies": {
-        "url": null,
-        "name": "Movies",
+        "name": "🎬 Movies",
         "enabled": true,
+        "url": "https://discord.com/api/webhooks/.../movies",
         "grouping": {
-          "mode": "none",
-          "delay_minutes": 5,
-          "max_items": 25
+          "mode": "event_type",
+          "delay_minutes": 3,
+          "max_items": 10
         }
       },
       "tv": {
-        "url": null,
-        "name": "TV Shows", 
+        "name": "📺 TV Shows", 
         "enabled": true,
+        "url": "https://discord.com/api/webhooks/.../tv",
         "grouping": {
-          "mode": "none",
+          "mode": "both",
           "delay_minutes": 5,
-          "max_items": 25
-        }
-      },
-      "music": {
-        "url": null,
-        "name": "Music",
-        "enabled": true,
-        "grouping": {
-          "mode": "none",
-          "delay_minutes": 5,
-          "max_items": 25
+          "max_items": 15
         }
       }
     },
     "routing": {
       "enabled": true,
-      "movie_types": ["Movie"],
-      "tv_types": ["Episode", "Season", "Series"],
-      "music_types": ["Audio", "MusicAlbum", "MusicArtist"],
-      "fallback_webhook": "default"
+      "fallback_webhook": "movies"
     }
   }
 }
 ```
 
-### Environment Variables for Multiple Webhooks
+**📖 [Complete Configuration Guide →](config/README.md)**
 
-```env
-# General/fallback webhook
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/YOUR_GENERAL_WEBHOOK
+## 🔧 Manual Installation
 
-# Movies webhook
-DISCORD_WEBHOOK_URL_MOVIES=https://discord.com/api/webhooks/YOUR_MOVIES_WEBHOOK
+### Requirements
 
-# TV Shows webhook  
-DISCORD_WEBHOOK_URL_TV=https://discord.com/api/webhooks/YOUR_TV_WEBHOOK
+- Python 3.11+
+- SQLite 3
+- Git
 
-# Music webhook
-DISCORD_WEBHOOK_URL_MUSIC=https://discord.com/api/webhooks/YOUR_MUSIC_WEBHOOK
+### Installation Steps
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/MarkusMcNugen/Jellynouncer.git
+   cd Jellynouncer
+   ```
+
+2. **Create virtual environment:**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Create directories:**
+   ```bash
+   mkdir -p data logs config templates
+   ```
+
+5. **Copy default configuration:**
+   ```bash
+   cp config/config.json.example config/config.json
+   ```
+
+6. **Edit configuration:**
+   ```bash
+   nano config/config.json  # Add your Jellyfin and Discord settings
+   ```
+
+7. **Run the service:**
+   ```bash
+   python main.py
+   ```
+
+### Systemd Service (Linux)
+
+Create `/etc/systemd/system/jellynouncer.service`:
+
+```ini
+[Unit]
+Description=Jellynouncer Discord Webhook Service
+After=network.target
+
+[Service]
+Type=simple
+User=jellynouncer
+WorkingDirectory=/opt/jellynouncer
+Environment=PATH=/opt/jellynouncer/venv/bin
+ExecStart=/opt/jellynouncer/venv/bin/python main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-## Notification Grouping
-
-JellyNotify now supports grouping of similar notifications to reduce spam in your Discord channels.
-
-### How Grouping Works
-
-1. Notifications are collected for a configurable period (default: 5 minutes)
-2. When time expires or maximum items reached, a single notification is sent
-3. Items are grouped based on the configured grouping mode
-
-### Grouping Modes
-
-Each webhook can be configured with one of the following grouping modes:
-
-- **none** (default): No grouping, send notifications immediately
-- **item_type**: Group by content category (Movies, TV Shows, Music)
-- **event_type**: Group by event (New vs. Upgraded)
-- **both**: Group by both content type and event
-
-### Configuring Grouping
-
-In `config.json`, set the grouping options for each webhook:
-
-```json
-"webhooks": {
-  "default": {
-    "url": "...",
-    "name": "General",
-    "enabled": true,
-    "grouping": {
-      "mode": "both",       // Options: "none", "item_type", "event_type", "both"
-      "delay_minutes": 5,   // How long to wait before sending
-      "max_items": 25       // Maximum items per notification
-    }
-  }
-}
-```
-
-### Checking Queue Status
-
+Enable and start:
 ```bash
-curl http://localhost:8080/queues
+sudo systemctl enable jellynouncer
+sudo systemctl start jellynouncer
 ```
 
-Response:
-```json
-{
-  "default": {
-    "total_items": 12,
-    "new_items": 8,
-    "upgraded_items": 4,
-    "timer_active": true,
-    "seconds_since_last_item": 45.3
-  },
-  "movies": {
-    "total_items": 3,
-    "new_items": 3,
-    "upgraded_items": 0,
-    "timer_active": true,
-    "seconds_since_last_item": 120.7
-  }
-}
+## 🔄 How It Works
+
+### Architecture Overview
+
+```mermaid
+graph TD
+    A[Jellyfin Media Server] -->|Webhook| B[Jellynouncer Service]
+    B --> C[Change Detection Engine]
+    C --> D[Database Storage]
+    B --> E[Discord Notification Router]
+    E --> F[Template Renderer]
+    F --> G[Discord Webhook API]
+    G --> H[Discord Channel 1 - Movies]
+    G --> I[Discord Channel 2 - TV Shows]
+    G --> J[Discord Channel 3 - Music]
+    
+    B --> K[External APIs]
+    K --> L[OMDb/TMDb/TVDB]
 ```
 
-### Manually Processing Queues
+### Smart Change Detection
 
-To force process all notification queues immediately:
+1. **Content Analysis**: When Jellyfin sends a webhook, Jellynouncer analyzes the media item's technical specifications
+2. **Database Comparison**: Compares against stored data to determine if this is new content or an upgrade
+3. **Change Classification**: Identifies specific improvements (resolution, codec, audio, HDR)
+4. **Notification Decision**: Decides whether changes are significant enough to warrant notification
 
-```bash
-curl -X POST http://localhost:8080/flush-queues
-```
+### Multi-Webhook Routing
 
-To process a specific webhook's queue:
+1. **Content Type Detection**: Analyzes the item type (Movie, Episode, Audio, etc.)
+2. **Routing Rules**: Applies configured routing rules to select appropriate webhook
+3. **Fallback Logic**: Uses fallback webhook if specific webhook is unavailable
+4. **Template Selection**: Chooses appropriate template based on content and notification type
 
-```bash
-curl -X POST "http://localhost:8080/flush-queues?webhook_name=movies"
-```
+### Template Processing
 
-## Webhook Management
+1. **Data Collection**: Gathers all available metadata for the media item
+2. **Template Loading**: Loads appropriate Jinja2 template
+3. **Rendering**: Processes template with media data to generate Discord embed JSON
+4. **Validation**: Validates generated JSON meets Discord API requirements
 
-### Check Webhook Status
-```bash
-curl http://localhost:8080/webhooks
-```
+## 📡 API Endpoints
 
-Response:
-```json
-{
-  "routing_enabled": true,
-  "webhooks": {
-    "default": {
-      "name": "General",
-      "enabled": true,
-      "has_url": true,
-      "url_preview": "https://discord.com/api/webhooks/1234567890/...",
-      "grouping": {
-        "mode": "both",
-        "delay_minutes": 5,
-        "max_items": 25
-      }
-    },
-    "movies": {
-      "name": "Movies", 
-      "enabled": true,
-      "has_url": true,
-      "url_preview": "https://discord.com/api/webhooks/0987654321/...",
-      "grouping": {
-        "mode": "item_type",
-        "delay_minutes": 5,
-        "max_items": 25
-      }
-    }
-  },
-  "notification_queues": {
-    "default": {
-      "total_items": 5,
-      "new_items": 3,
-      "upgraded_items": 2,
-      "timer_active": true,
-      "seconds_since_last_item": 45.3
-    }
-  }
-}
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/webhook` | POST | Main webhook endpoint for Jellyfin |
+| `/health` | GET | Health check and service status |
+| `/stats` | GET | Database and service statistics |
+| `/sync` | POST | Trigger manual library synchronization |
+| `/webhooks` | GET | List configured Discord webhooks |
+| `/queues` | GET | Show notification queue status |
+| `/flush-queues` | POST | Process all queued notifications |
+| `/test-webhook` | POST | Send test notification to specific webhook |
 
-### Test Individual Webhooks
-```bash
-# Test default webhook
-curl -X POST "http://localhost:8080/test-webhook?webhook_name=default"
+### Usage Examples
 
-# Test movies webhook
-curl -X POST "http://localhost:8080/test-webhook?webhook_name=movies"
-
-# Test TV webhook
-curl -X POST "http://localhost:8080/test-webhook?webhook_name=tv"
-
-# Test music webhook
-curl -X POST "http://localhost:8080/test-webhook?webhook_name=music"
-```
-
-## Routing Logic
-
-1. **Routing Disabled**: All notifications go to the first enabled webhook
-2. **Routing Enabled**: 
-   - Movies → `movies` webhook (if enabled)
-   - Episodes/Seasons/Series → `tv` webhook (if enabled)
-   - Audio/Music Albums/Artists → `music` webhook (if enabled)
-   - Other types → `fallback_webhook`
-   - If target webhook unavailable → falls back to `fallback_webhook`
-   - If fallback unavailable → uses any enabled webhook
-
-## Manual Commands
-
-### Library Sync
-```bash
-# Full library sync
-curl -X POST http://localhost:8080/sync
-
-# Check sync status
-curl http://localhost:8080/stats
-```
-
-### Health Check
+**Health Check:**
 ```bash
 curl http://localhost:8080/health
 ```
 
-### Database Maintenance
-The service automatically performs database maintenance, but you can also run it manually:
-
+**Manual Sync:**
 ```bash
-# Enter the container
-docker exec -it jellyfin-discord-webhook bash
-
-# Manual vacuum
-sqlite3 /app/data/jellyfin_items.db "VACUUM;"
+curl -X POST http://localhost:8080/sync
 ```
 
-## Configuration
+**Test Webhook:**
+```bash
+curl -X POST "http://localhost:8080/test-webhook?webhook_name=movies"
+```
 
-### Main Configuration (`config/config.json`)
+**Queue Status:**
+```bash
+curl http://localhost:8080/queues
+```
 
-The service supports extensive configuration through JSON:
+## 🎨 Templates
 
-```json
+Jellynouncer uses Jinja2 templates to generate Discord embeds. Templates can be customized without changing code.
+
+### Template Types
+
+- **Individual Notifications**: `new_item.j2`, `upgraded_item.j2`
+- **Grouped Notifications**: `new_items_grouped.j2`, `upgraded_items_grouped.j2`
+- **Content-Specific**: Templates for movies, TV shows, music
+
+### Template Variables
+
+```jinja2
+{{ item.name }}              <!-- Media title -->
+{{ item.item_type }}         <!-- "Movie", "Episode", etc. -->
+{{ item.year }}              <!-- Release year -->
+{{ item.video_height }}      <!-- Resolution (1080, 2160) -->
+{{ item.video_codec }}       <!-- "h264", "hevc", etc. -->
+{{ item.audio_codec }}       <!-- "ac3", "dts", etc. -->
+{{ item.overview }}          <!-- Plot summary -->
+```
+
+### Example Template
+
+```jinja2
 {
-  "notifications": {
-    "watch_changes": {
-      "resolution": true,        // Watch for resolution changes
-      "codec": true,            // Watch for video codec changes
-      "audio_codec": true,      // Watch for audio codec changes
-      "audio_channels": true,   // Watch for audio channel changes
-      "hdr_status": true,       // Watch for HDR/SDR changes
-      "file_size": true,        // Watch for file size changes
-      "provider_ids": true      // Watch for provider ID changes
-    },
-    "colors": {
-      "new_item": 65280,           // Green for new items
-      "resolution_upgrade": 16766720,  // Gold for resolution upgrades
-      "codec_upgrade": 16747520,       // Orange for codec upgrades
-      "audio_upgrade": 9662683,        // Purple for audio upgrades
-      "hdr_upgrade": 16716947,         // Pink for HDR upgrades
-      "provider_update": 2003199       // Blue for provider updates
+  "embeds": [
+    {
+      "title": "🎬 New {{ item.item_type }} Added",
+      "description": "**{{ item.name }}**{% if item.year %} ({{ item.year }}){% endif %}",
+      "color": {{ color }},
+      "fields": [
+        {% if item.video_height %}
+        {
+          "name": "Quality",
+          "value": "{{ item.video_height }}p",
+          "inline": true
+        }
+        {% endif %}
+      ]
     }
-  },
-  "templates": {
-    "directory": "/app/templates",
-    "new_item_template": "new_item.j2",
-    "upgraded_item_template": "upgraded_item.j2",
-    "new_items_by_event_template": "new_items_by_event.j2",
-    "upgraded_items_by_event_template": "upgraded_items_by_event.j2",
-    "new_items_by_type_template": "new_items_by_type.j2",
-    "upgraded_items_by_type_template": "upgraded_items_by_type.j2",
-    "new_items_grouped_template": "new_items_grouped.j2",
-    "upgraded_items_grouped_template": "upgraded_items_grouped.j2"
-  }
+  ]
 }
 ```
 
-### Custom Templates
+**📖 [Complete Template Guide →](templates/README.md)**
 
-Templates are located in the `templates/` directory and use Jinja2 syntax. The following templates are used for grouped notifications:
-
-- **new_items_by_event.j2**: New items grouped by event type
-- **upgraded_items_by_event.j2**: Upgraded items grouped by event type
-- **new_items_by_type.j2**: Items grouped by content type
-- **upgraded_items_by_type.j2**: Items grouped by content type
-- **new_items_grouped.j2**: Complete grouping (both type and event)
-- **upgraded_items_grouped.j2**: Complete grouping (both type and event)
-
-## API Endpoints
-
-### POST /webhook
-Main endpoint for Jellyfin webhooks. Accepts the configured webhook payload and processes changes.
-
-### GET /health
-Health check endpoint that returns:
-```json
-{
-  "status": "healthy",
-  "jellyfin_connected": true,
-  "timestamp": "2025-01-29T12:00:00Z"
-}
-```
-
-### POST /sync
-Triggers a manual full library sync:
-```json
-{
-  "status": "success",
-  "message": "Library sync completed"
-}
-```
-
-### GET /stats
-Returns database statistics:
-```json
-{
-  "total_items": 1250,
-  "item_types": {
-    "Movie": 800,
-    "Episode": 400,
-    "Season": 30,
-    "Series": 20
-  },
-  "last_updated": "2025-01-29T12:00:00Z"
-}
-```
-
-### GET /webhooks
-Returns configuration and status of all Discord webhooks.
-
-### GET /queues
-Returns notification queue status for all webhooks.
-
-### POST /flush-queues
-Manually triggers queue processing.
-
-### POST /test-webhook
-Tests a specific webhook by sending a test notification.
-
-## Troubleshooting
+## 🛠️ Troubleshooting
 
 ### Common Issues
 
-**1. Jellyfin Connection Failed**
-- Verify `JELLYFIN_SERVER_URL` is accessible from container
-- Check API key is valid and has sufficient permissions
-- Ensure Jellyfin server is running
+**Service won't start:**
+```bash
+# Check logs
+docker logs jellynouncer
 
-**2. Discord Webhooks Not Sending**
-- Verify Discord webhook URL is correct
-- Check for rate limiting in logs
-- Ensure Discord channel/server permissions allow webhooks
+# Verify configuration
+curl http://localhost:8080/health
+```
 
-**3. Notification Grouping Not Working**
-- Check that grouping mode is set correctly in config.json
-- Verify that the webhook has the correct URL and is enabled
-- Check the queue status with GET /queues to see if items are being queued
+**No notifications:**
+- Verify Jellyfin webhook plugin is installed and configured
+- Check webhook URL in Jellyfin points to: `http://your-server:8080/webhook`
+- Verify Discord webhook URLs are correct
+- Check service logs for errors
 
-**4. Database Locked Errors**
-- WAL mode should prevent this, but if it occurs:
-  ```bash
-  docker exec -it jellyfin-discord-webhook sqlite3 /app/data/jellyfin_items.db "PRAGMA journal_mode=WAL;"
-  ```
+**Database errors:**
+```bash
+# Check database file permissions
+ls -la data/
 
-**5. Template Rendering Errors**
+# Reset database (will lose history)
+rm data/jellynouncer.db
+docker restart jellynouncer
+```
+
+**Template errors:**
+- Verify template files exist in `templates/` directory
 - Check Jinja2 syntax in custom templates
-- Verify all referenced variables exist
-- Look for JSON syntax errors in template output
+- Validate JSON output using online JSON validator
 
 ### Debug Mode
 
 Enable debug logging for detailed troubleshooting:
 
-```json
-{
-  "server": {
-    "log_level": "DEBUG"
-  }
-}
+**Docker Compose:**
+```yaml
+environment:
+  - LOG_LEVEL=DEBUG
 ```
 
-### Container Logs
-
-View live logs:
+**Docker Run:**
 ```bash
-docker logs -f jellyfin-discord-webhook
+docker run -e LOG_LEVEL=DEBUG ...
 ```
 
-## License
+**Manual Installation:**
+```bash
+export LOG_LEVEL=DEBUG
+python main.py
+```
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+### Log Files
 
-## Support
+- **Application logs**: `logs/jellynouncer.log`
+- **Debug logs**: When `LOG_LEVEL=DEBUG` is set, additional detailed logs are written to `logs/jellynouncer-debug.log`
+- **Container startup logs**: Docker entrypoint provides detailed initialization logging including:
+  - Configuration file processing
+  - Directory creation and permissions
+  - Template and script file copying
+  - Environment variable validation
+  - System diagnostics and health checks
+- **Runtime logs**: Console output available via `docker logs jellynouncer`
 
-For issues, feature requests, or questions:
-1. Check the troubleshooting section above
-2. Review container logs for error messages
-3. Create an issue on GitHub with:
-   - Docker logs output
-   - Configuration files (with sensitive data removed)
-   - Steps to reproduce the issue
+### Debug Information
 
-## Version History
+When debug mode is enabled, you'll see additional information:
+- **Webhook Processing**: Detailed payload analysis and processing steps
+- **Database Operations**: SQL queries and transaction details  
+- **Template Rendering**: Template loading and variable substitution details
+- **API Calls**: Full HTTP request/response details for Jellyfin and Discord APIs
+- **Change Detection**: Detailed comparison logic and decision reasoning
+- **Container Initialization**: Comprehensive startup process logging from the entrypoint script
 
-### v1.1.0
-- Added notification grouping feature
-- Added new API endpoints for queue management
-- Added new Jinja2 templates for grouped notifications
-- Added configurable grouping modes and timers
+## 📚 Documentation
 
-### v1.0.0
-- Initial release
-- Full Jellyfin integration
-- Discord webhook notifications
-- Change detection for resolution, codec, audio, HDR
-- SQLite database with WAL mode
-- Docker containerization
-- Jinja2 templating system
-- Rate limit handling
-- Health monitoring
+| Document | Description |
+|----------|-------------|
+| [Configuration Guide](config/README.md) | Complete configuration options and examples |
+| [Template Guide](templates/README.md) | Template customization and examples |
+| [Advanced Templates](templates/README-AdvancedTemplates.md) | Advanced template features and techniques |
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](https://github.com/MarkusMcNugen/Jellynouncer/blob/main/CONTRIBUTING.md).
+
+### Development Setup
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature-name`
+3. Make changes and test thoroughly
+4. Submit a pull request
+
+### Reporting Issues
+
+- **Bug Reports**: Use our [bug report template](https://github.com/MarkusMcNugen/Jellynouncer/issues/new?assignees=&labels=bug&template=bug_report.md&title=)
+- **Feature Requests**: Use our [feature request template](https://github.com/MarkusMcNugen/Jellynouncer/issues/new?assignees=&labels=enhancement&template=feature_request.md&title=)
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 💬 Support
+
+- **Documentation**: Check the guides linked above
+- **Issues**: [GitHub Issues](https://github.com/MarkusMcNugen/Jellynouncer/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/MarkusMcNugen/Jellynouncer/discussions)
+
+---
+
+**Made with ☕ by Mark Newton**
