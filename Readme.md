@@ -36,8 +36,6 @@
 - [License](#-license)
 - [Support](#-support)
 
-![Jellynouncer Demo](https://via.placeholder.com/800x400/1a1a1a/ffffff?text=Jellynouncer+Discord+Notifications)
-
 ## ✨ Key Features
 
 ### 🧠 **Smart Change Detection**
