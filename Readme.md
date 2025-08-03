@@ -318,75 +318,56 @@ sudo systemctl start jellynouncer
 
 ```mermaid
 graph TD
-    %% External Systems
-    A[Jellyfin Media Server] -->|Webhook Payload| B[FastAPI Application]
+    %% Main Flow
+    A[Jellyfin Media Server] -->|Webhook| B[FastAPI App]
+    B --> C[WebhookService]
     
-    %% Main Service Layer
-    B --> C[WebhookService - Main Orchestrator]
-    
-    %% Core Processing Components
-    C --> D[JellyfinAPI Client]
-    C --> E[Change Detection Engine]
+    %% Core Components
+    C --> D[JellyfinAPI]
+    C --> E[Change Detector]  
     C --> F[Database Manager]
-    C --> G[Discord Notification Router]
-    C --> H[Rating Services]
+    C --> G[Discord Notifier]
+    C --> H[Rating Service]
     
-    %% Database Operations
+    %% Database Layer
     E --> F
-    E --> I[Content Hash Comparison]
-    I --> F[(SQLite Database)]
-    F --> J[Media Item Storage]
-    F --> K[Change History]
-    F --> L[Rating Cache]
+    F --> DB[(SQLite Database)]
+    H --> DB
     
-    %% External API Integration
-    H --> M[OMDb API]
-    H --> N[TMDb API] 
-    H --> O[TVDB API]
-    H --> F
+    %% External APIs
+    H --> API1[OMDb API]
+    H --> API2[TMDb API]
+    H --> API3[TVDB API]
     
-    %% Discord Integration
-    G --> P[Webhook Router]
-    P --> Q[Template Renderer]
-    Q --> R[Jinja2 Templates]
-    R --> S[Discord Embed JSON]
+    %% Discord Flow
+    G --> TMPL[Template Engine]
+    TMPL --> JSON[Discord Embed]
+    JSON --> DISCORD[Discord Webhooks]
     
-    %% Multiple Discord Webhooks
-    S --> T[Discord Webhook API]
-    T --> U[Discord Channel 1 - Movies]
-    T --> V[Discord Channel 2 - TV Shows]
-    T --> W[Discord Channel 3 - Music]
-    T --> X[Discord Channel 4 - General]
+    %% Output Channels
+    DISCORD --> CH1[Movies Channel]
+    DISCORD --> CH2[TV Shows Channel] 
+    DISCORD --> CH3[Music Channel]
     
-    %% Configuration Management
-    Y[Configuration Files] --> Z[ConfigurationValidator]
-    Z --> C
+    %% Configuration
+    CONFIG[Config Files] --> VALID[Config Validator]
+    VALID --> C
     
-    %% Background Services
-    C --> AA[Background Sync]
-    C --> BB[Health Monitoring]
-    C --> CC[Database Maintenance]
-    AA --> D
-    
-    %% API Endpoints
-    DD[REST API Endpoints] --> C
-    EE["/webhook - Main Entry"] --> C
-    FF["/health - Status Check"] --> C
-    GG["/sync - Manual Sync"] --> C
-    HH["/stats - Analytics"] --> C
+    %% Background Tasks
+    C --> SYNC[Library Sync]
+    C --> HEALTH[Health Monitor]
+    SYNC --> D
     
     %% Styling
-    classDef external fill:#e1f5fe
-    classDef core fill:#f3e5f5  
-    classDef database fill:#e8f5e8
-    classDef discord fill:#fff3e0
-    classDef api fill:#fce4ec
+    classDef external fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    classDef core fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef database fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
+    classDef discord fill:#fff3e0,stroke:#f57c00,stroke-width:2px
     
-    class A,M,N,O,U,V,W,X external
-    class C,D,E,G,H,P,Q core
-    class F,I,J,K,L database
-    class R,S,T discord
-    class B,DD,EE,FF,GG,HH api
+    class A,API1,API2,API3,CH1,CH2,CH3 external
+    class C,D,E,G,H,TMPL core
+    class F,DB database
+    class JSON,DISCORD discord
 ```
 
 ### Detailed Component Flow
