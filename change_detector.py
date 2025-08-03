@@ -1,8 +1,23 @@
+#!/usr/bin/env python3
 """
-JellyNotify Change Detector
+Jellynouncer Change Detector
 
 This module implements intelligent change detection for media quality upgrades
-and modifications between versions of the same media item.
+and modifications between versions of the same media item. It provides the core
+logic for distinguishing between genuinely new content and upgraded versions
+of existing content.
+
+The ChangeDetector class focuses on technical improvements that users care about,
+such as resolution upgrades, codec improvements, and audio enhancements, while
+filtering out trivial changes that don't warrant notifications.
+
+Classes:
+    ChangeDetector: Intelligent change detector for media quality upgrades
+
+Author: Mark Newton
+Project: Jellynouncer
+Version: 2.0.0
+License: MIT
 """
 
 import logging
@@ -17,80 +32,278 @@ class ChangeDetector:
     Intelligent change detector for media quality upgrades and modifications.
 
     This class implements the core logic for detecting meaningful changes between
-    versions of the same media item. It focuses on technical improvements that
-    users care about, such as resolution upgrades, codec improvements, and
-    audio enhancements.
+    versions of the same media item. It's designed to identify technical improvements
+    that warrant user notification while ignoring trivial metadata changes that
+    don't affect the viewing experience.
 
-    The detector is configurable to allow users to choose which types of changes
-    trigger notifications, providing flexibility for different use cases.
+    **Understanding Change Detection for Beginners:**
+    
+    When media files are replaced (upgraded to better quality, re-encoded, etc.),
+    we need to determine what actually changed to provide meaningful notifications.
+    This class compares technical specifications between versions and identifies:
+    
+    - **Quality Upgrades**: 720p → 1080p → 4K resolution improvements
+    - **Codec Improvements**: H.264 → H.265/HEVC → AV1 for better compression
+    - **Audio Enhancements**: Stereo → 5.1 → 7.1 surround sound upgrades
+    - **HDR Upgrades**: SDR → HDR10 → Dolby Vision for better visual quality
+    - **File Replacements**: Complete file changes with new encoding
+
+    **Why Change Detection Matters:**
+    Without intelligent change detection, users would receive notifications for:
+    - Every metadata update (which happens frequently)
+    - Trivial file system changes (path updates, library reorganization)
+    - Timestamp modifications (which occur during maintenance)
+    
+    This class filters these out to focus on changes users actually care about.
+
+    **Configurable Monitoring:**
+    Users can customize which types of changes trigger notifications:
+    - Enable resolution monitoring for quality upgrades
+    - Disable codec monitoring if not interested in technical details
+    - Monitor audio improvements for home theater setups
+    - Track HDR upgrades for compatible displays
+
+    **Change Categories:**
+
+    **Resolution Changes:**
+    Probably the most important upgrade type - users care about quality improvements:
+    - 480p → 720p: Significant quality jump
+    - 720p → 1080p: Very noticeable improvement
+    - 1080p → 4K: Major upgrade for large screens
+
+    **Video Codec Changes:**
+    Technical improvements that affect file size and quality:
+    - H.264 → H.265 (HEVC): Better compression, smaller files
+    - H.264 → AV1: Next-generation codec with superior efficiency
+    - MPEG-2 → H.264: Legacy to modern codec upgrade
+
+    **Audio Improvements:**
+    Important for users with good audio systems:
+    - Stereo → 5.1: Surround sound upgrade
+    - AC3 → DTS: Higher quality audio codec
+    - Lossy → Lossless: FLAC, DTS-HD for audiophiles
+
+    **HDR Status Changes:**
+    Critical for users with HDR-capable displays:
+    - SDR → HDR10: Standard to high dynamic range
+    - HDR10 → Dolby Vision: Premium HDR format
+    - Any HDR format changes
 
     Attributes:
-        config: Notifications configuration
-        logger: Logger instance for change detection operations
-        watch_changes: Dictionary of change types to monitor
+        config (NotificationsConfig): Configuration for notification behavior
+        logger (logging.Logger): Logger instance for change detection operations
+        watch_changes (Dict[str, bool]): Dictionary of change types to monitor
 
     Example:
         ```python
-        detector = ChangeDetector(config.notifications, logger)
+        # Initialize change detector
+        notifications_config = NotificationsConfig(
+            watch_changes={
+                'resolution': True,      # Monitor resolution upgrades
+                'codec': True,          # Monitor codec improvements
+                'audio_codec': True,    # Monitor audio upgrades
+                'hdr_status': True,     # Monitor HDR changes
+                'file_size': False      # Ignore file size changes
+            }
+        )
+        
+        detector = ChangeDetector(notifications_config, logger)
 
-        old_item = MediaItem(video_height=720, video_codec="h264")
-        new_item = MediaItem(video_height=1080, video_codec="h264")
+        # Compare old and new versions of the same movie
+        old_movie = MediaItem(
+            item_id="abc123",
+            name="The Matrix",
+            video_height=720,
+            video_codec="h264",
+            audio_codec="ac3",
+            audio_channels=2
+        )
+        
+        new_movie = MediaItem(
+            item_id="abc123",
+            name="The Matrix", 
+            video_height=1080,
+            video_codec="hevc",
+            audio_codec="dts",
+            audio_channels=6
+        )
 
-        changes = detector.detect_changes(old_item, new_item)
-        # Returns: [{'type': 'resolution', 'old_value': 720, 'new_value': 1080, ...}]
+        # Detect changes between versions
+        changes = detector.detect_changes(old_movie, new_movie)
+        
+        # Process detected changes
+        for change in changes:
+            print(f"Change detected: {change['description']}")
+            # Output:
+            # "Change detected: Resolution changed from 720p to 1080p"
+            # "Change detected: Video codec changed from h264 to hevc"
+            # "Change detected: Audio codec changed from ac3 to dts"
+            # "Change detected: Audio channels changed from 2 to 6"
         ```
+
+    Note:
+        This class is designed to be stateless and thread-safe. It doesn't store
+        any information between calls, making it suitable for concurrent webhook
+        processing where multiple items might be compared simultaneously.
     """
 
     def __init__(self, config: NotificationsConfig, logger: logging.Logger):
         """
         Initialize change detector with configuration and logging.
 
+        Sets up the change detector with user preferences for which types of
+        changes should be monitored and reported. The configuration allows
+        fine-grained control over notification behavior.
+
+        **Configuration Options:**
+        The NotificationsConfig includes a watch_changes dictionary that controls
+        which change types are monitored:
+        - 'resolution': Video resolution changes (720p → 1080p)
+        - 'codec': Video codec changes (h264 → hevc)
+        - 'audio_codec': Audio codec changes (ac3 → dts)
+        - 'audio_channels': Audio channel count changes (2 → 6)
+        - 'hdr_status': HDR format changes (SDR → HDR10)
+        - 'file_size': File size changes (for complete replacements)
+        - 'provider_ids': External database ID updates
+
         Args:
-            config: Notifications configuration including change monitoring settings
-            logger: Logger instance for change detection operations
+            config (NotificationsConfig): Configuration for notification behavior
+                including which change types to monitor
+            logger (logging.Logger): Logger instance for change detection operations
+
+        Example:
+            ```python
+            # Configure which changes to monitor
+            config = NotificationsConfig(
+                watch_changes={
+                    'resolution': True,      # Always notify for resolution upgrades
+                    'codec': True,          # Notify for codec improvements
+                    'audio_codec': True,    # Audio improvements are important
+                    'audio_channels': True, # Surround sound upgrades
+                    'hdr_status': True,     # HDR upgrades for compatible displays
+                    'file_size': False,     # Don't notify for size-only changes
+                    'provider_ids': False   # Don't notify for metadata updates
+                }
+            )
+            
+            detector = ChangeDetector(config, logger)
+            ```
         """
         self.config = config
         self.logger = logger
         self.watch_changes = config.watch_changes
 
+        # Log initialization with monitoring configuration
+        enabled_changes = [change_type for change_type, enabled in self.watch_changes.items() if enabled]
+        self.logger.info(f"Change detector initialized - Monitoring: {', '.join(enabled_changes)}")
+
     def detect_changes(self, old_item: MediaItem, new_item: MediaItem) -> List[Dict[str, Any]]:
         """
         Detect meaningful changes between two versions of the same media item.
 
-        This method compares technical specifications between old and new versions
-        of a media item to identify upgrades worth notifying users about.
+        This is the core method that compares technical specifications between
+        old and new versions of a media item to identify upgrades worth notifying
+        users about. It only reports changes that are enabled in the configuration
+        and that represent meaningful improvements or modifications.
+
+        **Change Detection Process:**
+        1. Compare video resolution for quality upgrades
+        2. Check video codec changes for compression improvements
+        3. Analyze audio codec and channel changes for sound upgrades
+        4. Detect HDR status changes for display improvements
+        5. Check file size changes for complete replacements
+        6. Monitor external provider ID updates for metadata improvements
+
+        **Change Object Structure:**
+        Each detected change is returned as a dictionary containing:
+        - `type`: Change category (resolution, codec, audio_codec, etc.)
+        - `field`: Database field that changed (video_height, video_codec, etc.)
+        - `old_value`: Previous value (720, "h264", etc.)
+        - `new_value`: Current value (1080, "hevc", etc.)
+        - `description`: Human-readable description for notifications
+
+        **Filtering Logic:**
+        The method only reports changes that:
+        - Are enabled in the watch_changes configuration
+        - Represent actual value differences (not None → None)
+        - Are meaningful to users (ignores trivial metadata updates)
 
         Args:
-            old_item: Previous version of the media item
-            new_item: Current version of the media item
+            old_item (MediaItem): Previous version of the media item from database
+            new_item (MediaItem): Current version of the media item from webhook/API
 
         Returns:
-            List of change dictionaries, each containing:
-            - type: Change category (resolution, codec, audio_codec, etc.)
-            - field: Database field that changed
-            - old_value: Previous value
-            - new_value: Current value
-            - description: Human-readable description of the change
+            List[Dict[str, Any]]: List of detected changes, empty if no meaningful changes
 
         Example:
             ```python
+            # Detect resolution and codec upgrade
+            old_movie = MediaItem(
+                item_id="abc123",
+                name="The Matrix",
+                video_height=720,
+                video_codec="h264",
+                audio_channels=2,
+                video_range="SDR"
+            )
+            
+            new_movie = MediaItem(
+                item_id="abc123", 
+                name="The Matrix",
+                video_height=1080,
+                video_codec="hevc", 
+                audio_channels=6,
+                video_range="HDR10"
+            )
+
             changes = detector.detect_changes(old_movie, new_movie)
-            for change in changes:
-                print(f"{change['type']}: {change['description']}")
-            # Output: "resolution: Resolution changed from 720p to 1080p"
+            
+            # Expected output:
+            # [
+            #     {
+            #         'type': 'resolution',
+            #         'field': 'video_height', 
+            #         'old_value': 720,
+            #         'new_value': 1080,
+            #         'description': 'Resolution changed from 720p to 1080p'
+            #     },
+            #     {
+            #         'type': 'codec',
+            #         'field': 'video_codec',
+            #         'old_value': 'h264',
+            #         'new_value': 'hevc', 
+            #         'description': 'Video codec changed from h264 to hevc'
+            #     },
+            #     {
+            #         'type': 'audio_channels',
+            #         'field': 'audio_channels',
+            #         'old_value': 2,
+            #         'new_value': 6,
+            #         'description': 'Audio channels changed from 2 to 6'
+            #     },
+            #     {
+            #         'type': 'hdr_status', 
+            #         'field': 'video_range',
+            #         'old_value': 'SDR',
+            #         'new_value': 'HDR10',
+            #         'description': 'HDR status changed from SDR to HDR10'
+            #     }
+            # ]
             ```
 
         Note:
-            The method only detects changes that are enabled in the configuration.
-            This allows users to customize which types of upgrades they want
-            to be notified about.
+            This method includes comprehensive error handling to ensure that
+            comparison failures don't crash the webhook processing pipeline.
+            All exceptions are logged and an empty change list is returned
+            on error, allowing the service to continue operating.
         """
         changes = []
 
         try:
-            # Resolution changes (most common upgrade scenario)
+            # Resolution changes (most common and important upgrade scenario)
             if (self.watch_changes.get('resolution', True) and
-                    old_item.video_height != new_item.video_height):
+                    old_item.video_height != new_item.video_height and
+                    old_item.video_height is not None and new_item.video_height is not None):
                 changes.append({
                     'type': 'resolution',
                     'field': 'video_height',
@@ -99,9 +312,10 @@ class ChangeDetector:
                     'description': f"Resolution changed from {old_item.video_height}p to {new_item.video_height}p"
                 })
 
-            # Video codec changes (e.g., h264 -> hevc/av1)
+            # Video codec changes (compression and efficiency improvements)
             if (self.watch_changes.get('codec', True) and
-                    old_item.video_codec != new_item.video_codec):
+                    old_item.video_codec != new_item.video_codec and
+                    (old_item.video_codec or new_item.video_codec)):
                 changes.append({
                     'type': 'codec',
                     'field': 'video_codec',
@@ -110,9 +324,10 @@ class ChangeDetector:
                     'description': f"Video codec changed from {old_item.video_codec or 'Unknown'} to {new_item.video_codec or 'Unknown'}"
                 })
 
-            # Audio codec changes (e.g., ac3 -> dts, aac -> flac)
+            # Audio codec changes (sound quality improvements)
             if (self.watch_changes.get('audio_codec', True) and
-                    old_item.audio_codec != new_item.audio_codec):
+                    old_item.audio_codec != new_item.audio_codec and
+                    (old_item.audio_codec or new_item.audio_codec)):
                 changes.append({
                     'type': 'audio_codec',
                     'field': 'audio_codec',
@@ -121,64 +336,251 @@ class ChangeDetector:
                     'description': f"Audio codec changed from {old_item.audio_codec or 'Unknown'} to {new_item.audio_codec or 'Unknown'}"
                 })
 
-            # Audio channel changes (e.g., stereo -> 5.1 surround)
+            # Audio channel changes (surround sound upgrades)
             if (self.watch_changes.get('audio_channels', True) and
-                    old_item.audio_channels != new_item.audio_channels):
-                # Create user-friendly channel descriptions
-                channels_old = f"{old_item.audio_channels or 0} channel{'s' if (old_item.audio_channels or 0) != 1 else ''}"
-                channels_new = f"{new_item.audio_channels or 0} channel{'s' if (new_item.audio_channels or 0) != 1 else ''}"
+                    old_item.audio_channels != new_item.audio_channels and
+                    old_item.audio_channels is not None and new_item.audio_channels is not None):
                 changes.append({
                     'type': 'audio_channels',
                     'field': 'audio_channels',
                     'old_value': old_item.audio_channels,
                     'new_value': new_item.audio_channels,
-                    'description': f"Audio channels changed from {channels_old} to {channels_new}"
+                    'description': f"Audio channels changed from {old_item.audio_channels} to {new_item.audio_channels}"
                 })
 
-            # HDR status changes (SDR -> HDR10/Dolby Vision)
+            # HDR status changes (display technology improvements)
             if (self.watch_changes.get('hdr_status', True) and
-                    old_item.video_range != new_item.video_range):
-                changes.append({
-                    'type': 'hdr_status',
-                    'field': 'video_range',
-                    'old_value': old_item.video_range,
-                    'new_value': new_item.video_range,
-                    'description': f"HDR status changed from {old_item.video_range or 'SDR'} to {new_item.video_range or 'SDR'}"
-                })
+                    old_item.video_range != new_item.video_range and
+                    (old_item.video_range or new_item.video_range)):
+                
+                # Only report if this is a meaningful HDR change
+                old_hdr = self._normalize_hdr_status(old_item.video_range)
+                new_hdr = self._normalize_hdr_status(new_item.video_range)
+                
+                if old_hdr != new_hdr:
+                    changes.append({
+                        'type': 'hdr_status',
+                        'field': 'video_range',
+                        'old_value': old_item.video_range,
+                        'new_value': new_item.video_range,
+                        'description': f"HDR status changed from {old_hdr} to {new_hdr}"
+                    })
 
-            # File size changes (often indicates quality change)
+            # File size changes (complete file replacements)
             if (self.watch_changes.get('file_size', True) and
-                    old_item.file_size != new_item.file_size):
-                changes.append({
-                    'type': 'file_size',
-                    'field': 'file_size',
-                    'old_value': old_item.file_size,
-                    'new_value': new_item.file_size,
-                    'description': "File size changed"
-                })
+                    old_item.file_size != new_item.file_size and
+                    old_item.file_size is not None and new_item.file_size is not None):
+                
+                # Only report significant file size changes (> 10% difference)
+                size_change_percent = abs(new_item.file_size - old_item.file_size) / old_item.file_size * 100
+                if size_change_percent > 10:
+                    changes.append({
+                        'type': 'file_size',
+                        'field': 'file_size',
+                        'old_value': old_item.file_size,
+                        'new_value': new_item.file_size,
+                        'description': f"File size changed by {size_change_percent:.1f}%"
+                    })
 
-            # Provider ID changes (metadata improvements)
+            # Provider ID changes (metadata improvements and external database linking)
             if self.watch_changes.get('provider_ids', True):
-                # Check each provider ID separately
+                # Check each provider ID separately for granular reporting
                 for provider, old_val, new_val in [
                     ('imdb', old_item.imdb_id, new_item.imdb_id),
                     ('tmdb', old_item.tmdb_id, new_item.tmdb_id),
                     ('tvdb', old_item.tvdb_id, new_item.tvdb_id)
                 ]:
-                    # Only report if the value actually changed and isn't just None -> None
+                    # Only report if the value actually changed and isn't just None → None
                     if old_val != new_val and (old_val or new_val):
                         changes.append({
                             'type': 'provider_ids',
                             'field': f'{provider}_id',
                             'old_value': old_val,
                             'new_value': new_val,
-                            'description': f"{provider.upper()} ID changed from {old_val or 'None'} to {new_val or 'None'}"
+                            'description': f"{provider.upper()} ID {'added' if not old_val else 'changed'}"
                         })
 
+            # Log detection results for debugging and monitoring
             if changes:
-                self.logger.debug(f"Detected {len(changes)} changes for item {new_item.item_id}")
+                change_types = [change['type'] for change in changes]
+                self.logger.debug(f"Detected {len(changes)} changes for item {new_item.item_id}: {', '.join(change_types)}")
+            else:
+                self.logger.debug(f"No meaningful changes detected for item {new_item.item_id}")
 
         except Exception as e:
+            # Log error but don't crash the webhook processing pipeline
             self.logger.error(f"Error detecting changes for item {new_item.item_id}: {e}")
+            # Return empty list on error to allow processing to continue
+            changes = []
 
         return changes
+
+    def _normalize_hdr_status(self, video_range: str) -> str:
+        """
+        Normalize HDR status values for consistent comparison and reporting.
+
+        This private method standardizes various HDR format names into consistent
+        categories for change detection. Different sources might use different
+        naming conventions for the same HDR formats.
+
+        **HDR Format Normalization:**
+        - SDR: Standard Dynamic Range (traditional video)
+        - HDR10: Basic HDR with static metadata
+        - HDR10+: Enhanced HDR with dynamic metadata
+        - Dolby Vision: Premium HDR format with dynamic metadata
+        - HLG: Hybrid Log-Gamma (broadcast HDR format)
+
+        Args:
+            video_range (str): Raw video range/HDR status from media metadata
+
+        Returns:
+            str: Normalized HDR status for consistent comparison
+
+        Example:
+            ```python
+            # Internal normalization calls
+            normalized = self._normalize_hdr_status("SMPTE2084")  # Returns "HDR10"
+            normalized = self._normalize_hdr_status("DOVI")        # Returns "Dolby Vision"
+            normalized = self._normalize_hdr_status(None)          # Returns "SDR"
+            ```
+
+        Note:
+            This method handles various naming conventions and edge cases to
+            provide consistent HDR status reporting across different media sources.
+        """
+        if not video_range:
+            return "SDR"
+        
+        # Convert to lowercase for case-insensitive comparison
+        range_lower = video_range.lower()
+        
+        # Map various HDR format indicators to standard names
+        if any(hdr_indicator in range_lower for hdr_indicator in ['dovi', 'dolby', 'vision']):
+            return "Dolby Vision"
+        elif any(hdr_indicator in range_lower for hdr_indicator in ['hdr10+', 'hdr10plus']):
+            return "HDR10+"
+        elif any(hdr_indicator in range_lower for hdr_indicator in ['hdr10', 'hdr', 'smpte2084', 'bt2020']):
+            return "HDR10"
+        elif any(hdr_indicator in range_lower for hdr_indicator in ['hlg', 'hybrid']):
+            return "HLG"
+        else:
+            return "SDR"
+
+    def get_change_summary(self, changes: List[Dict[str, Any]]) -> str:
+        """
+        Generate a human-readable summary of detected changes for logging and notifications.
+
+        This method creates a concise summary of all detected changes that can be
+        used in log messages, Discord notifications, or administrative reports.
+        It groups similar changes and provides an overview of upgrade types.
+
+        **Summary Format:**
+        The summary uses a structured format that highlights the most important
+        changes first, followed by additional improvements:
+        - "Resolution upgrade (720p → 1080p), codec improvement (h264 → hevc)"
+        - "Audio enhancement (2ch → 6ch), HDR upgrade (SDR → HDR10)"
+        - "Metadata update (added IMDb ID)"
+
+        Args:
+            changes (List[Dict[str, Any]]): List of detected changes from detect_changes()
+
+        Returns:
+            str: Human-readable summary of changes
+
+        Example:
+            ```python
+            # Generate summary for Discord notification
+            changes = detector.detect_changes(old_item, new_item)
+            summary = detector.get_change_summary(changes)
+            
+            print(summary)
+            # Output: "Resolution upgrade (720p → 1080p), codec improvement (h264 → hevc), audio enhancement (2ch → 6ch)"
+            
+            # Use in Discord embed
+            discord_embed = {
+                "title": "Media Upgraded",
+                "description": f"**Improvements:** {summary}"
+            }
+            ```
+
+        Note:
+            This method is useful for creating user-friendly change descriptions
+            that can be displayed in Discord notifications or administrative
+            dashboards without overwhelming users with technical details.
+        """
+        if not changes:
+            return "No changes detected"
+
+        # Group changes by category for better readability
+        change_summaries = []
+        
+        for change in changes:
+            change_type = change['type']
+            old_val = change['old_value']
+            new_val = change['new_value']
+            
+            if change_type == 'resolution':
+                change_summaries.append(f"Resolution upgrade ({old_val}p → {new_val}p)")
+            elif change_type == 'codec':
+                change_summaries.append(f"Video codec improvement ({old_val} → {new_val})")
+            elif change_type == 'audio_codec':
+                change_summaries.append(f"Audio codec upgrade ({old_val} → {new_val})")
+            elif change_type == 'audio_channels':
+                change_summaries.append(f"Audio enhancement ({old_val}ch → {new_val}ch)")
+            elif change_type == 'hdr_status':
+                change_summaries.append(f"HDR upgrade ({old_val} → {new_val})")
+            elif change_type == 'file_size':
+                # Convert bytes to human-readable format
+                old_size = self._format_file_size(old_val) if old_val else "Unknown"
+                new_size = self._format_file_size(new_val) if new_val else "Unknown"
+                change_summaries.append(f"File replacement ({old_size} → {new_size})")
+            elif change_type == 'provider_ids':
+                provider = change['field'].replace('_id', '').upper()
+                if not old_val:
+                    change_summaries.append(f"Added {provider} metadata")
+                else:
+                    change_summaries.append(f"Updated {provider} metadata")
+            else:
+                # Generic fallback for unknown change types
+                change_summaries.append(f"{change_type} change")
+
+        return ", ".join(change_summaries)
+
+    def _format_file_size(self, size_bytes: int) -> str:
+        """
+        Format file size in bytes to human-readable format.
+
+        This private utility method converts raw byte counts into user-friendly
+        file size representations using appropriate units (KB, MB, GB, TB).
+
+        Args:
+            size_bytes (int): File size in bytes
+
+        Returns:
+            str: Formatted file size (e.g., "1.5 GB", "750 MB")
+
+        Example:
+            ```python
+            # Internal file size formatting
+            formatted = self._format_file_size(1073741824)  # Returns "1.0 GB"
+            formatted = self._format_file_size(524288000)   # Returns "500 MB"
+            ```
+        """
+        if size_bytes is None:
+            return "Unknown"
+        
+        # Define size units and conversion factors
+        units = ['B', 'KB', 'MB', 'GB', 'TB']
+        unit_index = 0
+        size = float(size_bytes)
+        
+        # Convert to appropriate unit
+        while size >= 1024 and unit_index < len(units) - 1:
+            size /= 1024
+            unit_index += 1
+        
+        # Format with appropriate precision
+        if unit_index == 0:  # Bytes
+            return f"{int(size)} {units[unit_index]}"
+        else:
+            return f"{size:.1f} {units[unit_index]}"

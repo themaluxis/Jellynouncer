@@ -1,0 +1,19 @@
+Copyright Notice
+================
+
+Jellynouncer Discord Webhook Service
+Copyright (c) 2025 Mark Newton
+
+This software is licensed under the MIT License.
+See the LICENSE file for the full license text.
+
+Project Information:
+- Project Name: Jellynouncer
+- Version: 2.0.0
+- Author: Mark Newton
+- Description: Intermedite webhook service for Jellyfin to Discord notifications
+- License: MIT License
+
+Third-Party Dependencies:
+This project uses various open-source libraries and dependencies.
+See requirements.txt and package documentation for their respective licenses.
