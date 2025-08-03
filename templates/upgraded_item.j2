@@ -80,24 +80,15 @@
         {% if item.imdb_id or item.tmdb_id or item.tvdb_id %}
         ,{
           "name": "🔗 External Links",
-          "value": "{% if item.imdb_id %}[IMDb](https://www.imdb.com/title/{{ item.imdb_id }}/){% endif %}{% if item.tmdb_id %}{% if item.imdb_id %} • {% endif %}[TMDb](https://www.themoviedb.org/{% if item.item_type == 'Movie' %}movie{% else %}tv{% endif %}/{{ item.tmdb_id }}){% endif %}{% if item.tvdb_id %}{% if item.imdb_id or item.tmdb_id %} • {% endif %}[TVDb](https://thetvdb.com/dereferrer/series/{{ item.tvdb_id }}){% endif %}",
+          "value": "{% if item.imdb_id %}[IMDb](https://www.imdb.com/title/{{ item.imdb_id }}/){% endif %}{% if item.tmdb_id %}{% if item.imdb_id %} • {% endif %}[TMDb](https://www.themoviedb.org/{% if item.item_type == 'Movie' %}movie{% elif item.item_type == 'Series' %}tv{% else %}tv{% endif %}/{{ item.tmdb_id }}){% endif %}{% if item.tvdb_id %}{% if item.imdb_id or item.tmdb_id %} • {% endif %}[TVDb](https://thetvdb.com/dereferrer/series/{{ item.tvdb_id }}){% endif %}",
           "inline": false
         }
         {% endif %}
-      ],
+      ]{% if has_thumbnail %},
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
-      },
-      {% if item.item_type != 'Episode' %}
+        "url": "{{ verified_thumbnail_url }}"
+      }{% endif %}{% if item.item_type != 'Episode' and has_thumbnail %},
       "image": {
-        "url": "{{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Backdrop?maxHeight=200&maxWidth=400"
-      },
-      {% endif %}
-      "footer": {
-        "text": "Updated in Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
-      },
-      "timestamp": "{{ timestamp }}"
-    }
-  ]
-}
+        "url": "{{ verified_thumbnail_url }}"
+      }{% endif %},
+      "footer":

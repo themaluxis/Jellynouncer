@@ -601,43 +601,78 @@ class AppConfig(BaseModel):
 
 class WebhookPayload(BaseModel):
     """
-    Expected webhook payload structure from Jellyfin Webhook Plugin.
+    Enhanced webhook payload structure from Jellyfin Webhook Plugin.
 
-    This class defines the data structure that Jellyfin sends when the
-    webhook plugin triggers. It uses Pydantic for automatic validation
-    and type conversion of incoming webhook data.
-
-    The Jellyfin webhook plugin can be configured to send various fields
-    using template variables like {{ItemId}}, {{Name}}, etc. This model
-    represents the expected structure after template expansion.
+    This class defines the complete data structure that Jellyfin sends when the
+    webhook plugin triggers, including all the additional fields discovered
+    from the debug webhook analysis.
 
     Attributes:
-        ItemId: Unique identifier for the media item in Jellyfin
-        Name: Display name of the media item
-        ItemType: Type of media (Movie, Episode, Season, Series, Audio, etc.)
-        Year: Release year (for movies) or air year (for TV)
-        SeriesName: Name of TV series (for episodes)
-        SeasonNumber00: Zero-padded season number (e.g., "01")
-        EpisodeNumber00: Zero-padded episode number (e.g., "05")
-        Overview: Description/synopsis of the media item
+        Core required fields:
+            ItemId: Unique identifier for the media item in Jellyfin
+            Name: Display name of the media item
+            ItemType: Type of media (Movie, Episode, Season, Series, Audio, etc.)
 
-        Video fields (Video_0_*): Information about the primary video stream
-        Audio fields (Audio_0_*): Information about the primary audio stream
+        Server information:
+            ServerId: Jellyfin server unique identifier
+            ServerName: Human-readable server name
+            ServerVersion: Jellyfin server version
+            ServerUrl: Public URL of the Jellyfin server
+            NotificationType: Type of notification (ItemAdded, etc.)
+            Timestamp: Local timestamp with timezone
+            UtcTimestamp: UTC timestamp
+
+        Basic metadata:
+            Year: Release year (for movies) or air year (for TV)
+            Overview: Description/synopsis of the media item
+            Tagline: Marketing tagline
+            RunTimeTicks: Duration in Jellyfin's tick format (100ns intervals)
+            RunTime: Human-readable duration string
+            PremiereDate: Release/air date
+            Genres: Comma-separated genre list
+
+        TV Series specific fields:
+            SeriesName: Name of TV series (for episodes)
+            SeriesId: Unique ID of the parent series
+            SeriesPremiereDate: Series premiere date
+            SeasonId: Unique ID of the parent season
+            SeasonNumber: Season number (integer)
+            SeasonNumber00: Zero-padded season number (e.g., "01")
+            SeasonNumber000: Three-digit padded season number (e.g., "001")
+            EpisodeNumber: Episode number (integer)
+            EpisodeNumber00: Zero-padded episode number (e.g., "05")
+            EpisodeNumber000: Three-digit padded episode number (e.g., "005")
+            AirTime: Episode air time
+
+        Video stream information (Video_0_*): Information about the primary video stream
+        Audio stream information (Audio_0_*): Information about the primary audio stream
+        Subtitle stream information (Subtitle_0_*): Information about the primary subtitle stream
+
         Provider fields (Provider_*): External database IDs (IMDb, TMDb, TVDb)
+
+        Discord-specific fields:
+            MentionType: Discord mention configuration
+            EmbedColor: Discord embed color
+            Username: Discord username
+            BotUsername: Discord bot username
 
     Example:
         ```python
-        # Typical movie payload from Jellyfin:
+        # Typical episode payload from Jellyfin:
         payload = WebhookPayload(
-            ItemId="abc123def456",
-            Name="The Matrix",
-            ItemType="Movie",
-            Year=1999,
-            Video_0_Height=1080,
-            Video_0_Codec="h264",
-            Audio_0_Codec="ac3",
+            ItemId="d59aceff2218f3d94c59436326c97dd1",
+            Name="Slippery When Wet",
+            ItemType="Episode",
+            SeriesName="Nautilus",
+            SeriesId="906d53497fc1d61353a961806a08a1f7",
+            SeasonNumber=1,
+            EpisodeNumber=4,
+            Video_0_Height=960,
+            Video_0_Codec="hevc",
+            Audio_0_Codec="eac3",
             Audio_0_Channels=6,
-            Provider_imdb="tt0133093"
+            Provider_imdb="tt16275890",
+            Provider_tvdb="10541775"
         )
         ```
 
@@ -647,37 +682,93 @@ class WebhookPayload(BaseModel):
     """
     model_config = ConfigDict(extra='ignore')  # Ignore unknown fields from Jellyfin
 
-    # Required fields that should always be present
+    # ==================== REQUIRED CORE FIELDS ====================
     ItemId: str = Field(..., description="Jellyfin item ID")
     Name: str = Field(..., description="Item name")
-    ItemType: str = Field(..., description="Item type (Movie, Episode, etc.)")
+    ItemType: str = Field(..., description="Item type (Movie, Episode, Series, etc.)")
 
-    # Optional metadata fields
+    # ==================== SERVER INFORMATION ====================
+    ServerId: Optional[str] = Field(default=None, description="Jellyfin server unique identifier")
+    ServerName: Optional[str] = Field(default=None, description="Jellyfin server name")
+    ServerVersion: Optional[str] = Field(default=None, description="Jellyfin server version")
+    ServerUrl: Optional[str] = Field(default=None, description="Jellyfin server public URL")
+    NotificationType: Optional[str] = Field(default=None, description="Notification type (ItemAdded, etc.)")
+    Timestamp: Optional[str] = Field(default=None, description="Local timestamp with timezone")
+    UtcTimestamp: Optional[str] = Field(default=None, description="UTC timestamp")
+
+    # ==================== BASIC METADATA ====================
     Year: Optional[int] = Field(default=None, description="Release year")
-    SeriesName: Optional[str] = Field(default=None, description="Series name for episodes")
-    SeasonNumber00: Optional[str] = Field(default=None, description="Season number (zero-padded)")
-    EpisodeNumber00: Optional[str] = Field(default=None, description="Episode number (zero-padded)")
     Overview: Optional[str] = Field(default=None, description="Item overview/description")
+    Tagline: Optional[str] = Field(default=None, description="Marketing tagline")
+    RunTimeTicks: Optional[int] = Field(default=None, description="Duration in ticks (100ns intervals)")
+    RunTime: Optional[str] = Field(default=None, description="Human-readable duration (HH:MM:SS)")
+    PremiereDate: Optional[str] = Field(default=None, description="Release/premiere date")
+    Genres: Optional[str] = Field(default=None, description="Comma-separated genre list")
 
-    # Video stream information (from MediaStreams)
-    Video_0_Height: Optional[int] = Field(default=None, description="Video height in pixels")
-    Video_0_Width: Optional[int] = Field(default=None, description="Video width in pixels")
+    # ==================== TV SERIES SPECIFIC FIELDS ====================
+    SeriesName: Optional[str] = Field(default=None, description="Series name for episodes")
+    SeriesId: Optional[str] = Field(default=None, description="Unique ID of parent series")
+    SeriesPremiereDate: Optional[str] = Field(default=None, description="Series premiere date")
+    SeasonId: Optional[str] = Field(default=None, description="Unique ID of parent season")
+    SeasonNumber: Optional[int] = Field(default=None, description="Season number (integer)")
+    SeasonNumber00: Optional[str] = Field(default=None, description="Season number (zero-padded)")
+    SeasonNumber000: Optional[str] = Field(default=None, description="Season number (three-digit padded)")
+    EpisodeNumber: Optional[int] = Field(default=None, description="Episode number (integer)")
+    EpisodeNumber00: Optional[str] = Field(default=None, description="Episode number (zero-padded)")
+    EpisodeNumber000: Optional[str] = Field(default=None, description="Episode number (three-digit padded)")
+    AirTime: Optional[str] = Field(default=None, description="Episode air time")
+
+    # ==================== VIDEO STREAM INFORMATION ====================
+    Video_0_Title: Optional[str] = Field(default=None, description="Video stream title")
+    Video_0_Type: Optional[str] = Field(default=None, description="Video stream type")
     Video_0_Codec: Optional[str] = Field(default=None, description="Video codec")
     Video_0_Profile: Optional[str] = Field(default=None, description="Video profile")
-    Video_0_VideoRange: Optional[str] = Field(default=None, description="Video range (HDR/SDR)")
-    Video_0_FrameRate: Optional[float] = Field(default=None, description="Video frame rate")
+    Video_0_Level: Optional[int] = Field(default=None, description="Video level")
+    Video_0_Height: Optional[int] = Field(default=None, description="Video height in pixels")
+    Video_0_Width: Optional[int] = Field(default=None, description="Video width in pixels")
     Video_0_AspectRatio: Optional[str] = Field(default=None, description="Video aspect ratio")
+    Video_0_Interlaced: Optional[bool] = Field(default=None, description="Whether video is interlaced")
+    Video_0_FrameRate: Optional[float] = Field(default=None, description="Video frame rate")
+    Video_0_VideoRange: Optional[str] = Field(default=None, description="Video range (HDR/SDR)")
+    Video_0_ColorSpace: Optional[str] = Field(default=None, description="Video color space")
+    Video_0_ColorTransfer: Optional[str] = Field(default=None, description="Video color transfer")
+    Video_0_ColorPrimaries: Optional[str] = Field(default=None, description="Video color primaries")
+    Video_0_PixelFormat: Optional[str] = Field(default=None, description="Video pixel format")
+    Video_0_RefFrames: Optional[int] = Field(default=None, description="Video reference frames")
 
-    # Audio stream information (from MediaStreams)
+    # ==================== AUDIO STREAM INFORMATION ====================
+    Audio_0_Title: Optional[str] = Field(default=None, description="Audio stream title")
+    Audio_0_Type: Optional[str] = Field(default=None, description="Audio stream type")
+    Audio_0_Language: Optional[str] = Field(default=None, description="Audio language")
     Audio_0_Codec: Optional[str] = Field(default=None, description="Audio codec")
     Audio_0_Channels: Optional[int] = Field(default=None, description="Audio channel count")
-    Audio_0_Language: Optional[str] = Field(default=None, description="Audio language")
     Audio_0_Bitrate: Optional[int] = Field(default=None, description="Audio bitrate")
+    Audio_0_SampleRate: Optional[int] = Field(default=None, description="Audio sample rate")
+    Audio_0_Default: Optional[bool] = Field(default=None, description="Whether audio is default")
 
-    # External provider IDs (from ProviderIds)
+    # ==================== SUBTITLE STREAM INFORMATION ====================
+    Subtitle_0_Title: Optional[str] = Field(default=None, description="Subtitle stream title")
+    Subtitle_0_Type: Optional[str] = Field(default=None, description="Subtitle stream type")
+    Subtitle_0_Language: Optional[str] = Field(default=None, description="Subtitle language")
+    Subtitle_0_Codec: Optional[str] = Field(default=None, description="Subtitle codec")
+    Subtitle_0_Default: Optional[bool] = Field(default=None, description="Whether subtitle is default")
+    Subtitle_0_Forced: Optional[bool] = Field(default=None, description="Whether subtitle is forced")
+    Subtitle_0_External: Optional[bool] = Field(default=None, description="Whether subtitle is external file")
+
+    # ==================== EXTERNAL PROVIDER IDS ====================
     Provider_imdb: Optional[str] = Field(default=None, description="IMDb ID")
     Provider_tmdb: Optional[str] = Field(default=None, description="TMDb ID")
     Provider_tvdb: Optional[str] = Field(default=None, description="TVDb ID")
+    Provider_tvdbslug: Optional[str] = Field(default=None, description="TVDb slug")
+
+    # ==================== DISCORD-SPECIFIC FIELDS ====================
+    MentionType: Optional[str] = Field(default=None, description="Discord mention type")
+    EmbedColor: Optional[int] = Field(default=None, description="Discord embed color")
+    Username: Optional[str] = Field(default=None, description="Discord username")
+    BotUsername: Optional[str] = Field(default=None, description="Discord bot username")
+
+    # Note: Additional fields may be present in the webhook payload
+    # but are ignored due to extra='ignore' configuration
 
 
 # ==================== DATA MODELS ====================
@@ -1339,6 +1430,196 @@ class ConfigurationValidator:
             raise SystemExit(1)
 
         self.logger.info("Configuration validation completed successfully")
+
+# ==================== THUMBNAIL SERVICE ====================
+class ThumbnailManager:
+    """
+    Manages thumbnail URL generation and verification for Discord notifications.
+
+    This class implements a comprehensive thumbnail fallback system that:
+    1. Generates appropriate thumbnail URLs based on media type
+    2. Verifies thumbnail URLs are accessible before sending to Discord
+    3. Implements fallback strategies when primary thumbnails fail
+    4. Caches verification results for performance
+
+    Fallback Strategy:
+    - Episodes: Episode image → Season image → Series image → Default
+    - Series: Series image → Default
+    - Movies: Movie image → Default
+    - Other: Item image → Default
+    """
+
+    def __init__(self, jellyfin_url: str, session: aiohttp.ClientSession, logger: logging.Logger):
+        """
+        Initialize thumbnail manager.
+
+        Args:
+            jellyfin_url: Base Jellyfin server URL
+            session: HTTP session for verification requests
+            logger: Logger instance
+        """
+        self.jellyfin_url = jellyfin_url.rstrip('/')
+        self.session = session
+        self.logger = logger
+
+        # Cache for URL verification results (URL -> (is_valid, timestamp))
+        self.verification_cache = {}
+        self.cache_duration = 300  # 5 minutes cache
+
+    async def get_verified_thumbnail_url(self, item: MediaItem) -> Optional[str]:
+        """
+        Get verified thumbnail URL for a media item with fallback strategy.
+
+        Args:
+            item: MediaItem to get thumbnail for
+
+        Returns:
+            Verified thumbnail URL or None if no valid thumbnail found
+        """
+        # Generate thumbnail URL candidates based on item type
+        thumbnail_candidates = self._generate_thumbnail_candidates(item)
+
+        # Test each candidate URL
+        for candidate in thumbnail_candidates:
+            if await self._verify_thumbnail_url(candidate):
+                self.logger.debug(f"Using verified thumbnail: {candidate}")
+                return candidate
+
+        self.logger.warning(f"No valid thumbnail found for {item.name} (ID: {item.item_id})")
+        return None
+
+    def _generate_thumbnail_candidates(self, item: MediaItem) -> List[str]:
+        """
+        Generate list of thumbnail URL candidates based on media type and fallback strategy.
+
+        Args:
+            item: MediaItem to generate URLs for
+
+        Returns:
+            List of thumbnail URLs to try, in order of preference
+        """
+        candidates = []
+
+        if item.item_type == "Episode":
+            # Episode fallback: Episode → Season → Series
+
+            # 1. Episode primary image
+            candidates.append(
+                f"{self.jellyfin_url}/Items/{item.item_id}/Images/Primary?maxHeight=400&maxWidth=300"
+            )
+
+            # 2. Episode thumb image (alternative)
+            candidates.append(
+                f"{self.jellyfin_url}/Items/{item.item_id}/Images/Thumb?maxHeight=300&maxWidth=500"
+            )
+
+            # 3. Season primary image (if season info available)
+            if item.parent_id:  # parent_id is season_id for episodes
+                candidates.append(
+                    f"{self.jellyfin_url}/Items/{item.parent_id}/Images/Primary?maxHeight=400&maxWidth=300"
+                )
+                candidates.append(
+                    f"{self.jellyfin_url}/Items/{item.parent_id}/Images/Thumb?maxHeight=300&maxWidth=500"
+                )
+
+            # 4. Series primary image (if series info available)
+            if item.series_id:
+                candidates.append(
+                    f"{self.jellyfin_url}/Items/{item.series_id}/Images/Primary?maxHeight=400&maxWidth=300"
+                )
+                candidates.append(
+                    f"{self.jellyfin_url}/Items/{item.series_id}/Images/Backdrop?maxHeight=200&maxWidth=400"
+                )
+
+        elif item.item_type == "Series":
+            # Series fallback: Series primary → Series backdrop
+            candidates.extend([
+                f"{self.jellyfin_url}/Items/{item.item_id}/Images/Primary?maxHeight=400&maxWidth=300",
+                f"{self.jellyfin_url}/Items/{item.item_id}/Images/Backdrop?maxHeight=200&maxWidth=400",
+                f"{self.jellyfin_url}/Items/{item.item_id}/Images/Banner?maxHeight=150&maxWidth=500"
+            ])
+
+        elif item.item_type == "Movie":
+            # Movie fallback: Movie primary → Movie backdrop
+            candidates.extend([
+                f"{self.jellyfin_url}/Items/{item.item_id}/Images/Primary?maxHeight=400&maxWidth=300",
+                f"{self.jellyfin_url}/Items/{item.item_id}/Images/Backdrop?maxHeight=200&maxWidth=400"
+            ])
+
+        elif item.item_type == "Season":
+            # Season fallback: Season primary → Series primary
+            candidates.append(
+                f"{self.jellyfin_url}/Items/{item.item_id}/Images/Primary?maxHeight=400&maxWidth=300"
+            )
+            if item.series_id:
+                candidates.append(
+                    f"{self.jellyfin_url}/Items/{item.series_id}/Images/Primary?maxHeight=400&maxWidth=300"
+                )
+
+        else:
+            # Generic fallback for other item types
+            candidates.extend([
+                f"{self.jellyfin_url}/Items/{item.item_id}/Images/Primary?maxHeight=400&maxWidth=300",
+                f"{self.jellyfin_url}/Items/{item.item_id}/Images/Thumb?maxHeight=300&maxWidth=500"
+            ])
+
+        # Add default Jellyfin logo as final fallback
+        candidates.append(f"{self.jellyfin_url}/web/assets/img/banner-light.png")
+
+        return candidates
+
+    async def _verify_thumbnail_url(self, url: str) -> bool:
+        """
+        Verify that a thumbnail URL is accessible and returns a valid image.
+
+        Args:
+            url: Thumbnail URL to verify
+
+        Returns:
+            True if URL is valid and accessible, False otherwise
+        """
+        # Check cache first
+        current_time = time.time()
+        if url in self.verification_cache:
+            is_valid, timestamp = self.verification_cache[url]
+            if current_time - timestamp < self.cache_duration:
+                self.logger.debug(f"Using cached verification result for {url}: {is_valid}")
+                return is_valid
+
+        try:
+            # Make HEAD request to check if image exists without downloading full content
+            async with self.session.head(url, timeout=5) as response:
+                is_valid = (
+                        response.status == 200 and
+                        response.headers.get('content-type', '').startswith('image/')
+                )
+
+                # Cache the result
+                self.verification_cache[url] = (is_valid, current_time)
+
+                if is_valid:
+                    self.logger.debug(f"Thumbnail URL verified: {url}")
+                else:
+                    self.logger.debug(f"Thumbnail URL invalid (status: {response.status}, "
+                                      f"content-type: {response.headers.get('content-type')}): {url}")
+
+                return is_valid
+
+        except asyncio.TimeoutError:
+            self.logger.debug(f"Thumbnail URL verification timeout: {url}")
+            # Cache negative result for failed verifications
+            self.verification_cache[url] = (False, current_time)
+            return False
+        except Exception as e:
+            self.logger.debug(f"Thumbnail URL verification error for {url}: {e}")
+            # Cache negative result for failed verifications
+            self.verification_cache[url] = (False, current_time)
+            return False
+
+    def clear_cache(self):
+        """Clear the verification cache."""
+        self.verification_cache.clear()
+        self.logger.debug("Thumbnail verification cache cleared")
 
 
 # ==================== RATING SERVICE ====================
@@ -3170,26 +3451,7 @@ class DiscordNotifier:
         self.template_env = None
 
     async def initialize(self, templates_config: TemplatesConfig) -> None:
-        """
-        Initialize HTTP session and Jinja2 template environment.
-
-        This method sets up the infrastructure needed for sending notifications:
-        - HTTP session with appropriate timeouts and limits
-        - Jinja2 template environment for message formatting
-        - Template validation to ensure required templates exist
-
-        Args:
-            templates_config: Template configuration and file paths
-
-        Raises:
-            Various exceptions if initialization fails
-
-        Example:
-            ```python
-            await notifier.initialize(config.templates)
-            # Notifier is now ready to send notifications
-            ```
-        """
+        """Initialize HTTP session, Jinja2 templates, and thumbnail manager."""
         try:
             # Initialize HTTP session with production-ready settings
             timeout = aiohttp.ClientTimeout(total=30, connect=10)
@@ -3203,11 +3465,11 @@ class DiscordNotifier:
             # Initialize Jinja2 template environment
             self.template_env = Environment(
                 loader=FileSystemLoader(templates_config.directory),
-                autoescape=True,  # Prevent XSS in template output
-                enable_async=False  # We don't need async templates
+                autoescape=True,
+                enable_async=False
             )
 
-            # Validate that required templates exist and can be loaded
+            # Validate required templates exist
             required_templates = [
                 templates_config.new_item_template,
                 templates_config.upgraded_item_template
@@ -3223,7 +3485,14 @@ class DiscordNotifier:
                     self.logger.error(f"Template syntax error in {template_name}: {e}")
                     raise
 
-            self.logger.info("Discord notifier initialized successfully")
+            # Initialize thumbnail manager (NEW)
+            self.thumbnail_manager = ThumbnailManager(
+                jellyfin_url=self.jellyfin_url,
+                session=self.session,
+                logger=self.logger
+            )
+
+            self.logger.info("Discord notifier initialized successfully with thumbnail verification")
 
         except Exception as e:
             self.logger.error(f"Failed to initialize Discord notifier: {e}")
@@ -3372,64 +3641,40 @@ class DiscordNotifier:
 
     async def send_notification(self, item: MediaItem, changes: Optional[List[Dict[str, Any]]] = None,
                                 is_new: bool = True) -> bool:
-        """
-        Send a Discord notification for a media item.
-
-        This is the main method for sending notifications. It handles the entire
-        process from webhook selection to template rendering to HTTP delivery,
-        with comprehensive error handling and retry logic.
-
-        Args:
-            item: Media item to notify about
-            changes: List of changes (for upgrade notifications)
-            is_new: Whether this is a new item (True) or upgrade (False)
-
-        Returns:
-            True if notification sent successfully, False otherwise
-
-        Example:
-            ```python
-            # New item notification
-            success = await notifier.send_notification(movie, is_new=True)
-
-            # Upgrade notification
-            changes = [{'type': 'resolution', 'old_value': 720, 'new_value': 1080}]
-            success = await notifier.send_notification(movie, changes, is_new=False)
-            ```
-        """
+        """Enhanced notification sending with verified thumbnails."""
         try:
-            # Step 1: Find appropriate webhook for this item
+            # Find webhook
             webhook_info = self._get_webhook_for_item(item)
             if not webhook_info:
-                self.logger.warning("No suitable Discord webhook found for notification")
+                self.logger.warning("No suitable Discord webhook found")
                 return False
 
             webhook_name = webhook_info['name']
             webhook_config = webhook_info['config']
             webhook_url = webhook_config.url
 
-            # Step 2: Apply rate limiting
+            # Rate limiting
             await self._wait_for_rate_limit(webhook_name)
 
-            # Step 3: Determine template and color based on notification type
+            # Get verified thumbnail URL (NEW)
+            thumbnail_url = await self.thumbnail_manager.get_verified_thumbnail_url(item)
+
+            # Template selection
             if is_new:
                 template_name = 'new_item.j2'
-                color = 0x00FF00  # Green for new items
+                color = 0x00FF00
             else:
                 template_name = 'upgraded_item.j2'
                 color = self._get_change_color(changes)
 
-            # Step 4: Load and render template
+            # Load template
             try:
                 template = self.template_env.get_template(template_name)
-            except TemplateNotFound:
-                self.logger.error(f"Template not found: {template_name}")
-                return False
-            except TemplateSyntaxError as e:
-                self.logger.error(f"Template syntax error in {template_name}: {e}")
+            except (TemplateNotFound, TemplateSyntaxError) as e:
+                self.logger.error(f"Template error {template_name}: {e}")
                 return False
 
-            # Step 5: Get ratings data from rating service
+            # Get ratings (ENHANCED)
             ratings = {}
             if hasattr(self, '_webhook_service') and self._webhook_service and self._webhook_service.rating_service:
                 try:
@@ -3439,64 +3684,57 @@ class DiscordNotifier:
                 except Exception as e:
                     self.logger.warning(f"Failed to fetch ratings for {item.name}: {e}")
 
-            # Step 6: Prepare comprehensive template data
+            # Template data (ENHANCED)
             template_data = {
-                'item': asdict(item),  # Convert MediaItem to dict
-                'changes': changes or [],  # List of changes for upgrades
-                'is_new': is_new,  # Boolean flag
-                'color': color,  # Embed color
-                'jellyfin_url': self.jellyfin_url,  # For generating links
+                'item': asdict(item),
+                'changes': changes or [],
+                'is_new': is_new,
+                'color': color,
+                'jellyfin_url': self.jellyfin_url,
                 'timestamp': datetime.now(timezone.utc).isoformat(),
-                'webhook_name': webhook_config.name,  # Human-readable webhook name
-                'webhook_target': webhook_name,  # Technical webhook identifier
-                'ratings': ratings  # Comprehensive rating information from all sources
+                'webhook_name': webhook_config.name,
+                'webhook_target': webhook_name,
+                'ratings': ratings,  # NEW
+                'verified_thumbnail_url': thumbnail_url,  # NEW
+                'has_thumbnail': thumbnail_url is not None  # NEW
             }
 
-            # Step 7: Render template to JSON
+            # Render template
             try:
                 rendered = template.render(**template_data)
                 payload = json.loads(rendered)
             except Exception as e:
-                self.logger.error(f"Error rendering template {template_name}: {e}")
+                self.logger.error(f"Template rendering error {template_name}: {e}")
                 return False
 
-            # Step 7: Send to Discord with retry logic
+            # Send to Discord with retry logic
             max_retries = 3
             for attempt in range(max_retries):
                 try:
                     async with self.session.post(webhook_url, json=payload) as response:
                         if response.status == 204:
-                            # Success! Discord webhooks return 204 No Content on success
                             self.logger.info(
-                                f"Successfully sent notification for {item.name} to '{webhook_name}' webhook")
+                                f"Successfully sent notification for {item.name} to '{webhook_name}' webhook"
+                                f"{' with thumbnail' if thumbnail_url else ' (no thumbnail)'}")
                             return True
                         elif response.status == 429:
-                            # Rate limited by Discord - respect their Retry-After header
                             retry_after = int(response.headers.get('Retry-After', '60'))
-                            self.logger.warning(
-                                f"Discord webhook '{webhook_name}' rate limited, retry after {retry_after} seconds")
+                            self.logger.warning(f"Rate limited, retry after {retry_after}s")
                             await asyncio.sleep(retry_after)
                             continue
                         else:
-                            # Other HTTP error
                             error_text = await response.text()
-                            self.logger.error(
-                                f"Discord webhook '{webhook_name}' failed with status {response.status}: {error_text}")
-
+                            self.logger.error(f"Discord error {response.status}: {error_text}")
                             if attempt < max_retries - 1:
-                                # Exponential backoff for retries
                                 await asyncio.sleep(2 ** attempt)
                                 continue
                             return False
 
                 except aiohttp.ClientError as e:
-                    self.logger.error(f"Network error sending to Discord webhook '{webhook_name}': {e}")
+                    self.logger.error(f"Network error: {e}")
                     if attempt < max_retries - 1:
                         await asyncio.sleep(2 ** attempt)
                         continue
-                    return False
-                except Exception as e:
-                    self.logger.error(f"Unexpected error sending to Discord webhook '{webhook_name}': {e}")
                     return False
 
             return False
@@ -4317,23 +4555,30 @@ class WebhookService:
 
     def _extract_from_webhook(self, payload: WebhookPayload) -> MediaItem:
         """
-        Extract MediaItem from Jellyfin webhook payload with robust error handling.
+        Extract MediaItem from enhanced Jellyfin webhook payload with comprehensive field mapping.
 
         This method converts the webhook payload from Jellyfin into our internal
-        MediaItem representation, handling data type conversion and validation.
+        MediaItem representation, handling all the additional fields discovered
+        from the webhook analysis including SeriesId, SeasonId, and enhanced metadata.
 
         Args:
-            payload: Validated webhook payload from Jellyfin
+            payload: Enhanced webhook payload from Jellyfin
 
         Returns:
-            MediaItem instance with normalized data
+            MediaItem instance with comprehensive normalized data
 
         Raises:
             ValueError: If required fields are missing or invalid
 
         Example:
             ```python
-            payload = WebhookPayload(ItemId="123", Name="Movie", ItemType="Movie")
+            payload = WebhookPayload(
+                ItemId="123",
+                Name="Episode",
+                ItemType="Episode",
+                SeriesId="456",
+                SeriesName="Series Name"
+            )
             media_item = service._extract_from_webhook(payload)
             ```
         """
@@ -4346,25 +4591,38 @@ class WebhookService:
             if not payload.ItemType:
                 raise ValueError("ItemType is required")
 
-            # Extract and validate season/episode numbers
+            # Extract and validate season/episode numbers from multiple sources
             season_number = None
             episode_number = None
 
-            if payload.SeasonNumber00:
+            # Try integer fields first (more reliable)
+            if payload.SeasonNumber is not None:
+                season_number = payload.SeasonNumber
+            elif payload.SeasonNumber00:
                 try:
                     season_number = int(payload.SeasonNumber00)
                 except (ValueError, TypeError) as e:
                     self.logger.warning(f"Invalid season number '{payload.SeasonNumber00}': {e}")
 
-            if payload.EpisodeNumber00:
+            if payload.EpisodeNumber is not None:
+                episode_number = payload.EpisodeNumber
+            elif payload.EpisodeNumber00:
                 try:
                     episode_number = int(payload.EpisodeNumber00)
                 except (ValueError, TypeError) as e:
                     self.logger.warning(f"Invalid episode number '{payload.EpisodeNumber00}': {e}")
 
-            # Create MediaItem with webhook data
+            # Parse genres from comma-separated string to list
+            genres_list = []
+            if payload.Genres:
+                try:
+                    genres_list = [genre.strip() for genre in payload.Genres.split(',') if genre.strip()]
+                except Exception as e:
+                    self.logger.warning(f"Error parsing genres '{payload.Genres}': {e}")
+
+            # Create MediaItem with comprehensive webhook data
             return MediaItem(
-                # Core identification
+                # ==================== CORE IDENTIFICATION ====================
                 item_id=payload.ItemId,
                 name=payload.Name,
                 item_type=payload.ItemType,
@@ -4374,7 +4632,15 @@ class WebhookService:
                 episode_number=episode_number,
                 overview=payload.Overview,
 
-                # Video properties from webhook
+                # ==================== ENHANCED METADATA ====================
+                # These fields are now captured from the webhook
+                series_id=payload.SeriesId,  # CRITICAL: Now captured for episode thumbnails
+                parent_id=payload.SeasonId,  # Season ID for episodes
+                premiere_date=payload.PremiereDate,
+                runtime_ticks=payload.RunTimeTicks,
+                genres=genres_list,  # Parsed from comma-separated string
+
+                # ==================== VIDEO PROPERTIES ====================
                 video_height=payload.Video_0_Height,
                 video_width=payload.Video_0_Width,
                 video_codec=payload.Video_0_Codec,
@@ -4383,40 +4649,56 @@ class WebhookService:
                 video_framerate=payload.Video_0_FrameRate,
                 aspect_ratio=payload.Video_0_AspectRatio,
 
-                # Audio properties from webhook
+                # ==================== AUDIO PROPERTIES ====================
                 audio_codec=payload.Audio_0_Codec,
                 audio_channels=payload.Audio_0_Channels,
                 audio_language=payload.Audio_0_Language,
                 audio_bitrate=payload.Audio_0_Bitrate,
 
-                # Provider IDs from webhook
+                # ==================== PROVIDER IDS ====================
                 imdb_id=payload.Provider_imdb,
                 tmdb_id=payload.Provider_tmdb,
                 tvdb_id=payload.Provider_tvdb,
 
+                # ==================== ADDITIONAL FIELDS ====================
                 # Set defaults for API-only fields (not available in webhook)
-                date_created=None,
-                date_modified=None,
-                runtime_ticks=None,
-                official_rating=None,
-                genres=[],
-                studios=[],
-                tags=[],
+                date_created=payload.UtcTimestamp,  # Use webhook timestamp as creation time
+                date_modified=payload.UtcTimestamp,
+                official_rating=None,  # Not available in webhook
+                studios=[],  # Not available in webhook
+                tags=[],  # Not available in webhook
+
+                # Music-specific (not typically in TV/Movie webhooks)
                 album=None,
                 artists=[],
                 album_artist=None,
+
+                # Photo-specific
                 width=payload.Video_0_Width,
                 height=payload.Video_0_Height,
 
-                # Metadata
+                # ==================== INTERNAL TRACKING ====================
                 timestamp=datetime.now(timezone.utc).isoformat(),
-                file_path=None,
-                file_size=None,
-                last_modified=None
+                file_path=None,  # Not available in webhook
+                file_size=None,  # Not available in webhook
+                last_modified=payload.UtcTimestamp,
+
+                # Initialize external rating fields as None (populated by rating service)
+                omdb_imdb_rating=None,
+                omdb_rt_rating=None,
+                omdb_metacritic_rating=None,
+                tmdb_rating=None,
+                tmdb_vote_count=None,
+                tvdb_rating=None,
+                ratings_last_updated=None,
+                ratings_fetch_failed=None
             )
 
         except Exception as e:
-            self.logger.error(f"Error extracting MediaItem from webhook payload: {e}")
+            self.logger.error(f"Error extracting MediaItem from enhanced webhook payload: {e}")
+            self.logger.error(f"Payload data: ItemId={getattr(payload, 'ItemId', 'N/A')}, "
+                              f"Name={getattr(payload, 'Name', 'N/A')}, "
+                              f"ItemType={getattr(payload, 'ItemType', 'N/A')}")
             raise
 
     async def health_check(self) -> Dict[str, Any]:
