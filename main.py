@@ -3775,6 +3775,9 @@ class WebhookService:
         ```
     """
 
+    # Class-level logger to prevent multiple setups
+    _logger = None
+
     def __init__(self):
         """
         Initialize webhook service with logging and configuration loading.
@@ -3786,8 +3789,11 @@ class WebhookService:
         Raises:
             SystemExit: If configuration loading/validation fails
         """
-        # Set up logging first so we can log everything else
-        self.logger = setup_logging()
+        # Set up logging only once at class level
+        if WebhookService._logger is None:
+            WebhookService._logger = setup_logging()
+
+        self.logger = WebhookService._logger
 
         # Initialize component references
         self.config = None
@@ -3798,12 +3804,12 @@ class WebhookService:
         self.rating_service = None
 
         # Initialize service state tracking attributes
-        self.last_vacuum = 0  # Timestamp of last database vacuum
-        self.server_was_offline = False  # Whether Jellyfin server was previously offline
-        self.sync_in_progress = False  # Whether library sync is currently running
-        self.is_background_sync = False  # Whether current sync is running in background
-        self.initial_sync_complete = False  # Whether initial startup sync finished
-        self.shutdown_event = asyncio.Event()  # AsyncIO event for coordinating shutdown
+        self.last_vacuum = 0
+        self.server_was_offline = False
+        self.sync_in_progress = False
+        self.is_background_sync = False
+        self.initial_sync_complete = False
+        self.shutdown_event = asyncio.Event()
 
         # Load and validate configuration
         try:
@@ -3820,8 +3826,6 @@ class WebhookService:
             self.jellyfin = JellyfinAPI(self.config.jellyfin, self.logger)
             self.change_detector = ChangeDetector(self.config.notifications, self.logger)
             self.discord = DiscordNotifier(self.config.discord, self.config.jellyfin.server_url, self.logger)
-
-            # Initialize rating service with configuration
             self.rating_service = RatingService(self.config.rating_services, self.logger)
 
         except Exception as e:
@@ -5049,97 +5053,306 @@ async def webhook_endpoint(payload: WebhookPayload, request: Request) -> Dict[st
 @app.post("/webhook/debug")
 async def webhook_debug_endpoint(request: Request) -> Dict[str, Any]:
     """
-    Debug webhook endpoint for troubleshooting webhook configuration issues.
+    Enhanced debug webhook endpoint for troubleshooting webhook configuration issues.
 
-    This endpoint accepts any JSON payload and provides detailed analysis
-    of the request, including validation results and field analysis.
-    It's useful for debugging Jellyfin webhook plugin configuration.
+    This endpoint accepts any JSON payload and provides comprehensive analysis
+    of the request, including headers, body content, validation results, and
+    field-by-field analysis with detailed logging.
 
     Args:
         request: FastAPI request object containing raw webhook data
 
     Returns:
-        Dictionary with debug information including validation results
-
-    Example:
-        ```bash
-        curl -X POST http://localhost:8080/webhook/debug \
-             -H "Content-Type: application/json" \
-             -d '{"InvalidField": "test"}'
-        # Returns detailed analysis of what's wrong with the payload
-        ```
+        Dictionary with comprehensive debug information including validation results
     """
     logger = app.state.logger
-    client_host = getattr(getattr(request, "client", None), "host", "unknown")
+    client_info = getattr(request, "client", None)
+    client_host = getattr(client_info, "host", "unknown") if client_info else "unknown"
+    client_port = getattr(client_info, "port", "unknown") if client_info else "unknown"
 
     try:
+        # ==================== REQUEST ANALYSIS ====================
+
         # Get raw request data for analysis
         raw_body = await request.body()
         content_type = request.headers.get("content-type", "")
+        user_agent = request.headers.get("user-agent", "")
 
-        logger.info(f"Debug webhook received from {client_host}")
-        logger.debug(f"Content-Type: {content_type}, Body length: {len(raw_body)} bytes")
+        # Log comprehensive request details
+        logger.info("=" * 80)
+        logger.info("🔍 ENHANCED DEBUG WEBHOOK REQUEST RECEIVED")
+        logger.info("=" * 80)
+        logger.info(f"📡 Client: {client_host}:{client_port}")
+        logger.info(f"🌐 Method: {request.method}")
+        logger.info(f"📍 URL: {request.url}")
+        logger.info(f"📋 Content-Type: {content_type}")
+        logger.info(f"🤖 User-Agent: {user_agent}")
+        logger.info(f"📏 Body Length: {len(raw_body)} bytes")
+
+        # Log all headers
+        logger.info("📨 REQUEST HEADERS:")
+        for header_name, header_value in request.headers.items():
+            # Mask potential sensitive headers
+            if header_name.lower() in ['authorization', 'x-api-key', 'x-jellyfin-token']:
+                masked_value = header_value[:8] + "***" if len(header_value) > 8 else "***"
+                logger.info(f"    {header_name}: {masked_value}")
+            else:
+                logger.info(f"    {header_name}: {header_value}")
+
+        # Log query parameters if any
+        if request.query_params:
+            logger.info("🔗 QUERY PARAMETERS:")
+            for param_name, param_value in request.query_params.items():
+                logger.info(f"    {param_name}: {param_value}")
+
+        # Log raw body content (first 1000 chars for safety)
+        logger.info("📦 RAW BODY CONTENT:")
+        try:
+            body_text = raw_body.decode('utf-8', errors='replace')
+            if len(body_text) > 1000:
+                logger.info(f"    {body_text[:1000]}... (truncated, total length: {len(body_text)})")
+            else:
+                logger.info(f"    {body_text}")
+        except Exception as decode_error:
+            logger.error(f"    Failed to decode body as UTF-8: {decode_error}")
+            logger.info(f"    Raw bytes (first 200): {raw_body[:200]}")
+
+        # ==================== JSON PARSING ====================
+
+        json_data = None
+        json_parse_error = None
 
         # Attempt to parse JSON
         try:
             json_data = json.loads(raw_body)
-            logger.debug(f"Parsed JSON keys: {list(json_data.keys())}")
+            logger.info("✅ JSON PARSING SUCCESSFUL")
+            logger.info(f"📊 JSON Structure:")
+            logger.info(
+                f"    Top-level keys: {list(json_data.keys()) if isinstance(json_data, dict) else 'Not a dictionary'}")
+            logger.info(f"    Total keys: {len(json_data) if isinstance(json_data, dict) else 'N/A'}")
+
+            # Log each field in detail
+            if isinstance(json_data, dict):
+                logger.info("🔍 DETAILED FIELD ANALYSIS:")
+                for key, value in json_data.items():
+                    value_type = type(value).__name__
+                    if value is None:
+                        value_str = "null"
+                    elif isinstance(value, str):
+                        value_str = f'"{value}"' if len(str(value)) <= 100 else f'"{str(value)[:100]}..." (truncated)'
+                    else:
+                        value_str = str(value) if len(str(value)) <= 100 else f"{str(value)[:100]}... (truncated)"
+
+                    logger.info(f"    {key} ({value_type}): {value_str}")
+
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON: {e}")
+            json_parse_error = e
+            logger.error("❌ JSON PARSING FAILED")
+            logger.error(f"    Error: {e}")
+            logger.error(f"    Error position: line {e.lineno}, column {e.colno}")
+            logger.error(f"    Error message: {e.msg}")
+
             return {
+                "status": "json_parse_error",
+                "request_details": {
+                    "client": f"{client_host}:{client_port}",
+                    "method": request.method,
+                    "url": str(request.url),
+                    "content_type": content_type,
+                    "user_agent": user_agent,
+                    "body_length": len(raw_body),
+                    "headers": dict(request.headers)
+                },
                 "error": "Invalid JSON",
-                "details": str(e),
-                "raw_body_preview": raw_body.decode('utf-8', errors='replace')[:200]
+                "json_error": {
+                    "message": str(e),
+                    "line": e.lineno,
+                    "column": e.colno,
+                    "error_type": e.msg
+                },
+                "raw_body_preview": raw_body.decode('utf-8', errors='replace')[:500]
             }
+
+        # ==================== PYDANTIC VALIDATION ====================
+
+        validation_success = False
+        validation_errors = []
+        payload = None
 
         # Attempt Pydantic validation
         try:
             payload = WebhookPayload(**json_data)
-            logger.info(f"Validation successful for item: {payload.ItemId}")
+            validation_success = True
+
+            logger.info("✅ PYDANTIC VALIDATION SUCCESSFUL")
+            logger.info(f"📋 Validated Payload Details:")
+            logger.info(f"    ItemId: {payload.ItemId}")
+            logger.info(f"    Name: {payload.Name}")
+            logger.info(f"    ItemType: {payload.ItemType}")
+            logger.info(f"    Year: {payload.Year}")
+            logger.info(f"    SeriesName: {payload.SeriesName}")
+            logger.info(f"    Season/Episode: S{payload.SeasonNumber00}E{payload.EpisodeNumber00}")
+            logger.info(f"    Video: {payload.Video_0_Height}p {payload.Video_0_Codec}")
+            logger.info(f"    Audio: {payload.Audio_0_Codec} {payload.Audio_0_Channels}ch")
+            logger.info(
+                f"    Provider IDs: IMDb={payload.Provider_imdb}, TMDb={payload.Provider_tmdb}, TVDb={payload.Provider_tvdb}")
 
             # Process normally if validation passes
+            logger.info("🚀 PROCEEDING WITH NORMAL WEBHOOK PROCESSING")
             result = await app.state.service.process_webhook(payload)
+
+            logger.info("✅ WEBHOOK PROCESSING COMPLETED SUCCESSFULLY")
+            logger.info(f"    Processing result: {result}")
+            logger.info("=" * 80)
+
             return {
                 "status": "success",
                 "validation": "passed",
-                "result": result
+                "request_details": {
+                    "client": f"{client_host}:{client_port}",
+                    "method": request.method,
+                    "url": str(request.url),
+                    "content_type": content_type,
+                    "user_agent": user_agent,
+                    "body_length": len(raw_body),
+                    "headers": dict(request.headers)
+                },
+                "parsed_payload": {
+                    "ItemId": payload.ItemId,
+                    "Name": payload.Name,
+                    "ItemType": payload.ItemType,
+                    "Year": payload.Year,
+                    "SeriesName": payload.SeriesName,
+                    "video_specs": f"{payload.Video_0_Height}p {payload.Video_0_Codec}",
+                    "audio_specs": f"{payload.Audio_0_Codec} {payload.Audio_0_Channels}ch"
+                },
+                "processing_result": result
             }
 
         except ValidationError as e:
-            logger.warning(f"Validation failed: {e}")
+            logger.error("❌ PYDANTIC VALIDATION FAILED")
+            logger.error(f"    Validation errors: {len(e.errors())}")
 
-            # Provide detailed validation analysis
-            validation_details = {
-                "validation_errors": [],
-                "received_payload": json_data,
-                "field_analysis": {}
-            }
-
-            for error in e.errors():
+            # Log each validation error in detail
+            for i, error in enumerate(e.errors(), 1):
                 field_path = " -> ".join(str(x) for x in error['loc'])
-                validation_details["validation_errors"].append({
+                logger.error(f"    Error {i}:")
+                logger.error(f"        Field: {field_path}")
+                logger.error(f"        Error: {error['msg']}")
+                logger.error(f"        Error Type: {error['type']}")
+                logger.error(f"        Input Value: {error.get('input', 'N/A')}")
+
+                validation_errors.append({
                     "field": field_path,
                     "error": error['msg'],
                     "type": error['type'],
                     "input": error.get('input')
                 })
 
-            # Analyze each field in the payload
+        # ==================== FIELD ANALYSIS ====================
+
+        logger.info("🔬 COMPREHENSIVE FIELD ANALYSIS:")
+
+        # Get expected fields from the WebhookPayload model
+        expected_fields = set(WebhookPayload.model_fields.keys())
+        received_fields = set(json_data.keys()) if isinstance(json_data, dict) else set()
+
+        logger.info(f"    Expected fields: {len(expected_fields)}")
+        logger.info(f"    Received fields: {len(received_fields)}")
+        logger.info(f"    Missing fields: {expected_fields - received_fields}")
+        logger.info(f"    Extra fields: {received_fields - expected_fields}")
+
+        field_analysis = {}
+
+        # Analyze each received field
+        if isinstance(json_data, dict):
             for key, value in json_data.items():
-                validation_details["field_analysis"][key] = {
+                is_expected = key in expected_fields
+                field_info = {
                     "received_type": type(value).__name__,
                     "received_value": str(value)[:100] if value is not None else None,
-                    "is_expected": key in WebhookPayload.model_fields
+                    "is_expected": is_expected,
+                    "is_empty": value is None or (isinstance(value, str) and not value.strip())
                 }
 
-            return {
-                "status": "validation_failed",
-                "details": validation_details
+                # Get expected type from model if available
+                if is_expected:
+                    field_def = WebhookPayload.model_fields[key]
+                    field_info["expected_type"] = str(field_def.annotation)
+                    field_info["is_required"] = field_def.is_required()
+
+                field_analysis[key] = field_info
+
+                status_emoji = "✅" if is_expected else "❓"
+                logger.info(f"    {status_emoji} {key}: {field_info}")
+
+        # Analyze missing required fields
+        logger.info("📋 MISSING REQUIRED FIELDS ANALYSIS:")
+        for field_name, field_def in WebhookPayload.model_fields.items():
+            if field_def.is_required() and field_name not in received_fields:
+                logger.error(f"    ❌ Missing required field: {field_name} ({field_def.annotation})")
+
+        # ==================== FINAL RESPONSE ====================
+
+        logger.info("=" * 80)
+
+        comprehensive_response = {
+            "status": "validation_failed" if not validation_success else "success",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "request_details": {
+                "client": f"{client_host}:{client_port}",
+                "method": request.method,
+                "url": str(request.url),
+                "content_type": content_type,
+                "user_agent": user_agent,
+                "body_length": len(raw_body),
+                "headers": dict(request.headers),
+                "query_params": dict(request.query_params)
+            },
+            "json_parsing": {
+                "success": json_parse_error is None,
+                "error": str(json_parse_error) if json_parse_error else None
+            },
+            "validation": {
+                "success": validation_success,
+                "error_count": len(validation_errors),
+                "errors": validation_errors
+            },
+            "field_analysis": {
+                "expected_field_count": len(expected_fields),
+                "received_field_count": len(received_fields),
+                "missing_fields": list(expected_fields - received_fields),
+                "extra_fields": list(received_fields - expected_fields),
+                "field_details": field_analysis
+            },
+            "raw_data": {
+                "json_payload": json_data,
+                "raw_body_preview": raw_body.decode('utf-8', errors='replace')[:1000]
             }
+        }
+
+        return comprehensive_response
 
     except Exception as e:
-        logger.error(f"Debug webhook error: {e}", exc_info=True)
-        return {"error": str(e)}
+        logger.error("💥 CRITICAL ERROR IN DEBUG WEBHOOK")
+        logger.error(f"    Exception type: {type(e).__name__}")
+        logger.error(f"    Exception message: {str(e)}")
+        logger.error("    Full traceback:", exc_info=True)
+        logger.info("=" * 80)
+
+        return {
+            "status": "critical_error",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "error": {
+                "type": type(e).__name__,
+                "message": str(e)
+            },
+            "request_details": {
+                "client": f"{client_host}:{client_port}",
+                "method": getattr(request, 'method', 'unknown'),
+                "url": str(getattr(request, 'url', 'unknown'))
+            }
+        }
 
 
 @app.get("/health")
