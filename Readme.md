@@ -8,6 +8,17 @@
 
 **Jellynouncer** is a Discord webhook service for Jellyfin media server notifications. It detects new content and quality upgrades, routing notifications to different Discord channels based on content type with customizable embed messages.
 
+> ⚠️ **ALPHA SOFTWARE WARNING** ⚠️
+> 
+> **This software is currently in alpha development stage.** While functional, it may contain bugs, incomplete features, or undergo significant changes. Please use with caution in production environments.
+> 
+> - 🔧 **Active Development**: Features and APIs may change without notice
+> - 🐛 **Potential Issues**: Bugs and edge cases are still being discovered and fixed  
+> - 📋 **Testing Needed**: Please report any issues you encounter
+> - 💾 **Backup Recommended**: Ensure you have backups of any important configurations
+> 
+> We appreciate early adopters and welcome feedback through [GitHub Issues](https://github.com/MarkusMcNugen/Jellynouncer/issues)!
+
 ## Table of Contents
 
 - [Key Features](#-key-features)
