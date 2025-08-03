@@ -17,6 +17,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY main.py .
+COPY config_models.py .
+COPY webhook_models.py .
+COPY media_models.py .
+COPY database_manager.py .
+COPY jellyfin_api.py .
+COPY discord_services.py .
+COPY rating_services.py .
+COPY change_detector.py .
+COPY webhook_service.py .
+COPY utils.py .
 COPY docker-entrypoint.sh /usr/local/bin/
 
 # Create defaults directory structure
