@@ -359,10 +359,10 @@ graph TD
     SYNC --> D
     
     %% Styling
-    classDef external fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
-    classDef core fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    classDef database fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
-    classDef discord fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    classDef external fill:#1976d2,stroke:#0d47a1,stroke-width:2px,color:#ffffff
+    classDef core fill:#7b1fa2,stroke:#4a148c,stroke-width:2px,color:#ffffff
+    classDef database fill:#388e3c,stroke:#1b5e20,stroke-width:2px,color:#ffffff
+    classDef discord fill:#f57c00,stroke:#e65100,stroke-width:2px,color:#ffffff
     
     class A,API1,API2,API3,CH1,CH2,CH3 external
     class C,D,E,G,H,TMPL core
