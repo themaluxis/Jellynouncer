@@ -132,6 +132,8 @@
    - Install the [Jellyfin Webhook Plugin](https://github.com/jellyfin/jellyfin-plugin-webhook)
    - Add webhook URL: `http://your-server:8080/webhook`
    - Select events: `Item Added`
+   - Checkbox Send All Properties
+   - Save webhook settings
 
 ### Docker Run
 

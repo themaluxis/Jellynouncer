@@ -1,6 +1,6 @@
 # Jellynouncer Configuration Guide
 
-This guide covers all configuration options for Jellynouncer, a Discord notification system for Jellyfin media servers. The configuration system supports both JSON/YAML files and environment variable overrides for flexible deployment scenarios.
+This comprehensive guide covers all configuration options for Jellynouncer, a Discord webhook service for Jellyfin media server notifications. The configuration system supports both JSON/YAML files and environment variable overrides for flexible deployment scenarios.
 
 ## Table of Contents
 
@@ -63,13 +63,13 @@ Jellynouncer supports both JSON and YAML configuration formats. The configuratio
 ```json
 {
   "jellyfin": { /* Jellyfin server connection settings */ },
+  "rating_services": { /* External rating APIs (OMDb, TMDb, TVDB) */ },
   "discord": { /* Discord webhook configurations */ },
   "database": { /* SQLite database settings */ },
   "templates": { /* Jinja2 template configuration */ },
   "notifications": { /* Notification behavior settings */ },
   "server": { /* Web server configuration */ },
-  "sync": { /* Library synchronization settings */ },
-  "rating_services": { /* External rating APIs */ }
+  "sync": { /* Library synchronization settings */ }
 }
 ```
 
@@ -82,110 +82,184 @@ The `jellyfin` section configures connection to your Jellyfin media server.
 ```json
 {
   "jellyfin": {
-    "server_url": "http://localhost:8096",
-    "api_key": "your_jellyfin_api_key_here",
-    "user_id": "your_user_id_here",
-    "timeout": 30,
-    "verify_ssl": true
+    "server_url": null,
+    "api_key": null,
+    "user_id": null,
+    "client_name": "Jellynouncer-Discord-Webhook",
+    "client_version": "2.0.0",
+    "device_name": "jellynouncer-webhook-service",
+    "device_id": "jellynouncer-discord-webhook-001"
   }
 }
 ```
 
-#### Options:
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `server_url` | string | ✅ | Full URL to your Jellyfin server (e.g., `http://jellyfin:8096`) |
+| `api_key` | string | ✅ | Jellyfin API key for authentication |
+| `user_id` | string | ✅ | Jellyfin user ID for the account used for notifications |
+| `client_name` | string | ❌ | Client identifier for Jellyfin API (default: "Jellynouncer-Discord-Webhook") |
+| `client_version` | string | ❌ | Version identifier for the client (default: "2.0.0") |
+| `device_name` | string | ❌ | Device name shown in Jellyfin dashboard (default: "jellynouncer-webhook-service") |
+| `device_id` | string | ❌ | Unique device identifier (default: "jellynouncer-discord-webhook-001") |
 
-- **`server_url`** *(required)*: Full URL to your Jellyfin server
-  - Example: `"http://jellyfin:8096"` or `"https://jellyfin.yourdomain.com"`
-- **`api_key`** *(required)*: Jellyfin API key for authentication
-  - Get this from Jellyfin Dashboard → API Keys
-- **`user_id`** *(required)*: Jellyfin user ID for library access
-  - Find in Jellyfin Dashboard → Users → [User] → copy the ID from URL
-- **`timeout`** *(optional)*: Request timeout in seconds (default: 30)
-- **`verify_ssl`** *(optional)*: Verify SSL certificates (default: true)
+**How to get these values:**
+- **API Key**: Jellyfin Dashboard → API Keys → Create new key
+- **User ID**: Jellyfin Dashboard → Users → Click your user → Copy ID from URL
+- **Server URL**: Your Jellyfin server address (internal Docker network or public URL)
+
+### Rating Services
+
+The `rating_services` section configures external APIs for fetching movie/TV show ratings and metadata.
+
+```json
+{
+  "rating_services": {
+    "enabled": true,
+    "omdb": {
+      "enabled": false,
+      "api_key": null,
+      "base_url": "http://www.omdbapi.com/"
+    },
+    "tmdb": {
+      "enabled": false,
+      "api_key": null,
+      "base_url": "https://api.themoviedb.org/3/"
+    },
+    "tvdb": {
+      "enabled": false,
+      "api_key": null,
+      "base_url": "https://api4.thetvdb.com/v4/"
+    },
+    "cache_duration_hours": 168,
+    "request_timeout_seconds": 10,
+    "retry_attempts": 3
+  }
+}
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `enabled` | boolean | ❌ | Enable/disable all rating services |
+| `omdb.enabled` | boolean | ❌ | Enable OMDb API for movie data |
+| `omdb.api_key` | string | ❌ | OMDb API key (free tier: 1000 requests/day) |
+| `omdb.base_url` | string | ❌ | OMDb API base URL |
+| `tmdb.enabled` | boolean | ❌ | Enable TMDb API for movie/TV data |
+| `tmdb.api_key` | string | ❌ | TMDb API key (free with registration) |
+| `tmdb.base_url` | string | ❌ | TMDb API base URL |
+| `tvdb.enabled` | boolean | ❌ | Enable TVDB API for TV show data |
+| `tvdb.api_key` | string | ❌ | TVDB v4 API key |
+| `tvdb.base_url` | string | ❌ | TVDB API base URL |
+| `cache_duration_hours` | integer | ❌ | How long to cache rating data (default: 168 hours/7 days) |
+| `request_timeout_seconds` | integer | ❌ | API request timeout |
+| `retry_attempts` | integer | ❌ | Number of retry attempts for failed requests |
+
+**Getting API Keys:**
+- **OMDb**: Register at [omdbapi.com](http://www.omdbapi.com/apikey.aspx)
+- **TMDb**: Register at [themoviedb.org](https://www.themoviedb.org/settings/api)
+- **TVDB**: Register at [thetvdb.com](https://thetvdb.com/api-information)
 
 ### Discord Webhooks
 
-The `discord` section manages webhook configurations and routing rules.
+The `discord` section configures Discord webhook routing and rate limiting.
 
 ```json
 {
   "discord": {
     "webhooks": {
       "default": {
-        "name": "General Notifications",
+        "url": null,
+        "name": "General",
         "enabled": true,
-        "url": "https://discord.com/api/webhooks/123456789/abc...",
         "grouping": {
-          "mode": "both",
+          "mode": "none",
           "delay_minutes": 5,
           "max_items": 25
         }
       },
       "movies": {
-        "name": "Movie Notifications",
-        "enabled": true,
-        "url": "https://discord.com/api/webhooks/987654321/def...",
+        "url": null,
+        "name": "Movies",
+        "enabled": false,
         "grouping": {
-          "mode": "item_type",
-          "delay_minutes": 3,
-          "max_items": 15
+          "mode": "none",
+          "delay_minutes": 5,
+          "max_items": 25
         }
       },
       "tv": {
-        "name": "TV Show Notifications",
+        "url": null,
+        "name": "TV Shows",
         "enabled": false,
-        "url": null
+        "grouping": {
+          "mode": "none",
+          "delay_minutes": 5,
+          "max_items": 25
+        }
       },
       "music": {
-        "name": "Music Notifications",
+        "url": null,
+        "name": "Music",
         "enabled": false,
-        "url": null
+        "grouping": {
+          "mode": "none",
+          "delay_minutes": 5,
+          "max_items": 25
+        }
       }
     },
     "routing": {
-      "enabled": true,
-      "fallback_webhook": "default",
-      "rules": {
-        "Movie": "movies",
-        "Episode": "tv",
-        "Season": "tv",
-        "Series": "tv",
-        "Audio": "music",
-        "MusicAlbum": "music",
-        "MusicArtist": "music"
-      }
+      "enabled": false,
+      "movie_types": ["Movie"],
+      "tv_types": ["Episode", "Season", "Series"],
+      "music_types": ["Audio", "MusicAlbum", "MusicArtist"],
+      "fallback_webhook": "default"
     },
     "rate_limit": {
-      "requests_per_minute": 30,
-      "burst_size": 5
+      "requests_per_period": 5,
+      "period_seconds": 2,
+      "channel_limit_per_minute": 30
     }
   }
 }
 ```
 
-#### Webhook Options:
+#### Webhook Configuration
 
-- **`name`** *(required)*: Human-readable name for the webhook
-- **`enabled`** *(required)*: Whether this webhook is active
-- **`url`** *(optional)*: Discord webhook URL (can be null if disabled)
-- **`grouping`** *(optional)*: Notification batching configuration
-  - **`mode`**: Grouping strategy
-    - `"none"`: Send notifications immediately (default)
-    - `"item_type"`: Group by content type (Movies, TV, Music)
-    - `"event_type"`: Group by event (New vs. Upgraded)
-    - `"both"`: Group by both content type and event
-  - **`delay_minutes`**: How long to wait before sending grouped notifications (default: 5)
-  - **`max_items`**: Maximum items per notification before forcing send (default: 25)
+Each webhook (default, movies, tv, music) supports these parameters:
 
-#### Routing Options:
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `url` | string | ✅ | Discord webhook URL |
+| `name` | string | ❌ | Display name for the webhook |
+| `enabled` | boolean | ❌ | Enable/disable this webhook |
+| `grouping.mode` | string | ❌ | Grouping mode: `"none"`, `"event_type"`, `"content_type"`, or `"both"` |
+| `grouping.delay_minutes` | integer | ❌ | Minutes to wait before sending grouped notifications |
+| `grouping.max_items` | integer | ❌ | Maximum items per grouped notification |
 
-- **`enabled`** *(optional)*: Enable content-type routing (default: true)
-- **`fallback_webhook`** *(optional)*: Default webhook when routing fails (default: "default")
-- **`rules`** *(optional)*: Map content types to webhook names
+**Grouping Modes:**
+- `"none"`: Individual notifications for each item
+- `"event_type"`: Group by new/upgraded items
+- `"content_type"`: Group by movie/TV/music type
+- `"both"`: Group by both event and content type
 
-#### Rate Limiting Options:
+#### Routing Configuration
 
-- **`requests_per_minute`** *(optional)*: Discord API rate limit (default: 30)
-- **`burst_size`** *(optional)*: Maximum burst requests (default: 5)
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `enabled` | boolean | ❌ | Enable content-type routing |
+| `movie_types` | array | ❌ | Jellyfin item types considered movies |
+| `tv_types` | array | ❌ | Jellyfin item types considered TV content |
+| `music_types` | array | ❌ | Jellyfin item types considered music |
+| `fallback_webhook` | string | ❌ | Webhook to use if specific type webhook is disabled |
+
+#### Rate Limiting
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `requests_per_period` | integer | ❌ | Maximum requests per period |
+| `period_seconds` | integer | ❌ | Rate limit period in seconds |
+| `channel_limit_per_minute` | integer | ❌ | Maximum messages per channel per minute |
 
 ### Database Configuration
 
@@ -194,24 +268,22 @@ The `database` section configures SQLite database settings.
 ```json
 {
   "database": {
-    "path": "/app/data/jellynouncer.db",
+    "path": "/app/data/jellyfin_items.db",
     "wal_mode": true,
-    "backup_enabled": true,
-    "backup_retention_days": 7
+    "vacuum_interval_hours": 24
   }
 }
 ```
 
-#### Options:
-
-- **`path`** *(optional)*: Database file location (default: "/app/data/jellynouncer.db")
-- **`wal_mode`** *(optional)*: Enable Write-Ahead Logging for better performance (default: true)
-- **`backup_enabled`** *(optional)*: Enable automatic database backups (default: true)
-- **`backup_retention_days`** *(optional)*: Days to keep backup files (default: 7)
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | ❌ | Path to SQLite database file (default: "/app/data/jellyfin_items.db") |
+| `wal_mode` | boolean | ❌ | Enable WAL mode for better concurrent access (default: true) |
+| `vacuum_interval_hours` | integer | ❌ | Hours between database VACUUM operations (default: 24) |
 
 ### Template Settings
 
-The `templates` section configures Jinja2 templates for Discord embeds.
+The `templates` section configures Jinja2 template files for Discord embeds.
 
 ```json
 {
@@ -229,56 +301,68 @@ The `templates` section configures Jinja2 templates for Discord embeds.
 }
 ```
 
-#### Options:
-
-- **`directory`** *(optional)*: Template files directory (default: "/app/templates")
-- **`new_item_template`** *(optional)*: Template for single new items (default: "new_item.j2")
-- **`upgraded_item_template`** *(optional)*: Template for single upgraded items (default: "upgraded_item.j2")
-- **`new_items_by_event_template`** *(optional)*: Grouped new items template
-- **`upgraded_items_by_event_template`** *(optional)*: Grouped upgraded items template
-- **`new_items_by_type_template`** *(optional)*: New items grouped by type template
-- **`upgraded_items_by_type_template`** *(optional)*: Upgraded items grouped by type template
-- **`new_items_grouped_template`** *(optional)*: Comprehensive new items grouping template
-- **`upgraded_items_grouped_template`** *(optional)*: Comprehensive upgraded items grouping template
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `directory` | string | ❌ | Base directory containing template files |
+| `new_item_template` | string | ❌ | Template for new item notifications |
+| `upgraded_item_template` | string | ❌ | Template for item upgrade notifications |
+| `new_items_by_event_template` | string | ❌ | Template for grouped new items |
+| `upgraded_items_by_event_template` | string | ❌ | Template for grouped upgrades |
+| `new_items_by_type_template` | string | ❌ | Template for new items grouped by type |
+| `upgraded_items_by_type_template` | string | ❌ | Template for upgrades grouped by type |
+| `new_items_grouped_template` | string | ❌ | Template for fully grouped new items |
+| `upgraded_items_grouped_template` | string | ❌ | Template for fully grouped upgrades |
 
 ### Notification Behavior
 
-The `notifications` section controls notification logic and filtering.
+The `notifications` section configures what changes trigger notifications and embed colors.
 
 ```json
 {
   "notifications": {
-    "enabled": true,
-    "send_on_startup": false,
-    "ignore_reprocessing": true,
-    "min_file_size_mb": 10,
-    "exclude_item_types": ["Photo", "PhotoAlbum"],
-    "require_changes_for_upgrade": true,
-    "significant_changes": {
-      "resolution_upgrade": true,
-      "codec_change": true,
-      "audio_upgrade": true,
-      "hdr_upgrade": true,
-      "file_size_increase_percent": 20
+    "watch_changes": {
+      "resolution": true,
+      "codec": true,
+      "audio_codec": true,
+      "audio_channels": true,
+      "hdr_status": true,
+      "file_size": true,
+      "provider_ids": true
+    },
+    "colors": {
+      "new_item": 65280,
+      "resolution_upgrade": 16766720,
+      "codec_upgrade": 16747520,
+      "audio_upgrade": 9662683,
+      "hdr_upgrade": 16716947,
+      "provider_update": 2003199
     }
   }
 }
 ```
 
-#### Options:
+#### Change Detection
 
-- **`enabled`** *(optional)*: Master notification toggle (default: true)
-- **`send_on_startup`** *(optional)*: Send notifications for existing items on startup (default: false)
-- **`ignore_reprocessing`** *(optional)*: Skip items that were recently processed (default: true)
-- **`min_file_size_mb`** *(optional)*: Minimum file size for notifications in MB (default: 10)
-- **`exclude_item_types`** *(optional)*: Item types to never notify about (default: ["Photo", "PhotoAlbum"])
-- **`require_changes_for_upgrade`** *(optional)*: Only notify upgrades with significant changes (default: true)
-- **`significant_changes`** *(optional)*: Define what constitutes a significant upgrade
-  - **`resolution_upgrade`**: Notify on resolution improvements (default: true)
-  - **`codec_change`**: Notify on codec changes (default: true)  
-  - **`audio_upgrade`**: Notify on audio quality improvements (default: true)
-  - **`hdr_upgrade`**: Notify on HDR additions (default: true)
-  - **`file_size_increase_percent`**: Minimum file size increase percentage (default: 20)
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `resolution` | boolean | ❌ | Watch for resolution changes (1080p → 4K) |
+| `codec` | boolean | ❌ | Watch for video codec changes (H.264 → H.265) |
+| `audio_codec` | boolean | ❌ | Watch for audio codec changes (AC3 → DTS) |
+| `audio_channels` | boolean | ❌ | Watch for audio channel changes (2.0 → 7.1) |
+| `hdr_status` | boolean | ❌ | Watch for HDR status changes (SDR → HDR) |
+| `file_size` | boolean | ❌ | Watch for significant file size changes |
+| `provider_ids` | boolean | ❌ | Watch for metadata provider ID changes |
+
+#### Embed Colors
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `new_item` | integer | ❌ | Color for new item notifications (green: 65280) |
+| `resolution_upgrade` | integer | ❌ | Color for resolution upgrades (orange: 16766720) |
+| `codec_upgrade` | integer | ❌ | Color for codec upgrades (yellow: 16747520) |
+| `audio_upgrade` | integer | ❌ | Color for audio upgrades (purple: 9662683) |
+| `hdr_upgrade` | integer | ❌ | Color for HDR upgrades (gold: 16716947) |
+| `provider_update` | integer | ❌ | Color for metadata updates (blue: 2003199) |
 
 ### Web Server Settings
 
@@ -289,111 +373,40 @@ The `server` section configures the FastAPI web server.
   "server": {
     "host": "0.0.0.0",
     "port": 8080,
-    "log_level": "INFO",
-    "workers": 1,
-    "reload": false,
-    "access_log": true
+    "log_level": "INFO"
   }
 }
 ```
 
-#### Options:
-
-- **`host`** *(optional)*: Server bind address (default: "0.0.0.0")
-- **`port`** *(optional)*: Server port number (default: 8080)
-- **`log_level`** *(optional)*: Logging level (default: "INFO")
-  - Options: "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"
-- **`workers`** *(optional)*: Number of worker processes (default: 1)
-- **`reload`** *(optional)*: Enable auto-reload on code changes (default: false)
-- **`access_log`** *(optional)*: Enable HTTP access logging (default: true)
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `host` | string | ❌ | Host address to bind to |
+| `port` | integer | ❌ | Port number for the web server |
+| `log_level` | string | ❌ | Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL |
 
 ### Library Synchronization
 
-The `sync` section controls background library synchronization.
+The `sync` section configures periodic library synchronization to catch missed webhooks.
 
 ```json
 {
   "sync": {
-    "enabled": true,
-    "interval_hours": 6,
-    "startup_delay_minutes": 5,
-    "full_sync_enabled": true,
-    "incremental_sync_enabled": true,
-    "max_items_per_sync": 1000,
-    "libraries": ["Movies", "TV Shows", "Music"]
+    "startup_sync": true,
+    "sync_batch_size": 100,
+    "api_request_delay": 0.1
   }
 }
 ```
 
-#### Options:
-
-- **`enabled`** *(optional)*: Enable background sync (default: true)
-- **`interval_hours`** *(optional)*: Hours between sync cycles (default: 6)
-- **`startup_delay_minutes`** *(optional)*: Delay before first sync (default: 5)
-- **`full_sync_enabled`** *(optional)*: Enable complete library scans (default: true)
-- **`incremental_sync_enabled`** *(optional)*: Enable incremental updates (default: true)
-- **`max_items_per_sync`** *(optional)*: Maximum items to process per sync (default: 1000)
-- **`libraries`** *(optional)*: Library names to synchronize (default: ["Movies", "TV Shows", "Music"])
-
-### Rating Services
-
-The `rating_services` section configures external rating API integrations.
-
-```json
-{
-  "rating_services": {
-    "enabled": true,
-    "omdb": {
-      "enabled": false,
-      "api_key": null,
-      "timeout": 10,
-      "cache_duration_hours": 168
-    },
-    "tmdb": {
-      "enabled": false,
-      "api_key": null,
-      "timeout": 10,
-      "cache_duration_hours": 168
-    },
-    "tvdb": {
-      "enabled": false,
-      "api_key": null,
-      "subscriber_pin": null,
-      "timeout": 15,
-      "cache_duration_hours": 168,
-      "max_retries": 3
-    }
-  }
-}
-```
-
-#### General Options:
-
-- **`enabled`** *(optional)*: Master toggle for all rating services (default: true)
-
-#### Service-Specific Options:
-
-Each service (omdb, tmdb, tvdb) supports:
-
-- **`enabled`** *(optional)*: Enable this specific service (default: false)
-- **`api_key`** *(optional)*: API key for the service (default: null)
-- **`timeout`** *(optional)*: Request timeout in seconds
-- **`cache_duration_hours`** *(optional)*: How long to cache results (default: 168 hours = 1 week)
-
-#### TVDB-Specific Options:
-
-- **`subscriber_pin`** *(optional)*: TVDB subscriber PIN for enhanced access (default: null)
-- **`max_retries`** *(optional)*: Maximum API retry attempts (default: 3)
-
-#### Getting API Keys:
-
-- **OMDb**: Get a free key at [http://www.omdbapi.com/apikey.aspx](http://www.omdbapi.com/apikey.aspx) (1000 requests/day free)
-- **TMDb**: Get a free key at [https://www.themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) (free for non-commercial use)
-- **TVDB**: Get an API key at [https://thetvdb.com/api-information](https://thetvdb.com/api-information)
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `startup_sync` | boolean | ❌ | Perform full library sync on startup |
+| `sync_batch_size` | integer | ❌ | Number of items to process per batch |
+| `api_request_delay` | float | ❌ | Delay between API requests (seconds) |
 
 ## Environment Variable Overrides
 
-Environment variables can override any configuration file setting. This is especially useful for Docker deployments and keeping sensitive data out of configuration files.
+Environment variables provide a secure way to override configuration settings without modifying files. This is especially useful for Docker deployments and keeping sensitive data out of configuration files.
 
 ### Supported Environment Variables
 
@@ -425,16 +438,19 @@ JELLYFIN_USER_ID=your_user_id_here
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your/webhook/url
 DISCORD_WEBHOOK_URL_MOVIES=https://discord.com/api/webhooks/your/movies/webhook/url
 DISCORD_WEBHOOK_URL_TV=https://discord.com/api/webhooks/your/tv/webhook/url
+DISCORD_WEBHOOK_URL_MUSIC=https://discord.com/api/webhooks/your/music/webhook/url
 
 # Rating Services (Optional)
 OMDB_API_KEY=your_omdb_api_key_here
 TMDB_API_KEY=your_tmdb_api_key_here
 TVDB_API_KEY=your_tvdb_v4_api_key_here
+TVDB_SUBSCRIBER_PIN=your_subscriber_pin_here
 
 # System Settings
 PUID=1000
 PGID=1000
 TZ=America/New_York
+LOG_LEVEL=INFO
 ```
 
 ## Configuration Examples
@@ -453,18 +469,18 @@ Perfect for getting started quickly:
   "discord": {
     "webhooks": {
       "default": {
+        "url": "https://discord.com/api/webhooks/your/webhook/url",
         "name": "Jellyfin Notifications",
-        "enabled": true,
-        "url": "https://discord.com/api/webhooks/..."
+        "enabled": true
       }
     }
   }
 }
 ```
 
-### Multi-Webhook Setup
+### Multi-Channel Setup
 
-Separate channels for different content types:
+Route different content types to different Discord channels:
 
 ```json
 {
@@ -475,10 +491,15 @@ Separate channels for different content types:
   },
   "discord": {
     "webhooks": {
+      "default": {
+        "url": "https://discord.com/api/webhooks/.../general",
+        "name": "General",
+        "enabled": true
+      },
       "movies": {
+        "url": "https://discord.com/api/webhooks/.../movies",
         "name": "🎬 Movies",
         "enabled": true,
-        "url": "https://discord.com/api/webhooks/.../movies",
         "grouping": {
           "mode": "event_type",
           "delay_minutes": 3,
@@ -486,9 +507,9 @@ Separate channels for different content types:
         }
       },
       "tv": {
+        "url": "https://discord.com/api/webhooks/.../tv",
         "name": "📺 TV Shows",
         "enabled": true,
-        "url": "https://discord.com/api/webhooks/.../tv",
         "grouping": {
           "mode": "both",
           "delay_minutes": 5,
@@ -496,48 +517,59 @@ Separate channels for different content types:
         }
       },
       "music": {
+        "url": "https://discord.com/api/webhooks/.../music",
         "name": "🎵 Music",
-        "enabled": true,
-        "url": "https://discord.com/api/webhooks/.../music"
+        "enabled": true
       }
     },
     "routing": {
       "enabled": true,
-      "fallback_webhook": "movies"
+      "fallback_webhook": "default"
     }
   }
 }
 ```
 
-### Comprehensive Configuration
+### Production Setup
 
-Full configuration with all optional features:
+Complete configuration with external rating services and optimized settings:
 
 ```json
 {
   "jellyfin": {
-    "server_url": "https://jellyfin.yourdomain.com",
+    "server_url": "http://jellyfin:8096",
     "api_key": "your_api_key_here",
-    "user_id": "your_user_id_here",
-    "timeout": 30,
-    "verify_ssl": true
+    "user_id": "your_user_id_here"
+  },
+  "rating_services": {
+    "enabled": true,
+    "omdb": {
+      "enabled": true,
+      "api_key": "your_omdb_key_here"
+    },
+    "tmdb": {
+      "enabled": true,
+      "api_key": "your_tmdb_key_here"
+    },
+    "tvdb": {
+      "enabled": true,
+      "api_key": "your_tvdb_key_here"
+    },
+    "cache_duration_hours": 168,
+    "request_timeout_seconds": 10,
+    "retry_attempts": 3
   },
   "discord": {
     "webhooks": {
       "default": {
-        "name": "🌟 General",
-        "enabled": true,
         "url": "https://discord.com/api/webhooks/.../general",
-        "grouping": {
-          "mode": "both",
-          "delay_minutes": 5,
-          "max_items": 25
-        }
+        "name": "General",
+        "enabled": true
       },
       "movies": {
+        "url": "https://discord.com/api/webhooks/.../movies",
         "name": "🎬 Movies",
         "enabled": true,
-        "url": "https://discord.com/api/webhooks/.../movies",
         "grouping": {
           "mode": "event_type",
           "delay_minutes": 2,
@@ -545,11 +577,11 @@ Full configuration with all optional features:
         }
       },
       "tv": {
+        "url": "https://discord.com/api/webhooks/.../tv",
         "name": "📺 TV Shows",
         "enabled": true,
-        "url": "https://discord.com/api/webhooks/.../tv",
         "grouping": {
-          "mode": "item_type",
+          "mode": "content_type",
           "delay_minutes": 3,
           "max_items": 12
         }
@@ -557,79 +589,66 @@ Full configuration with all optional features:
     },
     "routing": {
       "enabled": true,
-      "fallback_webhook": "default",
-      "rules": {
-        "Movie": "movies",
-        "Episode": "tv",
-        "Season": "tv",
-        "Series": "tv"
-      }
+      "fallback_webhook": "default"
     },
     "rate_limit": {
-      "requests_per_minute": 25,
-      "burst_size": 3
+      "requests_per_period": 3,
+      "period_seconds": 2,
+      "channel_limit_per_minute": 20
     }
   },
   "database": {
-    "path": "/app/data/jellynouncer.db",
+    "path": "/app/data/jellyfin_items.db",
     "wal_mode": true,
-    "backup_enabled": true,
-    "backup_retention_days": 14
-  },
-  "templates": {
-    "directory": "/app/templates",
-    "new_item_template": "new_item-full.j2",
-    "upgraded_item_template": "upgraded_item-full.j2"
+    "vacuum_interval_hours": 24
   },
   "notifications": {
-    "enabled": true,
-    "send_on_startup": false,
-    "ignore_reprocessing": true,
-    "min_file_size_mb": 50,
-    "exclude_item_types": ["Photo", "PhotoAlbum", "Folder"],
-    "require_changes_for_upgrade": true,
-    "significant_changes": {
-      "resolution_upgrade": true,
-      "codec_change": true,
-      "audio_upgrade": true,
-      "hdr_upgrade": true,
-      "file_size_increase_percent": 15
+    "watch_changes": {
+      "resolution": true,
+      "codec": true,
+      "audio_codec": true,
+      "audio_channels": true,
+      "hdr_status": true,
+      "file_size": true,
+      "provider_ids": false
     }
   },
-  "server": {
-    "host": "0.0.0.0",
-    "port": 8080,
-    "log_level": "INFO",
-    "access_log": true
-  },
   "sync": {
-    "enabled": true,
-    "interval_hours": 4,
-    "startup_delay_minutes": 2,
-    "max_items_per_sync": 2000,
-    "libraries": ["Movies", "TV Shows", "Music", "Audiobooks"]
-  },
-  "rating_services": {
-    "enabled": true,
-    "omdb": {
-      "enabled": true,
-      "api_key": "your_omdb_key_here",
-      "timeout": 8,
-      "cache_duration_hours": 336
-    },
-    "tmdb": {
-      "enabled": true,
-      "api_key": "your_tmdb_key_here",
-      "timeout": 10,
-      "cache_duration_hours": 168
-    },
-    "tvdb": {
-      "enabled": true,
-      "api_key": "your_tvdb_key_here",
-      "subscriber_pin": "your_pin_here",
-      "timeout": 15,
-      "cache_duration_hours": 168,
-      "max_retries": 2
+    "startup_sync": true,
+    "sync_batch_size": 50,
+    "api_request_delay": 0.2
+  }
+}
+```
+
+### Advanced Grouping Configuration
+
+Configure sophisticated notification grouping:
+
+```json
+{
+  "discord": {
+    "webhooks": {
+      "movies": {
+        "url": "https://discord.com/api/webhooks/.../movies",
+        "name": "🎬 Movies",
+        "enabled": true,
+        "grouping": {
+          "mode": "both",
+          "delay_minutes": 5,
+          "max_items": 20
+        }
+      },
+      "tv": {
+        "url": "https://discord.com/api/webhooks/.../tv", 
+        "name": "📺 TV Shows",
+        "enabled": true,
+        "grouping": {
+          "mode": "event_type",
+          "delay_minutes": 3,
+          "max_items": 15
+        }
+      }
     }
   }
 }
@@ -639,171 +658,82 @@ Full configuration with all optional features:
 
 ### Configuration Validation
 
-Jellynouncer validates your configuration on startup and provides detailed error messages for any issues:
+Jellynouncer validates configuration on startup and provides detailed error messages:
 
-#### Common Configuration Errors
-
-**Invalid Jellyfin URL:**
-```
-Configuration model validation failed:
-  jellyfin -> server_url: Jellyfin server URL must be a valid HTTP/HTTPS URL
+```bash
+# Check configuration validity
+docker logs jellynouncer | grep -E "(ERROR|WARNING|Config)"
 ```
 
-**Missing Discord Webhook URL:**
-```
-Configuration model validation failed:
-  discord -> webhooks -> default -> url: Discord webhook URL must start with 'https://discord.com/api/webhooks/'
-```
+### Common Configuration Issues
 
-**Invalid Template Directory:**
+**Invalid JSON Format:**
 ```
-Configuration validation failed: Template directory does not exist: /invalid/path/templates
+ERROR: Invalid configuration file format: Expecting ',' delimiter: line 15 column 5
 ```
+Solution: Validate JSON syntax using [jsonlint.com](https://jsonlint.com/)
+
+**Missing Required Fields:**
+```
+ERROR: Missing required Jellyfin server URL
+```
+Solution: Ensure all required fields are set in config.json or environment variables
+
+**Invalid Webhook URL:**
+```
+WARNING: Invalid Discord webhook URL format
+```
+Solution: Verify webhook URL format matches `https://discord.com/api/webhooks/...`
+
+**Database Permission Issues:**
+```
+ERROR: Cannot write to database path: /app/data/jellyfin_items.db
+```
+Solution: Check file permissions and ensure data directory is writable
 
 ### Testing Configuration
 
-#### Validate Configuration
-
-Check if your configuration is valid without starting the service:
-
+**Test webhook connectivity:**
 ```bash
-# Using Docker
-docker run --rm -v ./config:/app/config jellynouncer:latest python -c "
-from config_models import ConfigurationValidator
-from utils import setup_logging
-logger = setup_logging()
-validator = ConfigurationValidator(logger)
-config = validator.load_and_validate_config()
-print('Configuration is valid!')
-"
-```
-
-#### Test Webhooks
-
-Test individual webhooks to ensure they're working:
-
-```bash
-# Test default webhook
 curl -X POST "http://localhost:8080/test-webhook?webhook_name=default"
-
-# Test movies webhook
-curl -X POST "http://localhost:8080/test-webhook?webhook_name=movies"
 ```
 
-#### Check Webhook Status
-
-View current webhook configurations:
-
+**Check service health:**
 ```bash
-curl http://localhost:8080/webhooks
+curl http://localhost:8080/health
 ```
 
-### Debug Mode
-
-Enable debug logging for detailed troubleshooting:
-
-```json
-{
-  "server": {
-    "log_level": "DEBUG"
-  }
-}
-```
-
-Or set environment variable:
+**Validate API connectivity:**
 ```bash
-export LOG_LEVEL=DEBUG
-```
-
-### Configuration File Formats
-
-Jellynouncer supports both JSON and YAML formats:
-
-#### JSON Format (config.json)
-```json
-{
-  "jellyfin": {
-    "server_url": "http://localhost:8096"
-  }
-}
-```
-
-#### YAML Format (config.yaml)
-```yaml
-jellyfin:
-  server_url: http://localhost:8096
-  # Comments are supported in YAML
-  api_key: your_key_here
-```
-
-### Common Issues and Solutions
-
-#### Issue: "Template directory does not exist"
-**Solution:** Ensure the templates directory exists and contains the required template files.
-
-```bash
-# Create templates directory
-mkdir -p /app/templates
-
-# Check if templates exist
-ls -la /app/templates/
-```
-
-#### Issue: "Failed to connect to Jellyfin server"
-**Solution:** Verify the Jellyfin URL and network connectivity.
-
-```bash
-# Test Jellyfin connectivity
-curl -v "http://your-jellyfin-server:8096/health"
-```
-
-#### Issue: "Discord webhook URL is invalid" 
-**Solution:** Ensure webhook URLs follow the correct Discord format.
-
-```
-✅ Correct: https://discord.com/api/webhooks/123456789/abc...
-❌ Wrong: https://discordapp.com/api/webhooks/123456789/abc...
-❌ Wrong: http://discord.com/api/webhooks/123456789/abc...
-```
-
-#### Issue: "Database is locked"
-**Solution:** Enable WAL mode or check file permissions.
-
-```json
-{
-  "database": {
-    "wal_mode": true,
-    "path": "/app/data/jellynouncer.db"
-  }
-}
+curl http://localhost:8080/stats
 ```
 
 ## Best Practices
 
 ### Security
 
-1. **Use Environment Variables for Secrets**
-   - Never commit API keys to version control
-   - Use environment variables for sensitive data
-   - Consider using Docker secrets for production
-
-2. **Enable SSL Verification**
-   ```json
-   {
-     "jellyfin": {
-       "verify_ssl": true
-     }
-   }
+1. **Use Environment Variables**
+   ```bash
+   # Keep sensitive data out of config files
+   export JELLYFIN_API_KEY="your_secure_api_key"
+   export DISCORD_WEBHOOK_URL="your_webhook_url"
    ```
 
-3. **Secure File Permissions**
+2. **Set Proper File Permissions**
    ```bash
-   chmod 600 config.json  # Read/write for owner only
+   chmod 600 config/config.json  # Read/write for owner only
+   ```
+
+3. **Use Docker Secrets** (for Docker Swarm)
+   ```yaml
+   secrets:
+     - jellyfin_api_key
+     - discord_webhook_url
    ```
 
 ### Performance
 
-1. **Enable Database WAL Mode**
+1. **Enable WAL Mode**
    ```json
    {
      "database": {
@@ -812,19 +742,20 @@ curl -v "http://your-jellyfin-server:8096/health"
    }
    ```
 
-2. **Configure Appropriate Rate Limits**
+2. **Optimize Rate Limiting**
    ```json
    {
      "discord": {
        "rate_limit": {
-         "requests_per_minute": 30,
-         "burst_size": 5
+         "requests_per_period": 5,
+         "period_seconds": 2,
+         "channel_limit_per_minute": 30
        }
      }
    }
    ```
 
-3. **Use Notification Grouping**
+3. **Configure Appropriate Grouping**
    ```json
    {
      "discord": {
@@ -841,68 +772,43 @@ curl -v "http://your-jellyfin-server:8096/health"
    }
    ```
 
-### Organization
+### Monitoring
 
-1. **Use Multiple Webhooks**
-   - Separate channels for movies, TV shows, and music
-   - Different notification styles for different content types
-
-2. **Configure Meaningful Names**
+1. **Enable Appropriate Logging**
    ```json
    {
-     "discord": {
-       "webhooks": {
-         "movies": {
-           "name": "🎬 Movie Notifications"
-         },
-         "tv": {
-           "name": "📺 TV Show Updates"
-         }
+     "server": {
+       "log_level": "INFO"
+     }
+   }
+   ```
+
+2. **Set Up Proper Filtering**
+   ```json
+   {
+     "notifications": {
+       "watch_changes": {
+         "resolution": true,
+         "codec": true,
+         "audio_codec": true,
+         "audio_channels": true,
+         "hdr_status": true,
+         "file_size": false,
+         "provider_ids": false
        }
      }
    }
    ```
 
-3. **Set Up Proper Filtering**
-   ```json
-   {
-     "notifications": {
-       "min_file_size_mb": 10,
-       "exclude_item_types": ["Photo", "PhotoAlbum"],
-       "require_changes_for_upgrade": true
-     }
-   }
-   ```
-
-### Maintenance
-
-1. **Enable Database Backups**
+3. **Configure Regular Maintenance**
    ```json
    {
      "database": {
-       "backup_enabled": true,
-       "backup_retention_days": 14
-     }
-   }
-   ```
-
-2. **Configure Library Sync**
-   ```json
-   {
+       "vacuum_interval_hours": 24
+     },
      "sync": {
-       "enabled": true,
-       "interval_hours": 6,
-       "max_items_per_sync": 1000
-     }
-   }
-   ```
-
-3. **Monitor Log Levels**
-   ```json
-   {
-     "server": {
-       "log_level": "INFO",
-       "access_log": true
+       "startup_sync": true,
+       "sync_batch_size": 100
      }
    }
    ```
