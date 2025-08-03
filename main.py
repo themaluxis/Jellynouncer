@@ -1790,10 +1790,11 @@ class RatingService:
                 tmdb_ratings = await self._fetch_tmdb_ratings(item.tmdb_id, item.item_type)
                 ratings.update(tmdb_ratings)
 
-            # Fetch from TVDb (for TV content only)
-            if self.tvdb_api_key and item.tvdb_id and item.item_type in ['Episode', 'Season', 'Series']:
-                tvdb_ratings = await self._fetch_tvdb_ratings(item.tvdb_id)
-                ratings.update(tvdb_ratings)
+            # Fetch from TVDb (for TV content only) with proper URL generation
+            if self.tvdb_api and item.tvdb_id and item.item_type in ['Episode', 'Season', 'Series']:
+                tvdb_data = await self._fetch_tvdb_data_with_urls(item.tvdb_id, item.item_type)
+                if tvdb_data:
+                    ratings.update(tvdb_data)
 
             # Cache the results for future use
             if ratings:
@@ -1963,6 +1964,57 @@ class RatingService:
             self.logger.error(f"TVDB API v4 request failed for {tvdb_id}: {e}")
 
         return {}
+
+    async def _fetch_tvdb_data_with_urls(self, tvdb_id: str, item_type: str) -> Dict[str, Dict[str, Any]]:
+        """
+        Fetch TVDB data including proper URLs for episodes.
+
+        Args:
+            tvdb_id: TVDB identifier
+            item_type: Type of content (Episode, Series, etc.)
+
+        Returns:
+            Dictionary with TVDB data including proper URLs
+        """
+        if not self.tvdb_api or not tvdb_id:
+            return {}
+
+        try:
+            ratings = {}
+
+            # Get rating data
+            rating_data = await self.tvdb_api.get_series_rating(tvdb_id)
+            if rating_data:
+                ratings.update(rating_data)
+
+            # For episodes, get the proper URL information
+            if item_type == 'Episode':
+                episode_info = await self.tvdb_api.get_episode_info_with_series_slug(tvdb_id)
+                if episode_info.get('proper_url'):
+                    # Add URL information to the existing rating data
+                    if 'tvdb' in ratings:
+                        ratings['tvdb']['proper_url'] = episode_info['proper_url']
+                        ratings['tvdb']['series_slug'] = episode_info.get('series_slug')
+                        ratings['tvdb']['episode_id'] = episode_info.get('episode_id')
+                    else:
+                        # Even if no rating, provide URL info
+                        ratings['tvdb'] = {
+                            'proper_url': episode_info['proper_url'],
+                            'series_slug': episode_info.get('series_slug'),
+                            'episode_id': episode_info.get('episode_id'),
+                            'source': 'TVDb',
+                            'attribution_required': True,
+                            'attribution_text': 'Metadata provided by TheTVDB',
+                            'attribution_url': 'https://thetvdb.com'
+                        }
+
+                    self.logger.debug(f"Added proper TVDB URL for episode {tvdb_id}: {episode_info['proper_url']}")
+
+            return ratings
+
+        except Exception as e:
+            self.logger.error(f"Error fetching TVDB data with URLs for {tvdb_id}: {e}")
+            return {}
 
     async def _rate_limit_check(self, service: str):
         """
@@ -2169,6 +2221,10 @@ class TVDBAPIv4:
 
         self.last_request_time = {}
 
+        # URL caching to avoid repeated API calls
+        self.series_slug_cache = {}  # episode_id -> series_slug
+        self.cache_duration = 3600 * 24  # 24 hours
+
         self.logger.info(f"TVDB API v4 initialized in {self.access_mode} mode")
 
     def _determine_access_mode(self) -> str:
@@ -2288,9 +2344,10 @@ class TVDBAPIv4:
     async def get_series_rating(self, tvdb_id: str) -> Dict[str, Any]:
         """
         Get series rating from TVDB API v4.
+        This method is modified to handle both series IDs and episode IDs.
 
         Args:
-            tvdb_id: TVDB series ID
+            tvdb_id: TVDB series ID or episode ID
 
         Returns:
             Dictionary with rating data and attribution info
@@ -2310,6 +2367,7 @@ class TVDBAPIv4:
                 "Content-Type": "application/json"
             }
 
+            # First, try to get it as a series ID
             async with self.session.get(
                     f"{self.config.base_url}/series/{tvdb_id}",
                     headers=headers,
@@ -2318,11 +2376,9 @@ class TVDBAPIv4:
 
                 if response.status == 200:
                     data = await response.json()
-
                     if "data" in data:
                         series_data = data["data"]
                         score = series_data.get("score")
-
                         if score is not None:
                             return {
                                 'tvdb': {
@@ -2336,14 +2392,19 @@ class TVDBAPIv4:
                                 }
                             }
 
+                elif response.status == 404:
+                    # If not found as series, try as episode and get series info
+                    self.logger.debug(f"TVDB ID {tvdb_id} not found as series, trying as episode")
+                    episode_info = await self.get_episode_info_with_series_slug(tvdb_id)
+                    if episode_info.get('series_id'):
+                        # Recursively try to get rating for the series
+                        return await self.get_series_rating(episode_info['series_id'])
+
                 elif response.status == 401:
                     self.logger.warning(f"TVDB API v4 token expired, attempting re-authentication")
                     if await self._authenticate():
                         # Retry once with new token
                         return await self.get_series_rating(tvdb_id)
-
-                elif response.status == 404:
-                    self.logger.debug(f"TVDB series not found: {tvdb_id}")
 
                 else:
                     error_text = await response.text()
@@ -2353,6 +2414,101 @@ class TVDBAPIv4:
             self.logger.warning(f"TVDB API v4 request timeout for series {tvdb_id}")
         except Exception as e:
             self.logger.error(f"TVDB API v4 request error for series {tvdb_id}: {e}")
+
+        return {}
+
+    async def get_episode_info_with_series_slug(self, episode_id: str) -> Dict[str, Any]:
+        """
+        Get episode information including series slug for proper URL generation.
+
+        Args:
+            episode_id: TVDB episode ID
+
+        Returns:
+            Dictionary with episode info and series slug for URL generation
+        """
+        if self.access_mode == 'disabled':
+            return {}
+
+        # Check cache first
+        cache_key = f"episode_{episode_id}"
+        if cache_key in self.series_slug_cache:
+            cached_data, timestamp = self.series_slug_cache[cache_key]
+            if time.time() - timestamp < self.cache_duration:
+                self.logger.debug(f"Using cached series slug for episode {episode_id}")
+                return cached_data
+
+        if not await self._ensure_authenticated():
+            self.logger.error("TVDB API v4 authentication failed, cannot get episode info")
+            return {}
+
+        try:
+            await self._rate_limit_check()
+
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json"
+            }
+
+            # Get episode information
+            async with self.session.get(
+                    f"{self.config.base_url}/episodes/{episode_id}/extended",
+                    headers=headers,
+                    timeout=self.request_timeout
+            ) as response:
+
+                if response.status == 200:
+                    data = await response.json()
+
+                    if "data" in data:
+                        episode_data = data["data"]
+                        series_info = episode_data.get("series", {})
+
+                        # Extract series information
+                        series_id = series_info.get("id")
+                        series_slug = series_info.get("slug")
+                        series_name = series_info.get("name")
+
+                        if series_slug and series_id:
+                            result = {
+                                'episode_id': episode_id,
+                                'episode_name': episode_data.get('name'),
+                                'series_id': series_id,
+                                'series_slug': series_slug,
+                                'series_name': series_name,
+                                'season_number': episode_data.get('seasonNumber'),
+                                'episode_number': episode_data.get('number'),
+                                'proper_url': f"https://thetvdb.com/series/{series_slug}/episodes/{episode_id}",
+                                'attribution_required': True,
+                                'attribution_text': 'Metadata provided by TheTVDB',
+                                'attribution_url': 'https://thetvdb.com'
+                            }
+
+                            # Cache the result
+                            self.series_slug_cache[cache_key] = (result, time.time())
+
+                            self.logger.debug(f"Retrieved series slug '{series_slug}' for episode {episode_id}")
+                            return result
+                        else:
+                            self.logger.warning(f"No series slug found for episode {episode_id}")
+
+                elif response.status == 401:
+                    self.logger.warning(f"TVDB API v4 token expired, attempting re-authentication")
+                    if await self._authenticate():
+                        # Retry once with new token
+                        return await self.get_episode_info_with_series_slug(episode_id)
+
+                elif response.status == 404:
+                    self.logger.debug(f"TVDB episode not found: {episode_id}")
+
+                else:
+                    error_text = await response.text()
+                    self.logger.warning(f"TVDB API v4 request failed: HTTP {response.status} - {error_text}")
+
+        except asyncio.TimeoutError:
+            self.logger.warning(f"TVDB API v4 request timeout for episode {episode_id}")
+        except Exception as e:
+            self.logger.error(f"TVDB API v4 request error for episode {episode_id}: {e}")
 
         return {}
 
@@ -4340,38 +4496,51 @@ class DiscordNotifier:
                 self.logger.error(f"Template error {template_name}: {e}")
                 return False
 
-            # Get ratings (ENHANCED)
-            ratings = {}
-            if hasattr(self, '_webhook_service') and self._webhook_service and self._webhook_service.rating_service:
-                try:
-                    ratings = await self._webhook_service.rating_service.get_ratings_for_item(item)
-                    if ratings:
-                        self.logger.debug(f"Retrieved {len(ratings)} rating sources for {item.name}")
-                except Exception as e:
-                    self.logger.warning(f"Failed to fetch ratings for {item.name}: {e}")
+                # Get ratings with TVDB URL information
+                ratings = {}
+                if hasattr(self, '_webhook_service') and self._webhook_service and self._webhook_service.rating_service:
+                    try:
+                        ratings = await self._webhook_service.rating_service.get_ratings_for_item(item)
+                        if ratings:
+                            self.logger.debug(f"Retrieved {len(ratings)} rating sources for {item.name}")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to fetch ratings for {item.name}: {e}")
 
-            # Check if TVDB ratings are included and add attribution flag
-            tvdb_attribution_needed = False
-            if ratings:
-                for rating_key, rating_data in ratings.items():
-                    if rating_key == 'tvdb' and rating_data.get('attribution_required'):
-                        tvdb_attribution_needed = True
-                        break
+                # Extract TVDB URL information
+                tvdb_url_info = {}
+                if 'tvdb' in ratings and 'proper_url' in ratings['tvdb']:
+                    tvdb_url_info = {
+                        'has_proper_url': True,
+                        'proper_url': ratings['tvdb']['proper_url'],
+                        'series_slug': ratings['tvdb'].get('series_slug'),
+                        'episode_id': ratings['tvdb'].get('episode_id')
+                    }
+                    self.logger.debug(f"Using proper TVDB URL for {item.name}: {ratings['tvdb']['proper_url']}")
 
-            # Template data (ENHANCED)
-            template_data = {
-                'item': asdict(item),
-                'changes': changes or [],
-                'is_new': is_new,
-                'color': color,
-                'jellyfin_url': self.jellyfin_url,
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'webhook_name': webhook_config.name,
-                'webhook_target': webhook_name,
-                'ratings': ratings,  # NEW
-                'verified_thumbnail_url': thumbnail_url,  # NEW
-                'has_thumbnail': thumbnail_url is not None  # NEW
-            }
+                # Check if TVDB ratings are included and add attribution flag
+                tvdb_attribution_needed = False
+                if ratings:
+                    for rating_key, rating_data in ratings.items():
+                        if rating_key == 'tvdb' and rating_data.get('attribution_required'):
+                            tvdb_attribution_needed = True
+                            break
+
+                # Template data (with all the information we've gathered)
+                template_data = {
+                    'item': asdict(item),
+                    'changes': changes or [],
+                    'is_new': is_new,
+                    'color': color,
+                    'jellyfin_url': self.jellyfin_url,
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'webhook_name': webhook_config.name,
+                    'webhook_target': webhook_name,
+                    'ratings': ratings,
+                    'tvdb_url_info': tvdb_url_info,
+                    'tvdb_attribution_needed': tvdb_attribution_needed,
+                    'verified_thumbnail_url': thumbnail_url,
+                    'has_thumbnail': thumbnail_url is not None
+                }
 
             # Render template
             try:

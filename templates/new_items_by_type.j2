@@ -9,7 +9,7 @@
         {% for item_data in new_items[:8] %}
         {
           "name": "{{ item_data.item.name }}{% if item_data.item.year %} ({{ item_data.item.year }}){% endif %}",
-          "value": "{% if item_data.item.overview %}*{{ (item_data.item.overview[:150] + '...') if item_data.item.overview|length > 150 else item_data.item.overview }}*\n{% endif %}{% if item_data.item.video_height %}📐 {{ item_data.item.video_height }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.item.runtime_ticks %} • ⏱️ {{ (item_data.item.runtime_ticks // 600000000) }}m{% endif %}{% if item_data.ratings and item_data.ratings|length > 0 %}\n⭐ {% for rating_key, rating_data in item_data.ratings.items() %}{% if rating_key == 'imdb' %}IMDb: {{ rating_data.value }}{% elif rating_key == 'rotten_tomatoes' %}RT: {{ rating_data.value }}%{% elif rating_key == 'metacritic' %}MC: {{ rating_data.value }}{% elif rating_key == 'tmdb' %}TMDb: {{ rating_data.value }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}",
+          "value": "{% if item_data.item.overview %}*{{ (item_data.item.overview[:150] + '...') if item_data.item.overview|length > 150 else item_data.item.overview }}*\n{% endif %}{% if item_data.item.video_height %}📐 {{ item_data.item.video_height }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.item.runtime_ticks %} • ⏱️ {{ (item_data.item.runtime_ticks // 600000000) }}m{% endif %}{% if item_data.ratings and item_data.ratings|length > 0 %}\n⭐ {% for rating_key, rating_data in item_data.ratings.items() %}{% if rating_key == 'imdb' %}IMDb: {{ rating_data.value }}{% elif rating_key == 'rotten_tomatoes' %}RT: {{ rating_data.value }}%{% elif rating_key == 'metacritic' %}MC: {{ rating_data.value }}{% elif rating_key == 'tmdb' %}TMDb: {{ rating_data.value }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}{% if item_data.item.imdb_id or item_data.item.tmdb_id or item_data.item.tvdb_id %}\n🔗 {% if item_data.item.imdb_id %}[IMDb](https://www.imdb.com/title/{{ item_data.item.imdb_id }}/){% endif %}{% if item_data.item.tmdb_id %}{% if item_data.item.imdb_id %} • {% endif %}[TMDb](https://www.themoviedb.org/movie/{{ item_data.item.tmdb_id }}){% endif %}{% if item_data.item.tvdb_id %}{% if item_data.item.imdb_id or item_data.item.tmdb_id %} • {% endif %}{% if item_data.ratings and item_data.ratings.tvdb and item_data.ratings.tvdb.proper_url %}[TVDb]({{ item_data.ratings.tvdb.proper_url }}){% else %}[TVDb](https://thetvdb.com/dereferrer/series/{{ item_data.item.tvdb_id }}){% endif %}{% endif %}{% endif %}",
           "inline": false
         }{% if not loop.last %},{% endif %}
         {% endfor %}
@@ -20,13 +20,10 @@
           "inline": false
         }
         {% endif %}
-      ]{% set first_movie = new_items|first %}{% if first_movie %},
+      ],
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ first_movie.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
-      },
-      "image": {
-        "url": "{{ jellyfin_url }}/Items/{{ first_movie.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
-      }{% endif %}
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
     }{% if has_upgraded %},{% endif %}
     {% if has_upgraded %}
     {
@@ -37,7 +34,7 @@
         {% for item_data in upgraded_items[:6] %}
         {
           "name": "{{ item_data.item.name }}{% if item_data.item.year %} ({{ item_data.item.year }}){% endif %}",
-          "value": "📐 {{ item_data.item.video_height or 'Unknown' }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.changes|length > 0 %}\n**Changes**: {% for change in item_data.changes[:3] %}{% if change.type == 'resolution' %}{{ change.old_value or 'Unknown' }}p→**{{ change.new_value or 'Unknown' }}p**{% elif change.type == 'codec' %}{{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_codec' %}Audio: {{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_channels' %}{{ change.old_value or 0 }}ch→**{{ change.new_value or 0 }}ch**{% elif change.type == 'hdr_status' %}{{ change.old_value or 'SDR' }}→**{{ change.new_value or 'SDR' }}**{% else %}{{ change.description }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}{% if item_data.ratings and item_data.ratings|length > 0 %}\n⭐ {% for rating_key, rating_data in item_data.ratings.items() %}{% if rating_key == 'imdb' %}IMDb: {{ rating_data.value }}{% elif rating_key == 'rotten_tomatoes' %}RT: {{ rating_data.value }}%{% elif rating_key == 'metacritic' %}MC: {{ rating_data.value }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}",
+          "value": "📐 {{ item_data.item.video_height or 'Unknown' }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.changes|length > 0 %}\n**Changes**: {% for change in item_data.changes[:3] %}{% if change.type == 'resolution' %}{{ change.old_value or 'Unknown' }}p→**{{ change.new_value or 'Unknown' }}p**{% elif change.type == 'codec' %}{{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_codec' %}Audio: {{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_channels' %}{{ change.old_value or 0 }}ch→**{{ change.new_value or 0 }}ch**{% elif change.type == 'hdr_status' %}{{ change.old_value or 'SDR' }}→**{{ change.new_value or 'SDR' }}**{% else %}{{ change.description }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}{% if item_data.ratings and item_data.ratings|length > 0 %}\n⭐ {% for rating_key, rating_data in item_data.ratings.items() %}{% if rating_key == 'imdb' %}IMDb: {{ rating_data.value }}{% elif rating_key == 'rotten_tomatoes' %}RT: {{ rating_data.value }}%{% elif rating_key == 'metacritic' %}MC: {{ rating_data.value }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}{% if item_data.item.imdb_id or item_data.item.tmdb_id or item_data.item.tvdb_id %}\n🔗 {% if item_data.item.imdb_id %}[IMDb](https://www.imdb.com/title/{{ item_data.item.imdb_id }}/){% endif %}{% if item_data.item.tmdb_id %}{% if item_data.item.imdb_id %} • {% endif %}[TMDb](https://www.themoviedb.org/movie/{{ item_data.item.tmdb_id }}){% endif %}{% if item_data.item.tvdb_id %}{% if item_data.item.imdb_id or item_data.item.tmdb_id %} • {% endif %}{% if item_data.ratings and item_data.ratings.tvdb and item_data.ratings.tvdb.proper_url %}[TVDb]({{ item_data.ratings.tvdb.proper_url }}){% else %}[TVDb](https://thetvdb.com/dereferrer/series/{{ item_data.item.tvdb_id }}){% endif %}{% endif %}{% endif %}",
           "inline": false
         }{% if not loop.last %},{% endif %}
         {% endfor %}
@@ -48,13 +45,10 @@
           "inline": false
         }
         {% endif %}
-      ]{% set first_upgraded_movie = upgraded_items|first %}{% if first_upgraded_movie %},
+      ],
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ first_upgraded_movie.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
-      },
-      "image": {
-        "url": "{{ jellyfin_url }}/Items/{{ first_upgraded_movie.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
-      }{% endif %}
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
     }
     {% endif %}
     {% elif category == 'tv' %}
@@ -66,7 +60,7 @@
         {% for item_data in new_items[:10] %}
         {
           "name": "{{ item_data.item.series_name }} S{{ '%02d'|format(item_data.item.season_number or 0) }}E{{ '%02d'|format(item_data.item.episode_number or 0) }}",
-          "value": "**{{ item_data.item.name }}**{% if item_data.item.overview %}\n*{{ (item_data.item.overview[:120] + '...') if item_data.item.overview|length > 120 else item_data.item.overview }}*{% endif %}{% if item_data.item.video_height %}\n📐 {{ item_data.item.video_height }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.item.runtime_ticks %} • ⏱️ {{ (item_data.item.runtime_ticks // 600000000) }}m{% endif %}{% if item_data.ratings and item_data.ratings|length > 0 %}\n⭐ {% for rating_key, rating_data in item_data.ratings.items() %}{% if rating_key == 'imdb' %}IMDb: {{ rating_data.value }}{% elif rating_key == 'tvdb' %}TVDb: {{ rating_data.value }}{% elif rating_key == 'tmdb' %}TMDb: {{ rating_data.value }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}",
+          "value": "**{{ item_data.item.name }}**{% if item_data.item.overview %}\n*{{ (item_data.item.overview[:120] + '...') if item_data.item.overview|length > 120 else item_data.item.overview }}*{% endif %}{% if item_data.item.video_height %}\n📐 {{ item_data.item.video_height }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.item.runtime_ticks %} • ⏱️ {{ (item_data.item.runtime_ticks // 600000000) }}m{% endif %}{% if item_data.ratings and item_data.ratings|length > 0 %}\n⭐ {% for rating_key, rating_data in item_data.ratings.items() %}{% if rating_key == 'imdb' %}IMDb: {{ rating_data.value }}{% elif rating_key == 'tvdb' %}TVDb: {{ rating_data.value }}{% elif rating_key == 'tmdb' %}TMDb: {{ rating_data.value }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}{% if item_data.item.imdb_id or item_data.item.tmdb_id or item_data.item.tvdb_id %}\n🔗 {% if item_data.item.imdb_id %}[IMDb](https://www.imdb.com/title/{{ item_data.item.imdb_id }}/){% endif %}{% if item_data.item.tmdb_id %}{% if item_data.item.imdb_id %} • {% endif %}[TMDb](https://www.themoviedb.org/tv/{{ item_data.item.tmdb_id }}){% endif %}{% if item_data.item.tvdb_id %}{% if item_data.item.imdb_id or item_data.item.tmdb_id %} • {% endif %}{% if item_data.ratings and item_data.ratings.tvdb and item_data.ratings.tvdb.proper_url %}[TVDb]({{ item_data.ratings.tvdb.proper_url }}){% else %}[TVDb](https://thetvdb.com/episodes/{{ item_data.item.tvdb_id }}){% endif %}{% endif %}{% endif %}",
           "inline": false
         }{% if not loop.last %},{% endif %}
         {% endfor %}
@@ -77,10 +71,10 @@
           "inline": false
         }
         {% endif %}
-      ]{% set first_episode = new_items|first %}{% if first_episode %},
+      ],
       "thumbnail": {
-        "url": "{% if first_episode.item.series_id %}{{ jellyfin_url }}/Items/{{ first_episode.item.series_id }}/Images/Primary?maxHeight=400&maxWidth=300{% else %}{{ jellyfin_url }}/Items/{{ first_episode.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300{% endif %}"
-      }{% endif %}
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
     }{% if has_upgraded %},{% endif %}
     {% if has_upgraded %}
     {
@@ -91,7 +85,7 @@
         {% for item_data in upgraded_items[:8] %}
         {
           "name": "{{ item_data.item.series_name }} S{{ '%02d'|format(item_data.item.season_number or 0) }}E{{ '%02d'|format(item_data.item.episode_number or 0) }}",
-          "value": "**{{ item_data.item.name }}**\n📐 {{ item_data.item.video_height or 'Unknown' }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.changes|length > 0 %}\n**Changes**: {% for change in item_data.changes[:2] %}{% if change.type == 'resolution' %}{{ change.old_value or 'Unknown' }}p→**{{ change.new_value or 'Unknown' }}p**{% elif change.type == 'codec' %}{{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_codec' %}Audio: {{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_channels' %}{{ change.old_value or 0 }}ch→**{{ change.new_value or 0 }}ch**{% elif change.type == 'hdr_status' %}{{ change.old_value or 'SDR' }}→**{{ change.new_value or 'SDR' }}**{% else %}{{ change.description }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% if item_data.changes|length > 2 %} +{{ item_data.changes|length - 2 }} more{% endif %}{% endif %}",
+          "value": "**{{ item_data.item.name }}**\n📐 {{ item_data.item.video_height or 'Unknown' }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.changes|length > 0 %}\n**Changes**: {% for change in item_data.changes[:2] %}{% if change.type == 'resolution' %}{{ change.old_value or 'Unknown' }}p→**{{ change.new_value or 'Unknown' }}p**{% elif change.type == 'codec' %}{{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_codec' %}Audio: {{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_channels' %}{{ change.old_value or 0 }}ch→**{{ change.new_value or 0 }}ch**{% elif change.type == 'hdr_status' %}{{ change.old_value or 'SDR' }}→**{{ change.new_value or 'SDR' }}**{% else %}{{ change.description }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% if item_data.changes|length > 2 %} +{{ item_data.changes|length - 2 }} more{% endif %}{% endif %}{% if item_data.ratings and item_data.ratings|length > 0 %}\n⭐ {% for rating_key, rating_data in item_data.ratings.items() %}{% if rating_key == 'imdb' %}IMDb: {{ rating_data.value }}{% elif rating_key == 'tvdb' %}TVDb: {{ rating_data.value }}{% elif rating_key == 'tmdb' %}TMDb: {{ rating_data.value }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}{% if item_data.item.imdb_id or item_data.item.tmdb_id or item_data.item.tvdb_id %}\n🔗 {% if item_data.item.imdb_id %}[IMDb](https://www.imdb.com/title/{{ item_data.item.imdb_id }}/){% endif %}{% if item_data.item.tmdb_id %}{% if item_data.item.imdb_id %} • {% endif %}[TMDb](https://www.themoviedb.org/tv/{{ item_data.item.tmdb_id }}){% endif %}{% if item_data.item.tvdb_id %}{% if item_data.item.imdb_id or item_data.item.tmdb_id %} • {% endif %}{% if item_data.ratings and item_data.ratings.tvdb and item_data.ratings.tvdb.proper_url %}[TVDb]({{ item_data.ratings.tvdb.proper_url }}){% else %}[TVDb](https://thetvdb.com/episodes/{{ item_data.item.tvdb_id }}){% endif %}{% endif %}{% endif %}",
           "inline": false
         }{% if not loop.last %},{% endif %}
         {% endfor %}
@@ -102,10 +96,10 @@
           "inline": false
         }
         {% endif %}
-      ]{% set first_upgraded_episode = upgraded_items|first %}{% if first_upgraded_episode %},
+      ],
       "thumbnail": {
-        "url": "{% if first_upgraded_episode.item.series_id %}{{ jellyfin_url }}/Items/{{ first_upgraded_episode.item.series_id }}/Images/Primary?maxHeight=400&maxWidth=300{% else %}{{ jellyfin_url }}/Items/{{ first_upgraded_episode.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300{% endif %}"
-      }{% endif %}
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
     }
     {% endif %}
     {% elif category == 'music' %}
@@ -128,10 +122,10 @@
           "inline": false
         }
         {% endif %}
-      ]{% set first_music = new_items|first %}{% if first_music %},
+      ],
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ first_music.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
-      }{% endif %}
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
     }{% if has_upgraded %},{% endif %}
     {% if has_upgraded %}
     {
@@ -153,10 +147,10 @@
           "inline": false
         }
         {% endif %}
-      ]{% set first_upgraded_music = upgraded_items|first %}{% if first_upgraded_music %},
+      ],
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ first_upgraded_music.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
-      }{% endif %}
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
     }
     {% endif %}
     {% else %}
@@ -168,7 +162,7 @@
         {% for item_data in new_items[:10] %}
         {
           "name": "{{ item_data.item.name }}",
-          "value": "**Type**: {{ item_data.item.item_type }}{% if item_data.item.video_height %}\n📐 {{ item_data.item.video_height }}p{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% endif %}{% if item_data.ratings and item_data.ratings|length > 0 %}\n⭐ {% for rating_key, rating_data in item_data.ratings.items() %}{% if rating_key == 'imdb' %}IMDb: {{ rating_data.value }}{% elif rating_key == 'tmdb' %}TMDb: {{ rating_data.value }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}",
+          "value": "**Type**: {{ item_data.item.item_type }}{% if item_data.item.video_height %}\n📐 {{ item_data.item.video_height }}p{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% endif %}{% if item_data.ratings and item_data.ratings|length > 0 %}\n⭐ {% for rating_key, rating_data in item_data.ratings.items() %}{% if rating_key == 'imdb' %}IMDb: {{ rating_data.value }}{% elif rating_key == 'tmdb' %}TMDb: {{ rating_data.value }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}{% if item_data.item.imdb_id or item_data.item.tmdb_id or item_data.item.tvdb_id %}\n🔗 {% if item_data.item.imdb_id %}[IMDb](https://www.imdb.com/title/{{ item_data.item.imdb_id }}/){% endif %}{% if item_data.item.tmdb_id %}{% if item_data.item.imdb_id %} • {% endif %}[TMDb](https://www.themoviedb.org/{% if item_data.item.item_type == 'Movie' %}movie{% elif item_data.item.item_type == 'Series' %}tv{% else %}tv{% endif %}/{{ item_data.item.tmdb_id }}){% endif %}{% if item_data.item.tvdb_id %}{% if item_data.item.imdb_id or item_data.item.tmdb_id %} • {% endif %}{% if item_data.ratings and item_data.ratings.tvdb and item_data.ratings.tvdb.proper_url %}[TVDb]({{ item_data.ratings.tvdb.proper_url }}){% elif item_data.item.item_type == 'Episode' %}[TVDb](https://thetvdb.com/episodes/{{ item_data.item.tvdb_id }}){% elif item_data.item.item_type == 'Series' %}[TVDb](https://thetvdb.com/series/{{ item_data.item.tvdb_id }}){% else %}[TVDb](https://thetvdb.com/dereferrer/series/{{ item_data.item.tvdb_id }}){% endif %}{% endif %}{% endif %}",
           "inline": false
         }{% if not loop.last %},{% endif %}
         {% endfor %}
@@ -179,10 +173,10 @@
           "inline": false
         }
         {% endif %}
-      ]{% set first_item = new_items|first %}{% if first_item %},
+      ],
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ first_item.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
-      }{% endif %}
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
     }{% if has_upgraded %},{% endif %}
     {% if has_upgraded %}
     {
@@ -193,7 +187,7 @@
         {% for item_data in upgraded_items[:8] %}
         {
           "name": "{{ item_data.item.name }}{% if item_data.item.item_type %} ({{ item_data.item.item_type }}){% endif %}",
-          "value": "{% if item_data.item.video_height %}📐 {{ item_data.item.video_height }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.changes|length > 0 %}\n\n**🔄 Upgrades**: {% for change in item_data.changes[:2] %}{% if change.type == 'resolution' %}{{ change.old_value or 'Unknown' }}p→**{{ change.new_value or 'Unknown' }}p**{% elif change.type == 'codec' %}{{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_codec' %}Audio: {{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_channels' %}{{ change.old_value or 0 }}ch→**{{ change.new_value or 0 }}ch**{% elif change.type == 'hdr_status' %}{{ change.old_value or 'SDR' }}→**{{ change.new_value or 'SDR' }}**{% else %}{{ change.description }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% if item_data.changes|length > 2 %} +{{ item_data.changes|length - 2 }} more{% endif %}{% endif %}{% if item_data.ratings and item_data.ratings|length > 0 %}\n⭐ {% for rating_key, rating_data in item_data.ratings.items() %}{% if rating_key == 'imdb' %}**IMDb**: {{ rating_data.value }}{% elif rating_key == 'tmdb' %}**TMDb**: {{ rating_data.value }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}",
+          "value": "{% if item_data.item.video_height %}📐 {{ item_data.item.video_height }}p{% if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif %}{% endif %}{% if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif %}{% if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.{% if item_data.item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% endif %}{% if item_data.changes|length > 0 %}\n\n**🔄 Upgrades**: {% for change in item_data.changes[:2] %}{% if change.type == 'resolution' %}{{ change.old_value or 'Unknown' }}p→**{{ change.new_value or 'Unknown' }}p**{% elif change.type == 'codec' %}{{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_codec' %}Audio: {{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_channels' %}{{ change.old_value or 0 }}ch→**{{ change.new_value or 0 }}ch**{% elif change.type == 'hdr_status' %}{{ change.old_value or 'SDR' }}→**{{ change.new_value or 'SDR' }}**{% else %}{{ change.description }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% if item_data.changes|length > 2 %} +{{ item_data.changes|length - 2 }} more{% endif %}{% endif %}{% if item_data.ratings and item_data.ratings|length > 0 %}\n⭐ {% for rating_key, rating_data in item_data.ratings.items() %}{% if rating_key == 'imdb' %}**IMDb**: {{ rating_data.value }}{% elif rating_key == 'tmdb' %}**TMDb**: {{ rating_data.value }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% endif %}{% if item_data.item.imdb_id or item_data.item.tmdb_id or item_data.item.tvdb_id %}\n🔗 {% if item_data.item.imdb_id %}[IMDb](https://www.imdb.com/title/{{ item_data.item.imdb_id }}/){% endif %}{% if item_data.item.tmdb_id %}{% if item_data.item.imdb_id %} • {% endif %}[TMDb](https://www.themoviedb.org/{% if item_data.item.item_type == 'Movie' %}movie{% elif item_data.item.item_type == 'Series' %}tv{% else %}tv{% endif %}/{{ item_data.item.tmdb_id }}){% endif %}{% if item_data.item.tvdb_id %}{% if item_data.item.imdb_id or item_data.item.tmdb_id %} • {% endif %}{% if item_data.ratings and item_data.ratings.tvdb and item_data.ratings.tvdb.proper_url %}[TVDb]({{ item_data.ratings.tvdb.proper_url }}){% elif item_data.item.item_type == 'Episode' %}[TVDb](https://thetvdb.com/episodes/{{ item_data.item.tvdb_id }}){% elif item_data.item.item_type == 'Series' %}[TVDb](https://thetvdb.com/series/{{ item_data.item.tvdb_id }}){% else %}[TVDb](https://thetvdb.com/dereferrer/series/{{ item_data.item.tvdb_id }}){% endif %}{% endif %}{% endif %}",
           "inline": false
         }{% if not loop.last %},{% endif %}
         {% endfor %}
@@ -204,17 +198,12 @@
           "inline": false
         }
         {% endif %}
-      ]{% set first_upgraded_item = upgraded_items|first %}{% if first_upgraded_item %},
+      ],
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ first_upgraded_item.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
-      }{% endif %}
+        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
+      }
     }
     {% endif %}
-    {% endif %},
-    "footer": {
-      "text": "{% if category == 'movies' %}Movies{% elif category == 'tv' %}TV Shows{% elif category == 'music' %}Music{% else %}Items{% endif %} • {{ timestamp[:19] | replace('T', ' ') }} UTC{% if tvdb_attribution_needed %}\nMetadata provided by TheTVDB{% endif %}",
-      "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
-    },
-    "timestamp": "{{ timestamp }}"
+    {% endif %}
   ]
 }
