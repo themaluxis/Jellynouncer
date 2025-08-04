@@ -11,7 +11,7 @@ don't belong to any specific service component but are needed across the applica
 This promotes code reuse and maintains consistent behavior for common operations.
 
 Functions:
-    setup_logging: Configure comprehensive logging with rotation and custom formatting
+    setup_logging: Configure logging with rotation and custom formatting
     get_logger: Retrieve existing logger instances by name
     format_bytes: Convert byte counts to human-readable format
     sanitize_filename: Clean filenames for safe filesystem usage
@@ -24,23 +24,26 @@ License: MIT
 
 import logging
 import logging.handlers
+import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 
 def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> logging.Logger:
     """
-    Set up comprehensive logging with rotation and custom formatting.
+    Set up logging with rotation and custom formatting.
 
     This function configures Python's logging system for production use with both
     console and file output. It's designed to provide detailed logging information
     while managing disk space usage through automatic log rotation.
 
     **Understanding Python Logging for Beginners:**
-    
+
     Python's logging system allows applications to record events, errors, and
     diagnostic information. Key concepts:
-    
+
     - **Loggers**: Named loggers that generate log messages
     - **Handlers**: Direct log messages to destinations (console, files, etc.)
     - **Formatters**: Control the format of log messages
@@ -56,23 +59,27 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
     **Custom Formatting:**
     This function uses a structured log format with brackets for easy parsing:
     `[timestamp] [user] [level] [component] message`
-    
+
     This format is both human-readable and machine-parseable for log analysis tools.
 
     **Logging Configuration:**
-    - Console Handler: Shows INFO+ messages for immediate feedback
+    - Console Handler: Shows messages at specified level for immediate feedback
     - File Handler: Stores all messages with automatic rotation
     - Custom Formatter: Structured format with UTC timestamps
     - Rotation: 10MB per file, 5 backup files (50MB total maximum)
 
     Args:
         log_level (str): Python logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
-            DEBUG provides the most detail, CRITICAL only shows critical errors.
+            Both console and file handlers will use this level.
         log_dir (str): Directory path where log files will be stored.
             Created automatically if it doesn't exist.
 
     Returns:
         logging.Logger: Configured logger instance ready for use throughout the application
+
+    Raises:
+        ValueError: If log_level is not a valid Python logging level
+        PermissionError: If log directory cannot be created or accessed
 
     Example:
         ```python
@@ -80,12 +87,12 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
         logger = setup_logging("INFO", "/var/logs/jellynouncer")
         logger.info("Application starting up")
         logger.error("Database connection failed", exc_info=True)
-        
+
         # Debug setup for development
         debug_logger = setup_logging("DEBUG", "./logs")
         debug_logger.debug("Detailed debugging information")
         debug_logger.warning("This is a warning message")
-        
+
         # The logger will create structured output like:
         # [2025-01-15 10:30:45 UTC] [system] [INFO] [jellynouncer] Application starting up
         # [2025-01-15 10:30:46 UTC] [system] [ERROR] [jellynouncer] Database connection failed
@@ -101,9 +108,21 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
         sizes and keep old logs as backup files. This prevents logs from
         consuming unlimited disk space over time.
     """
-    # Create logs directory if it doesn't exist
-    # parents=True creates parent directories, exist_ok=True prevents errors if it exists
-    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    # Validate log level first
+    valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+    log_level_upper = log_level.upper()
+    if log_level_upper not in valid_levels:
+        raise ValueError(f"Invalid log level '{log_level}'. Must be one of: {valid_levels}")
+
+    # Convert string to logging constant
+    numeric_level = getattr(logging, log_level_upper)
+
+    # Create logs directory if it doesn't exist with error handling
+    log_path = Path(log_dir)
+    try:
+        log_path.mkdir(parents=True, exist_ok=True)
+    except PermissionError as e:
+        raise PermissionError(f"Cannot create log directory '{log_dir}': {e}")
 
     class BracketFormatter(logging.Formatter):
         """
@@ -112,27 +131,11 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
         This nested class creates a custom formatter that generates consistent,
         structured log messages. The bracket format makes it easy to parse logs
         programmatically while remaining human-readable.
-
-        **Formatter Benefits:**
-        - Consistent timestamp format (UTC for server deployments)
-        - Structured format that's easy to parse with tools
-        - Component identification for debugging
-        - User context for multi-user scenarios
-
-        **Format Structure:**
-        `[timestamp] [user] [level] [component] message`
-        
-        Where:
-        - timestamp: UTC time in ISO format for consistency across time zones
-        - user: User context (defaults to 'system' for service operations)
-        - level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        - component: Logger name for identifying message source
-        - message: The actual log message content
         """
 
-        def format(self, record):
+        def format(self, record: logging.LogRecord) -> str:
             """
-            Format a log record into structured bracket format.
+            Format log record with structured bracket format.
 
             This method is called automatically by the logging system for each
             log message. It extracts information from the LogRecord and formats
@@ -150,7 +153,7 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
             """
             # Get UTC timestamp for consistency across time zones and deployments
             timestamp = datetime.fromtimestamp(
-                record.created, 
+                record.created,
                 tz=timezone.utc
             ).strftime('%Y-%m-%d %H:%M:%S UTC')
 
@@ -162,8 +165,8 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
             return f"[{timestamp}] [{user}] [{record.levelname}] [{record.name}] {record.getMessage()}"
 
     # Create the main application logger with the specified name
-    logger = logging.getLogger("jellynouncer")  # Changed from "jellynotify" to "jellynouncer"
-    logger.setLevel(getattr(logging, log_level.upper()))
+    logger = logging.getLogger("jellynouncer")
+    logger.setLevel(numeric_level)
 
     # Clear any existing handlers to prevent duplicate logs during testing/development
     # This is important if setup_logging() is called multiple times
@@ -172,22 +175,28 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
     # Console handler for immediate feedback during development and debugging
     # Shows messages on the terminal/console for real-time monitoring
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)  # Only show INFO+ on console to reduce noise
+    console_handler.setLevel(numeric_level)  # Use specified log level instead of hardcoded INFO
     console_handler.setFormatter(BracketFormatter())
     logger.addHandler(console_handler)
 
     # Rotating file handler to prevent logs from consuming unlimited disk space
     # This is crucial for production deployments that run continuously
-    file_handler = logging.handlers.RotatingFileHandler(
-        filename=Path(log_dir) / "jellynouncer.log",  # Changed from "jellynotify.log"
-        maxBytes=10 * 1024 * 1024,    # 10MB per file (reasonable size for analysis)
-        backupCount=5,                # Keep 5 backup files (jellynouncer.log.1, .2, etc.)
-        encoding='utf-8',             # Ensure proper encoding for international characters
-        mode='a'                      # Append mode - preserves logs across service restarts
-    )
-    file_handler.setLevel(getattr(logging, log_level.upper()))  # Use specified log level for files
-    file_handler.setFormatter(BracketFormatter())
-    logger.addHandler(file_handler)
+    log_file_path = log_path / "jellynouncer.log"
+    try:
+        file_handler = logging.handlers.RotatingFileHandler(
+            filename=log_file_path,
+            maxBytes=10 * 1024 * 1024,  # 10MB per file (reasonable size for analysis)
+            backupCount=5,  # Keep 5 backup files (jellynouncer.log.1, .2, etc.)
+            encoding='utf-8',  # Ensure proper encoding for international characters
+            mode='a'  # Append mode - preserves logs across service restarts
+        )
+        file_handler.setLevel(numeric_level)  # Use specified log level for files
+        file_handler.setFormatter(BracketFormatter())
+        logger.addHandler(file_handler)
+    except PermissionError as e:
+        # If we can't create file handler, log to console only
+        logger.error(f"Cannot create log file '{log_file_path}': {e}")
+        logger.warning("Continuing with console logging only")
 
     # Disable uvicorn's access logger to avoid duplication with our custom logging
     # Uvicorn is the ASGI server that runs FastAPI applications
@@ -196,19 +205,24 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
     # Log the configuration for verification and debugging
     # This helps administrators verify logging is set up correctly
     logger.info("=" * 60)
-    logger.info("Jellynouncer Logging Configuration")  # Updated project name
+    logger.info("Jellynouncer Logging Configuration")
     logger.info("=" * 60)
-    logger.info(f"Log Level: {log_level.upper()}")
+    logger.info(f"Log Level: {log_level_upper}")
     logger.info(f"Log Directory: {log_dir}")
-    logger.info(f"Main Log File: {Path(log_dir) / 'jellynouncer.log'}")  # Updated filename
+    logger.info(f"Main Log File: {log_file_path}")
     logger.info(f"Max Log Size: 10MB per file")
     logger.info(f"Backup Count: 5 files")
     logger.info(f"Total Storage: 50MB maximum")
     logger.info(f"Total Handlers: {len(logger.handlers)}")
-    
+
     # List each handler for diagnostic purposes
     for i, handler in enumerate(logger.handlers):
         logger.info(f"Handler {i + 1}: {type(handler).__name__} - Level: {logging.getLevelName(handler.level)}")
+
+    # Test logging at different levels to verify configuration
+    logger.debug("DEBUG level logging is working - visible when log level is DEBUG")
+    logger.info("INFO level logging is working")
+
     logger.info("=" * 60)
 
     return logger
@@ -293,258 +307,144 @@ def format_bytes(bytes_value: int) -> str:
         bytes_value (int): Number of bytes to format. Can be 0 or positive integer.
 
     Returns:
-        str: Formatted string with value and appropriate unit (e.g., "1.5 GB", "750 MB")
+        str: Human-readable string with appropriate unit (e.g., "1.5 MB", "250 KB")
 
     Example:
         ```python
-        # Common file sizes
-        print(format_bytes(0))           # "0 B"
-        print(format_bytes(512))         # "512 B"
         print(format_bytes(1024))        # "1.0 KB"
         print(format_bytes(1536))        # "1.5 KB"
         print(format_bytes(1048576))     # "1.0 MB"
         print(format_bytes(1073741824))  # "1.0 GB"
-
-        # Real-world usage
-        file_size = 2048576000
-        print(f"Movie file size: {format_bytes(file_size)}")  # "Movie file size: 1.9 GB"
-
-        # Database usage
-        db_size = 524288000
-        print(f"Database size: {format_bytes(db_size)}")      # "Database size: 500.0 MB"
+        print(format_bytes(500))         # "500 B"
+        print(format_bytes(0))           # "0 B"
         ```
 
     Note:
-        The function handles edge cases gracefully:
+        This function handles edge cases gracefully:
         - Zero bytes returns "0 B"
+        - Negative values are treated as zero
         - Very large values are supported up to petabytes
-        - Decimal precision is limited to 1 place for readability
-        - Bytes are shown as integers (no decimal places)
+        - Results are rounded to one decimal place for readability
     """
-    if bytes_value == 0:
+    if bytes_value <= 0:
         return "0 B"
 
-    # Define unit progression - each unit is 1024x larger than previous
+    # Define units in order from smallest to largest
     units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-    unit_index = 0
-    size = float(bytes_value)
 
-    # Convert to the largest appropriate unit
-    # Stop when size is less than 1024 or we've reached the largest unit
+    # Find the appropriate unit by repeatedly dividing by 1024
+    size = float(bytes_value)
+    unit_index = 0
+
     while size >= 1024.0 and unit_index < len(units) - 1:
         size /= 1024.0
         unit_index += 1
 
-    # Format based on unit - bytes as integers, others with 1 decimal place
-    if unit_index == 0:  # Bytes
+    # Format with one decimal place, but remove trailing zeros
+    if size == int(size):
         return f"{int(size)} {units[unit_index]}"
     else:
         return f"{size:.1f} {units[unit_index]}"
 
 
-def sanitize_filename(filename: str) -> str:
+def sanitize_filename(filename: str, replacement: str = "_") -> str:
     """
-    Sanitize filename for safe filesystem usage across different operating systems.
+    Clean filename for safe filesystem usage by removing/replacing invalid characters.
 
-    This function removes or replaces characters that are problematic for filesystems,
-    ensuring that generated filenames work correctly on Windows, Linux, and macOS.
-    This is important when creating files based on media titles or user input.
+    This utility function ensures filenames are safe for use across different
+    operating systems and filesystems. It removes or replaces characters that
+    could cause issues when creating files or directories.
 
-    **Why Filename Sanitization is Needed:**
-    Different operating systems have different restrictions on filename characters:
-    - Windows: Cannot use < > : " | ? * \ /
-    - Linux/macOS: Cannot use / (and \ is legal but confusing)
-    - All systems: Control characters and some Unicode can cause issues
+    **Cross-Platform Compatibility:**
+    Different operating systems have different rules for valid filenames:
+    - Windows: Cannot contain < > : " | ? * or control characters
+    - Linux/Unix: More permissive, but some characters still problematic
+    - macOS: Similar to Linux but with additional restrictions
 
-    **Common Problematic Characters:**
-    - `/` and `\`: Directory separators
-    - `:`: Drive separator on Windows, time separator
-    - `*` and `?`: Wildcards in many systems
-    - `"`: Quote character that can break commands
-    - `|`: Pipe character used in command lines
-    - `<` and `>`: Redirection operators
+    This function creates filenames that work safely on all major platforms.
 
-    **Sanitization Strategy:**
-    This function replaces problematic characters with underscores, which are
-    safe on all major filesystems and maintain filename readability.
+    **Character Handling:**
+    - Invalid characters are replaced with the replacement string
+    - Leading/trailing spaces and dots are removed (Windows requirement)
+    - Reserved Windows names are handled (CON, PRN, AUX, etc.)
+    - Unicode characters are preserved if they're filesystem-safe
 
     Args:
-        filename (str): Original filename that may contain problematic characters
+        filename (str): Original filename to sanitize
+        replacement (str): Character to replace invalid characters with (default: "_")
 
     Returns:
-        str: Sanitized filename safe for use on all major filesystems
+        str: Sanitized filename safe for filesystem use
+
+    Raises:
+        ValueError: If filename is empty or becomes empty after sanitization
 
     Example:
         ```python
-        # Movie titles with problematic characters
-        sanitize_filename("Movie: The Sequel (2023)")     # "Movie_ The Sequel (2023)"
-        sanitize_filename("TV Show/Episode 1")            # "TV Show_Episode 1"
-        sanitize_filename('File "with quotes"')           # "File _with quotes_"
-        sanitize_filename("Data<File>Name")               # "Data_File_Name"
-        
-        # Real-world usage for cache files
-        movie_title = "The Matrix: Reloaded"
-        cache_filename = f"{sanitize_filename(movie_title)}.json"
-        # Result: "The Matrix_ Reloaded.json"
-        
-        # Log file naming
-        series_name = "TV Show/Season 1"
-        log_file = f"{sanitize_filename(series_name)}_processing.log"
-        # Result: "TV Show_Season 1_processing.log"
+        # Remove problematic characters
+        safe_name = sanitize_filename("My Movie: The Sequel (2024)")
+        print(safe_name)  # "My Movie_ The Sequel (2024)"
+
+        # Handle Windows reserved names
+        safe_name = sanitize_filename("CON.txt")
+        print(safe_name)  # "CON_.txt"
+
+        # Custom replacement character
+        safe_name = sanitize_filename("File<>Name", replacement="-")
+        print(safe_name)  # "File--Name"
         ```
 
     Note:
-        This function is conservative in its approach - it replaces characters
-        rather than removing them to maintain filename readability. The resulting
-        filenames may look slightly different but will be unambiguous and safe.
-
-        For maximum compatibility, the function also limits filename length
-        and handles edge cases like empty strings or strings with only
-        problematic characters.
+        This function is conservative - it may replace some characters that
+        are valid on your specific system, but the result will work everywhere.
+        The goal is cross-platform compatibility rather than maximum permissiveness.
     """
-    if not filename:
-        return "unnamed_file"
+    if not filename or not filename.strip():
+        raise ValueError("Filename cannot be empty")
 
-    # Replace problematic characters with underscores
-    # This list covers the most common filesystem-unsafe characters
-    problematic_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
-    
-    sanitized = filename
-    for char in problematic_chars:
-        sanitized = sanitized.replace(char, '_')
-    
-    # Remove or replace other potentially problematic characters
-    # Control characters (ASCII 0-31) can cause issues
-    sanitized = ''.join(char if ord(char) >= 32 else '_' for char in sanitized)
-    
-    # Remove leading/trailing whitespace and dots (problematic on Windows)
+    # Define characters that are invalid on any major filesystem
+    invalid_chars = r'<>:"/\|?*'
+
+    # Add control characters (ASCII 0-31) to invalid characters
+    invalid_pattern = f'[{re.escape(invalid_chars)}\x00-\x1f]'
+
+    # Replace invalid characters with the replacement string
+    sanitized = re.sub(invalid_pattern, replacement, filename)
+
+    # Remove leading/trailing whitespace and dots (Windows requirement)
     sanitized = sanitized.strip(' .')
-    
-    # Ensure filename isn't empty after sanitization
-    if not sanitized:
-        return "unnamed_file"
-    
-    # Limit length to prevent filesystem issues (255 chars is common limit)
-    # Leave room for file extensions
-    max_length = 200
-    if len(sanitized) > max_length:
-        sanitized = sanitized[:max_length].rstrip(' .')
-    
+
+    # Handle Windows reserved names (case-insensitive)
+    reserved_names = {
+        'CON', 'PRN', 'AUX', 'NUL',
+        'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+        'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'
+    }
+
+    # Check if the base name (before extension) is reserved
+    name_parts = sanitized.rsplit('.', 1)
+    base_name = name_parts[0].upper()
+
+    if base_name in reserved_names:
+        # Append replacement character to make it safe
+        if len(name_parts) == 2:
+            sanitized = f"{name_parts[0]}{replacement}.{name_parts[1]}"
+        else:
+            sanitized = f"{sanitized}{replacement}"
+
+    # Ensure we still have a valid filename after all transformations
+    if not sanitized or not sanitized.strip():
+        raise ValueError(f"Filename became empty after sanitization: '{filename}'")
+
+    # Limit length to be safe for most filesystems (255 characters is common limit)
+    if len(sanitized) > 255:
+        name_parts = sanitized.rsplit('.', 1)
+        if len(name_parts) == 2:
+            # Preserve extension, truncate name
+            max_name_length = 255 - len(name_parts[1]) - 1  # -1 for the dot
+            sanitized = f"{name_parts[0][:max_name_length]}.{name_parts[1]}"
+        else:
+            # No extension, just truncate
+            sanitized = sanitized[:255]
+
     return sanitized
-
-
-def format_duration(seconds: int) -> str:
-    """
-    Format duration in seconds to human-readable time format.
-
-    This utility function converts duration values (typically from media files)
-    into readable time formats. Useful for displaying runtime information in
-    Discord notifications and logs.
-
-    **Time Format Logic:**
-    - Less than 60 seconds: "45s"
-    - Less than 1 hour: "5m 30s"  
-    - 1 hour or more: "2h 15m 30s"
-    - Omits zero values for cleaner display
-
-    Args:
-        seconds (int): Duration in seconds
-
-    Returns:
-        str: Formatted duration string
-
-    Example:
-        ```python
-        # Various duration examples
-        print(format_duration(45))      # "45s"
-        print(format_duration(330))     # "5m 30s" 
-        print(format_duration(3661))    # "1h 1m 1s"
-        print(format_duration(7200))    # "2h"
-        print(format_duration(0))       # "0s"
-
-        # Real-world usage with media
-        movie_runtime = 8100  # seconds from Jellyfin API
-        print(f"Runtime: {format_duration(movie_runtime)}")  # "Runtime: 2h 15m"
-        ```
-
-    Note:
-        This function is designed for media runtime display where hours are
-        the largest practical unit. For longer durations (days, weeks), 
-        consider using a different formatting approach.
-    """
-    if seconds <= 0:
-        return "0s"
-    
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
-    remaining_seconds = seconds % 60
-    
-    parts = []
-    if hours > 0:
-        parts.append(f"{hours}h")
-    if minutes > 0:
-        parts.append(f"{minutes}m")
-    if remaining_seconds > 0 or not parts:  # Show seconds if it's the only unit
-        parts.append(f"{remaining_seconds}s")
-    
-    return " ".join(parts)
-
-
-def truncate_string(text: str, max_length: int, suffix: str = "...") -> str:
-    """
-    Truncate string to specified length with optional suffix.
-
-    This utility function safely truncates long strings for display in
-    Discord embeds, log messages, and other contexts where length limits
-    are important. It preserves readability by adding ellipsis or other
-    indicators when truncation occurs.
-
-    **Truncation Strategy:**
-    - If text fits within limit: return unchanged
-    - If text exceeds limit: truncate and add suffix
-    - Suffix counts toward total length limit
-    - Handles edge cases like empty strings and very short limits
-
-    Args:
-        text (str): Text string to potentially truncate
-        max_length (int): Maximum allowed length including suffix
-        suffix (str): String to append when truncation occurs (default: "...")
-
-    Returns:
-        str: Original text or truncated version with suffix
-
-    Example:
-        ```python
-        # Basic truncation
-        long_text = "This is a very long description that needs truncation"
-        print(truncate_string(long_text, 20))  # "This is a very lo..."
-
-        # Custom suffix
-        print(truncate_string(long_text, 25, " [more]"))  # "This is a very [more]"
-
-        # Discord embed limits
-        description = "Very long movie plot summary..."
-        discord_desc = truncate_string(description, 4096)  # Discord embed limit
-
-        # Log message truncation
-        error_details = "Extremely detailed error information..."
-        log_message = truncate_string(error_details, 200, " [truncated]")
-        ```
-
-    Note:
-        This function is commonly used for:
-        - Discord embed field values (limited to specific lengths)
-        - Log message formatting to prevent excessive output
-        - Database field truncation to prevent constraint violations  
-        - User interface display where space is limited
-    """
-    if not text or len(text) <= max_length:
-        return text
-    
-    if max_length <= len(suffix):
-        # If max_length is too small for suffix, just return truncated text
-        return text[:max_length]
-    
-    # Truncate text to make room for suffix
-    truncated_length = max_length - len(suffix)
-    return text[:truncated_length] + suffix
