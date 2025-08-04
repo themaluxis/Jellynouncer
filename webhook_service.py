@@ -24,12 +24,14 @@ import time
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List
 
 import aiohttp
+from fastapi import HTTPException
 
 from config_models import AppConfig, ConfigurationValidator
 from webhook_models import WebhookPayload
+from media_models import MediaItem
 from database_manager import DatabaseManager
 from jellyfin_api import JellyfinAPI
 from discord_services import DiscordNotifier
@@ -209,7 +211,7 @@ class WebhookService:
             self.logger.debug("Loading application configuration...")
             try:
                 config_validator = ConfigurationValidator()
-                self.config = await config_validator.load_and_validate_config()
+                self.config = config_validator.load_and_validate_config()
                 self.logger.info("Configuration loaded and validated successfully")
                 self.logger.debug(f"Jellyfin server: {self.config.jellyfin.server_url}")
                 self.logger.debug(f"Database path: {self.config.database.path}")
@@ -246,7 +248,7 @@ class WebhookService:
                 # Create aiohttp session for Discord
                 session = aiohttp.ClientSession()
                 self.discord = DiscordNotifier(self.config.discord)
-                await self.discord.initialize(session, self.config.jellyfin)
+                await self.discord.initialize(session)
                 self.logger.info("Discord notification manager initialized")
             except Exception as e:
                 self.logger.error(f"Discord manager initialization failed: {e}")
