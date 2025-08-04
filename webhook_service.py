@@ -1072,10 +1072,10 @@ class WebhookService:
                 await self.db.close()
                 self.logger.debug("Database connections closed")
 
-            # Close HTTP sessions
+            # Close Discord notifier and its sessions
             if hasattr(self, 'discord') and self.discord:
-                # Discord notifier cleanup if it has session management
-                pass
+                await self.discord.cleanup()
+                self.logger.debug("Discord notifier cleaned up")
 
             self.logger.info("Service cleanup completed successfully")
 

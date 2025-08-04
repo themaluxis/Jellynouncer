@@ -100,6 +100,7 @@ class ThumbnailManager:
         self.session: Optional[aiohttp.ClientSession] = None
         self.cache: Dict[str, str] = {}
         self.logger = get_logger("discord.thumbnails")
+        self._owns_session = False
 
     async def initialize(self) -> None:
         """
@@ -109,9 +110,13 @@ class ThumbnailManager:
         and other HTTP operations. It should be called once during service startup.
         """
         if self.session is None:
-            timeout = aiohttp.ClientTimeout(total=10)  # 10-second timeout for thumbnail requests
+            timeout = aiohttp.ClientTimeout(total=10)
             self.session = aiohttp.ClientSession(timeout=timeout)
-            self.logger.debug("Thumbnail manager HTTP session initialized")
+            self._owns_session = True  # Track if we created the session
+            self.logger.debug("Thumbnail manager HTTP session created")
+        else:
+            self._owns_session = False  # We're using a shared session
+            self.logger.debug("Thumbnail manager using shared HTTP session")
 
     async def cleanup(self) -> None:
         """
@@ -120,7 +125,7 @@ class ThumbnailManager:
         This method should be called during application shutdown to properly
         close the HTTP session and prevent resource leaks.
         """
-        if self.session:
+        if self.session and self._owns_session:
             await self.session.close()
             self.session = None
             self.logger.debug("Thumbnail manager HTTP session closed")
@@ -337,22 +342,17 @@ class DiscordNotifier:
         self.logger = get_logger("discord")
 
     async def initialize(self, session: aiohttp.ClientSession, jellyfin_config, templates_config) -> None:
-        """
-        Initialize Discord notifier with HTTP session and configuration dependencies.
-
-        Args:
-            session (aiohttp.ClientSession): HTTP session for requests
-            jellyfin_config: Jellyfin configuration for thumbnail manager
-            templates_config: Templates configuration for Jinja2 environment
-        """
+        """Initialize Discord notifier with shared session and configuration dependencies."""
         self.session = session
 
-        # Create and initialize thumbnail manager
+        # Create thumbnail manager that will share the same session
         self.thumbnail_manager = ThumbnailManager(
             jellyfin_url=jellyfin_config.server_url,
             api_key=jellyfin_config.api_key
         )
-        await self.thumbnail_manager.initialize()
+        # Pass the shared session to thumbnail manager instead of letting it create its own
+        self.thumbnail_manager.session = session
+        # Don't call initialize() on thumbnail_manager since it would create another session
 
         # Initialize template environment
         if self.jinja_env is None:
