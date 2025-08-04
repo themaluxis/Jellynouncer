@@ -2,17 +2,16 @@
 """
 Jellynouncer Rating Services Module
 
-This module contains external rating service integrations for fetching movie/TV ratings
-from multiple APIs including OMDb, TMDb, and TVDb. These services are tightly coupled
-and work together to provide comprehensive rating information for Discord notifications.
+This module provides comprehensive rating and metadata enhancement services by integrating
+with multiple external APIs including OMDb, TMDb, and TVDb. It enriches Discord notifications
+with additional rating information, reviews, and enhanced metadata not available in Jellyfin.
 
-The module implements sophisticated caching, rate limiting, and fallback strategies to
-ensure reliable rating data retrieval while respecting API limits and terms of service.
-Both services work together to provide rich metadata enhancement for media notifications.
+The rating services are designed to be optional and fault-tolerant - if they fail, the core
+notification service continues to operate normally without rating enhancements.
 
 Classes:
-    TVDBAPIv4: Complete TVDB API v4 implementation supporting both licensed and subscriber access
-    RatingService: Comprehensive rating service aggregating multiple external APIs
+    RatingService: Main service coordinator for all rating providers
+    TVDBAPIv4: Specialized client for TVDB API v4 integration
 
 Author: Mark Newton
 Project: Jellynouncer
@@ -24,501 +23,210 @@ import asyncio
 import json
 import time
 import logging
-from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, List
+from datetime import datetime, timezone, timedelta
 
 import aiohttp
-import aiosqlite
 
 from config_models import RatingServicesConfig, TVDBConfig
 from media_models import MediaItem
+from utils import get_logger
 
 
 class TVDBAPIv4:
     """
-    Complete TVDB API v4 implementation supporting both licensed and subscriber access modes.
+    Specialized client for TVDB API v4 integration.
 
-    The TV Database (TVDb) is a comprehensive database of television series metadata,
-    ratings, and artwork. This class implements their modern v4 API with support for
-    both licensing models they offer.
+    The TV Database (TVDB) provides comprehensive television show information
+    including ratings, episode data, and artwork. This client handles the
+    complexities of TVDB's authentication system and API access patterns.
 
-    **Understanding TVDb API Access Models:**
+    **TVDB API v4 Features:**
+    - Comprehensive TV show and episode metadata
+    - Multiple authentication modes (subscriber, licensed)
+    - Enhanced artwork and poster collections
+    - Community ratings and reviews
+    - Multi-language support
 
-    TVDb offers two access tiers with different features and rate limits:
-
-    **Licensed Access:**
-    - Requires a paid API key subscription
-    - Higher rate limits and more comprehensive data access
-    - Intended for commercial applications and services
-    - More stable API access with priority support
-
-    **Subscriber Access:**
-    - Uses free user account with subscriber PIN
-    - Lower rate limits and restricted data access
-    - Intended for personal projects and development
-    - Rate-limited to prevent abuse
-
-    **Authentication Flow:**
-    The v4 API uses JWT (JSON Web Token) authentication:
-    1. Submit API key (+ PIN for subscribers) to get JWT token
-    2. Include JWT token in all subsequent API requests
-    3. Handle token expiration and re-authentication automatically
-
-    **Rate Limiting Strategy:**
-    Different access modes require different rate limiting approaches:
-    - Subscriber: Conservative delays to avoid hitting limits
-    - Licensed: More aggressive requests within commercial limits
-    - Automatic backoff when rate limits are detected
+    **Authentication Modes:**
+    - Subscriber: Enhanced access with API key + PIN
+    - Licensed: Commercial access with different auth flow
+    - Auto: Automatically detect best available mode
 
     Attributes:
-        config (TVDBConfig): TVDb API configuration settings
-        logger (logging.Logger): Logger instance for API operations
+        config (TVDBConfig): TVDB configuration and authentication settings
+        logger (logging.Logger): Logger instance for TVDB operations
         session (aiohttp.ClientSession): HTTP session for API requests
-        token (Optional[str]): Current JWT authentication token
-        token_expires_at (Optional[float]): Token expiration timestamp
-        access_mode (str): Determined access mode (subscriber/licensed/disabled)
-        min_request_interval (float): Minimum seconds between requests
-        series_slug_cache (Dict): Cache for series URL slugs
-        last_request_time (Dict): Rate limiting state per endpoint
+        access_token (Optional[str]): Current authentication token
+        token_expires (Optional[datetime]): Token expiration timestamp
+        access_mode (str): Current access mode (subscriber, licensed, auto)
 
     Example:
         ```python
-        # Initialize TVDB API client
         tvdb_config = TVDBConfig(
             enabled=True,
-            api_key="your_api_key",
-            subscriber_pin="your_pin",  # Optional for subscriber access
-            access_mode="auto"  # Auto-detect based on available credentials
+            api_key="your_tvdb_key",
+            subscriber_pin="your_pin"
         )
 
-        tvdb_api = TVDBAPIv4(tvdb_config, logger)
+        tvdb_client = TVDBAPIv4(tvdb_config, logger)
+        await tvdb_client.initialize(session)
 
-        # Initialize with shared HTTP session
-        async with aiohttp.ClientSession() as session:
-            await tvdb_api.initialize(session)
-
-            # Get episode information with series slug
-            episode_data = await tvdb_api.get_episode_info_with_series_slug("episode123")
-            if episode_data:
-                print(f"Series: {episode_data.get('series_slug')}")
-                print(f"Episode rating: {episode_data.get('rating')}")
+        # Get TV show information
+        show_data = await tvdb_client.get_series_info("12345")
+        if show_data:
+            logger.info(f"Show: {show_data['name']}")
+            logger.info(f"Rating: {show_data.get('rating', 'N/A')}")
         ```
-
-    Note:
-        This class handles all the complexity of TVDb's authentication, rate limiting,
-        and data normalization. It's designed to be resilient to network issues and
-        API changes while providing a clean interface for the rating service.
     """
 
     def __init__(self, config: TVDBConfig, logger: logging.Logger):
         """
-        Initialize TVDB API v4 client with configuration and access mode detection.
-
-        This constructor sets up the TVDb client and automatically determines the
-        appropriate access mode based on the available configuration. It doesn't
-        perform network operations - those happen in the initialize() method.
-
-        **Access Mode Detection Logic:**
-        - If access_mode is explicitly set: Use that mode
-        - If subscriber_pin is provided: Use subscriber mode
-        - If only api_key is provided: Use licensed mode
-        - If neither is available: Disable TVDb integration
+        Initialize TVDB API v4 client with configuration.
 
         Args:
-            config (TVDBConfig): TVDb API configuration with credentials and settings
-            logger (logging.Logger): Logger instance for API operations
-
-        Example:
-            ```python
-            # Automatic access mode detection
-            config = TVDBConfig(
-                enabled=True,
-                api_key="your_api_key",
-                subscriber_pin="1234",  # Triggers subscriber mode
-                access_mode="auto"
-            )
-
-            tvdb_api = TVDBAPIv4(config, logger)
-            print(f"Using access mode: {tvdb_api.access_mode}")
-            ```
+            config (TVDBConfig): TVDB configuration with API key and access settings
+            logger (logging.Logger): Logger instance for TVDB operations
         """
         self.config = config
         self.logger = logger
-        self.session = None  # Will be set in initialize()
+        self.session = None
+        self.access_token = None
+        self.token_expires = None
+        self.access_mode = config.access_mode
 
-        # Authentication state management
-        self.token = None
-        self.token_expires_at = None
-        self.last_auth_attempt = 0
-
-        # Determine the appropriate access mode based on configuration
-        self.access_mode = self._determine_access_mode()
-
-        # Configure rate limiting based on access mode
-        if self.access_mode == 'subscriber':
-            self.min_request_interval = 2.0  # Conservative rate limiting for free tier
+        # Determine actual access mode based on available credentials
+        if config.subscriber_pin and config.api_key:
+            self.access_mode = "subscriber"
+        elif config.api_key:
+            self.access_mode = "licensed"
         else:
-            self.min_request_interval = 1.0  # More aggressive for licensed access
+            self.access_mode = "disabled"
 
-        # Rate limiting state tracking
-        self.last_request_time = {}
+        self.logger.debug(f"TVDB client initialized in {self.access_mode} mode")
 
-        # URL caching to avoid repeated API calls for the same data
-        self.series_slug_cache = {}  # episode_id -> (series_slug, timestamp)
-        self.cache_duration = 3600 * 24  # Cache for 24 hours
-
-        # Request timeout configuration
-        self.request_timeout = 10
-
-        self.logger.info(f"TVDB API v4 initialized in {self.access_mode} mode")
-
-    def _determine_access_mode(self) -> str:
+    async def initialize(self, session: aiohttp.ClientSession) -> bool:
         """
-        Determine the appropriate access mode based on available configuration.
-
-        This private method implements the logic for automatically detecting
-        which TVDb access tier to use based on the credentials provided in
-        the configuration.
-
-        **Decision Logic:**
-        1. If access_mode is explicitly set (not 'auto'): Use that setting
-        2. If subscriber_pin is provided: Use subscriber access mode
-        3. If api_key is provided without PIN: Use licensed access mode
-        4. If neither credential is available: Disable TVDb integration
-
-        Returns:
-            str: Access mode ('subscriber', 'licensed', or 'disabled')
-
-        Example:
-            ```python
-            # Internal method called during initialization
-            access_mode = self._determine_access_mode()
-            # Returns: 'subscriber', 'licensed', or 'disabled'
-            ```
-        """
-        # Use explicit access mode if specified
-        if self.config.access_mode != 'auto':
-            return self.config.access_mode
-
-        # Auto-detection based on available credentials
-        if self.config.subscriber_pin:
-            return 'subscriber'
-        elif self.config.api_key:
-            return 'licensed'
-        else:
-            return 'disabled'
-
-    async def initialize(self, session: aiohttp.ClientSession):
-        """
-        Initialize TVDB API client with shared HTTP session and perform authentication.
-
-        This method completes the initialization process by setting up the HTTP
-        session and performing the initial authentication with the TVDb API.
-        It's separated from the constructor because it requires async operations.
-
-        **Initialization Process:**
-        1. Store reference to shared HTTP session
-        2. Attempt initial authentication to get JWT token
-        3. Log authentication results and access mode
+        Initialize TVDB client with HTTP session and authenticate.
 
         Args:
-            session (aiohttp.ClientSession): Shared HTTP session for API requests
+            session (aiohttp.ClientSession): Shared HTTP session for requests
 
-        Raises:
-            Exception: If authentication fails and TVDb integration is required
-
-        Example:
-            ```python
-            # Initialize with existing session
-            async with aiohttp.ClientSession() as session:
-                await tvdb_api.initialize(session)
-
-                # API is now ready for use
-                if tvdb_api.access_mode != 'disabled':
-                    episode_data = await tvdb_api.get_episode_info_with_series_slug("123")
-            ```
-
-        Note:
-            This method should be called once during service startup. The HTTP
-            session should remain active for the lifetime of the TVDb client.
+        Returns:
+            bool: True if initialization successful, False otherwise
         """
         self.session = session
 
-        # Perform initial authentication if not disabled
-        if self.access_mode != 'disabled':
-            auth_success = await self._authenticate()
-            if auth_success:
-                self.logger.info(f"TVDB API v4 authentication successful ({self.access_mode} mode)")
+        if self.access_mode == "disabled":
+            self.logger.info("TVDB client disabled - no API key provided")
+            return False
+
+        try:
+            success = await self._authenticate()
+            if success:
+                self.logger.info(f"TVDB client initialized successfully ({self.access_mode} mode)")
             else:
-                self.logger.error(f"TVDB API v4 authentication failed ({self.access_mode} mode)")
+                self.logger.warning("TVDB authentication failed")
+            return success
+        except Exception as e:
+            self.logger.error(f"TVDB initialization failed: {e}")
+            return False
 
     async def _authenticate(self) -> bool:
         """
-        Authenticate with TVDB API v4 to obtain JWT token.
-
-        This private method handles the authentication process with TVDb's v4 API.
-        It supports both subscriber and licensed access modes with appropriate
-        credential handling and error recovery.
-
-        **Authentication Process:**
-        1. Prepare authentication payload based on access mode
-        2. Send POST request to login endpoint
-        3. Extract JWT token from response
-        4. Calculate token expiration time
-        5. Store authentication state for future requests
-
-        **Token Management:**
-        JWT tokens have limited lifespans and need periodic renewal. This method
-        handles token expiration tracking and provides the foundation for
-        automatic re-authentication when tokens expire.
+        Authenticate with TVDB API and obtain access token.
 
         Returns:
             bool: True if authentication successful, False otherwise
-
-        Example:
-            ```python
-            # Internal authentication call
-            success = await self._authenticate()
-            if success:
-                # Token is ready for API requests
-                print(f"Authenticated until: {self.token_expires_at}")
-            ```
-
-        Note:
-            This is a private method called automatically during initialization
-            and when token refresh is needed. It includes comprehensive error
-            handling to ensure authentication failures don't crash the service.
         """
         try:
-            self.logger.debug("Attempting TVDB API v4 authentication")
-            self.last_auth_attempt = time.time()
+            auth_data = {"apikey": self.config.api_key}
 
-            # Prepare authentication payload based on access mode
-            if self.access_mode == 'subscriber':
-                # Subscriber access uses API key + PIN
-                auth_payload = {
-                    "apikey": self.config.api_key,
-                    "pin": self.config.subscriber_pin
-                }
-            else:
-                # Licensed access uses API key only
-                auth_payload = {
-                    "apikey": self.config.api_key
-                }
+            if self.access_mode == "subscriber" and self.config.subscriber_pin:
+                auth_data["pin"] = self.config.subscriber_pin
 
-            # Send authentication request
             async with self.session.post(
-                    f"{self.config.base_url}/login",
-                    json=auth_payload,
-                    timeout=aiohttp.ClientTimeout(total=self.request_timeout)
+                    f"{self.config.base_url}login",
+                    json=auth_data,
+                    timeout=10
             ) as response:
-
                 if response.status == 200:
-                    # Parse authentication response
-                    auth_data = await response.json()
+                    data = await response.json()
+                    self.access_token = data.get("data", {}).get("token")
 
-                    # Extract JWT token from response
-                    self.token = auth_data.get('data', {}).get('token')
-
-                    if self.token:
-                        # Calculate token expiration (tokens typically last 1 month)
-                        # Add some buffer time to avoid edge cases
-                        self.token_expires_at = time.time() + (30 * 24 * 3600) - 3600  # 30 days - 1 hour buffer
-
-                        self.logger.debug("TVDB API v4 authentication successful")
+                    if self.access_token:
+                        # Token typically expires in 24 hours
+                        self.token_expires = datetime.now(timezone.utc) + timedelta(hours=23)
+                        self.logger.debug("TVDB authentication successful")
                         return True
                     else:
                         self.logger.error("TVDB authentication response missing token")
                         return False
-
-                elif response.status == 401:
-                    # Authentication failed - invalid credentials
-                    error_text = await response.text()
-                    self.logger.error(f"TVDB authentication failed - invalid credentials: {error_text}")
-                    return False
-
                 else:
-                    # Other HTTP error
                     error_text = await response.text()
-                    self.logger.error(f"TVDB authentication failed - HTTP {response.status}: {error_text}")
+                    self.logger.error(f"TVDB authentication failed: {response.status} - {error_text}")
                     return False
 
-        except asyncio.TimeoutError:
-            self.logger.error("TVDB authentication timeout")
-            return False
         except Exception as e:
             self.logger.error(f"TVDB authentication error: {e}")
             return False
 
-    async def get_episode_info_with_series_slug(self, episode_id: str) -> Dict[str, Any]:
+    async def _ensure_authenticated(self) -> bool:
         """
-        Get episode information including series slug for URL generation.
-
-        This method fetches comprehensive episode information from TVDb, including
-        the series slug needed for generating TVDb URLs. It implements intelligent
-        caching and rate limiting for optimal performance.
-
-        **What is a Series Slug?**
-        A series slug is a URL-friendly identifier for TV series on TVDb websites.
-        For example, "breaking-bad" is the slug for the series "Breaking Bad".
-        These slugs are used in TVDb URLs and are essential for deep-linking.
-
-        **Caching Strategy:**
-        Episode information doesn't change frequently, so this method implements
-        aggressive caching to minimize API requests:
-        - Cache duration: 24 hours
-        - Cache key: episode_id
-        - Automatic cache cleanup for expired entries
-
-        **Rate Limiting:**
-        Implements per-endpoint rate limiting to respect TVDb API limits:
-        - Tracks last request time per API endpoint
-        - Enforces minimum intervals between requests
-        - Different intervals for subscriber vs licensed access
-
-        Args:
-            episode_id (str): TVDb episode identifier
+        Ensure we have a valid authentication token.
 
         Returns:
-            Dict[str, Any]: Episode information including series_slug, or empty dict if not found
-
-        Example:
-            ```python
-            # Get episode info with series slug
-            episode_data = await tvdb_api.get_episode_info_with_series_slug("episode123")
-
-            if episode_data:
-                series_slug = episode_data.get('series_slug')
-                rating = episode_data.get('rating')
-                print(f"Episode rating: {rating}/10")
-                print(f"Series URL: https://thetvdb.com/series/{series_slug}")
-            else:
-                print("Episode not found or API unavailable")
-            ```
-
-        Note:
-            This method handles authentication token expiration automatically,
-            re-authenticating when necessary. It also implements comprehensive
-            error handling to ensure API failures don't crash the service.
+            bool: True if token is valid or refresh successful, False otherwise
         """
-        if self.access_mode == 'disabled' or not self.token:
-            return {}
+        if not self.access_token or not self.token_expires:
+            return await self._authenticate()
 
-        # Check cache first to avoid unnecessary API requests
-        cache_key = f"episode_{episode_id}"
-        current_time = time.time()
+        # Check if token is about to expire (refresh 1 hour early)
+        if datetime.now(timezone.utc) >= (self.token_expires - timedelta(hours=1)):
+            self.logger.debug("TVDB token expiring soon, refreshing...")
+            return await self._authenticate()
 
-        if cache_key in self.series_slug_cache:
-            cached_data, cache_timestamp = self.series_slug_cache[cache_key]
-            if current_time - cache_timestamp < self.cache_duration:
-                self.logger.debug(f"Using cached episode info for {episode_id}")
-                return cached_data
+        return True
 
-        # Apply rate limiting to respect API limits
-        await self._apply_rate_limit('episodes')
-
-        try:
-            # Request episode information from TVDb API
-            headers = {'Authorization': f'Bearer {self.token}'}
-
-            async with self.session.get(
-                    f"{self.config.base_url}/episodes/{episode_id}/extended",
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=self.request_timeout)
-            ) as response:
-
-                if response.status == 200:
-                    # Parse successful response
-                    episode_data = await response.json()
-
-                    # Extract episode information from response
-                    episode_info = episode_data.get('data', {})
-                    series_info = episode_info.get('series', {})
-
-                    # Build result with series slug and episode data
-                    result = {
-                        'series_slug': series_info.get('slug'),
-                        'episode_name': episode_info.get('name'),
-                        'season_number': episode_info.get('seasonNumber'),
-                        'episode_number': episode_info.get('number'),
-                        'rating': episode_info.get('score'),
-                        'air_date': episode_info.get('aired'),
-                        'overview': episode_info.get('overview')
-                    }
-
-                    # Cache the result for future requests
-                    self.series_slug_cache[cache_key] = (result, current_time)
-
-                    self.logger.debug(f"Retrieved episode info for {episode_id}")
-                    return result
-
-                elif response.status == 401:
-                    # Token expired - attempt re-authentication
-                    self.logger.warning("TVDB API token expired, attempting re-authentication")
-                    if await self._authenticate():
-                        # Retry the request once with new token
-                        return await self.get_episode_info_with_series_slug(episode_id)
-
-                elif response.status == 404:
-                    # Episode not found in TVDb
-                    self.logger.debug(f"TVDB episode not found: {episode_id}")
-
-                else:
-                    # Other HTTP error
-                    error_text = await response.text()
-                    self.logger.warning(f"TVDB API request failed: HTTP {response.status} - {error_text}")
-
-        except asyncio.TimeoutError:
-            self.logger.warning(f"TVDB API request timeout for episode {episode_id}")
-        except Exception as e:
-            self.logger.error(f"TVDB API request error for episode {episode_id}: {e}")
-
-        return {}
-
-    async def _apply_rate_limit(self, endpoint: str):
+    async def get_series_info(self, tvdb_id: str) -> Optional[Dict[str, Any]]:
         """
-        Apply rate limiting for specific API endpoint to respect TVDb limits.
-
-        This private method implements intelligent rate limiting to ensure we
-        don't exceed TVDb's API rate limits. Different endpoints may have
-        different limits, and different access modes have different restrictions.
-
-        **Rate Limiting Strategy:**
-        - Track last request time per endpoint
-        - Calculate time since last request
-        - Sleep if minimum interval hasn't elapsed
-        - Different intervals for subscriber vs licensed access
+        Get TV series information from TVDB.
 
         Args:
-            endpoint (str): API endpoint identifier for rate limit tracking
+            tvdb_id (str): TVDB series ID
 
-        Example:
-            ```python
-            # Internal rate limiting call
-            await self._apply_rate_limit('episodes')
-            # Ensures minimum time has passed since last episode API call
-            ```
-
-        Note:
-            This method ensures smooth API usage without hitting rate limits
-            that could result in temporary or permanent API access suspension.
+        Returns:
+            Optional[Dict[str, Any]]: Series information if found, None otherwise
         """
-        current_time = time.time()
-        last_request = self.last_request_time.get(endpoint, 0)
+        if not await self._ensure_authenticated():
+            return None
 
-        time_since_last = current_time - last_request
-        if time_since_last < self.min_request_interval:
-            sleep_time = self.min_request_interval - time_since_last
-            self.logger.debug(f"Rate limiting: sleeping {sleep_time:.2f}s for {endpoint}")
-            await asyncio.sleep(sleep_time)
+        try:
+            headers = {"Authorization": f"Bearer {self.access_token}"}
 
-        # Update last request time
-        self.last_request_time[endpoint] = time.time()
+            async with self.session.get(
+                    f"{self.config.base_url}series/{tvdb_id}",
+                    headers=headers,
+                    timeout=10
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    series_data = data.get("data", {})
+
+                    self.logger.debug(f"Retrieved TVDB series info for {tvdb_id}")
+                    return series_data
+                else:
+                    self.logger.warning(f"TVDB series not found: {tvdb_id} (status: {response.status})")
+                    return None
+
+        except Exception as e:
+            self.logger.error(f"Error retrieving TVDB series {tvdb_id}: {e}")
+            return None
 
 
 class RatingService:
     """
-    Comprehensive rating service for fetching movie/TV ratings from multiple external APIs.
+    Comprehensive rating service that integrates multiple external APIs.
 
     This service manages rating data from various sources including OMDb (which aggregates
     IMDb, Rotten Tomatoes, and Metacritic), TMDb, and TVDb. It provides a unified interface
@@ -594,7 +302,7 @@ class RatingService:
             tvdb=TVDBConfig(enabled=True, api_key="your_tvdb_key")
         )
 
-        rating_service = RatingService(rating_config, logger)
+        rating_service = RatingService(rating_config)
 
         # Initialize with shared resources
         async with aiohttp.ClientSession() as session:
@@ -604,9 +312,9 @@ class RatingService:
             movie = MediaItem(item_id="abc123", name="The Matrix", imdb_id="tt0133093")
             ratings = await rating_service.get_ratings_for_item(movie)
 
-            print(f"IMDb: {ratings.get('imdb', {}).get('rating', 'N/A')}")
-            print(f"Rotten Tomatoes: {ratings.get('rotten_tomatoes', {}).get('rating', 'N/A')}")
-            print(f"TMDb: {ratings.get('tmdb', {}).get('rating', 'N/A')}")
+            logger.info(f"IMDb: {ratings.get('imdb', {}).get('rating', 'N/A')}")
+            logger.info(f"Rotten Tomatoes: {ratings.get('rotten_tomatoes', {}).get('rating', 'N/A')}")
+            logger.info(f"TMDb: {ratings.get('tmdb', {}).get('rating', 'N/A')}")
         ```
 
     Note:
@@ -615,7 +323,7 @@ class RatingService:
         fallbacks to ensure notifications are always sent, even if ratings are unavailable.
     """
 
-    def __init__(self, config: RatingServicesConfig, logger: logging.Logger):
+    def __init__(self, config: RatingServicesConfig):
         """
         Initialize rating service with configuration and API client setup.
 
@@ -636,7 +344,6 @@ class RatingService:
 
         Args:
             config (RatingServicesConfig): Configuration for all rating services
-            logger (logging.Logger): Logger instance for rating operations
 
         Example:
             ```python
@@ -649,12 +356,12 @@ class RatingService:
                 tvdb=TVDBConfig(enabled=True, api_key="tvdb_key")
             )
 
-            rating_service = RatingService(config, logger)
-            print(f"Rating service enabled: {rating_service.enabled}")
+            rating_service = RatingService(config)
+            logger.info(f"Rating service enabled: {rating_service.enabled}")
             ```
         """
         self.config = config
-        self.logger = logger
+        self.logger = get_logger("ratings")
         self.session = None  # Set during initialize()
         self.db_manager = None  # Set during initialize()
 
@@ -676,7 +383,7 @@ class RatingService:
         # Initialize TVDB API v4 client if enabled
         self.tvdb_api = None
         if self.tvdb_config.enabled:
-            self.tvdb_api = TVDBAPIv4(self.tvdb_config, logger)
+            self.tvdb_api = TVDBAPIv4(self.tvdb_config, self.logger)
 
         # Rate limiting state for external APIs
         self.last_request_times = {}
@@ -696,119 +403,96 @@ class RatingService:
             service_list = ', '.join(available_services) if available_services else 'None (no API keys configured)'
             self.logger.info(f"Available rating services: {service_list}")
 
-    async def initialize(self, session: aiohttp.ClientSession, db_manager):
+    async def initialize(self, session: aiohttp.ClientSession, db_manager) -> None:
         """
         Initialize rating service with shared resources and perform setup tasks.
 
-        This method completes the rating service initialization by setting up
-        shared resources and performing any necessary maintenance tasks. It's
-        separated from the constructor because it requires async operations.
+        This async method completes the initialization process by setting up
+        shared resources and performing any necessary authentication or setup
+        with external APIs.
 
         **Initialization Tasks:**
-        1. Store references to shared HTTP session and database manager
-        2. Initialize TVDb API client if enabled
-        3. Clean up expired cache entries from previous runs
-        4. Log final initialization status
+        - Store references to shared HTTP session and database manager
+        - Initialize TVDB client with authentication
+        - Validate API keys and connectivity
+        - Set up caching infrastructure
 
         Args:
-            session (aiohttp.ClientSession): Shared HTTP session for API requests
-            db_manager: Database manager for cache storage and retrieval
+            session (aiohttp.ClientSession): Shared HTTP session for all API requests
+            db_manager: Database manager for caching rating data
 
         Example:
             ```python
-            # Initialize during service startup
             async with aiohttp.ClientSession() as session:
                 await rating_service.initialize(session, db_manager)
 
-                # Service is now ready for rating requests
+                # Now ready to fetch ratings
                 ratings = await rating_service.get_ratings_for_item(media_item)
             ```
-
-        Note:
-            This method should be called once during service startup. The provided
-            session and database manager should remain active for the lifetime
-            of the rating service.
         """
         self.session = session
         self.db_manager = db_manager
 
-        if self.enabled:
-            # Initialize TVDB API v4 client if enabled
-            if self.tvdb_api:
-                await self.tvdb_api.initialize(session)
+        if not self.enabled:
+            self.logger.info("Rating services disabled in configuration")
+            return
 
-            # Clean up expired rating cache entries from previous runs
-            await self._cleanup_expired_cache()
-            self.logger.info("Rating service initialization complete")
-        else:
-            self.logger.info("Rating service disabled in configuration")
+        # Initialize TVDB client if configured
+        if self.tvdb_api:
+            try:
+                tvdb_success = await self.tvdb_api.initialize(session)
+                if tvdb_success:
+                    self.logger.info("TVDB client initialized successfully")
+                else:
+                    self.logger.warning("TVDB client initialization failed")
+            except Exception as e:
+                self.logger.error(f"TVDB initialization error: {e}")
+
+        self.logger.info("Rating service initialization completed")
 
     async def get_ratings_for_item(self, item: MediaItem) -> Dict[str, Dict[str, Any]]:
         """
-        Get comprehensive rating information for a media item from all configured sources.
+        Get comprehensive rating information for a media item from all available sources.
 
-        This is the main entry point for rating retrieval. It orchestrates requests
-        to multiple external APIs, handles caching, and provides a unified response
-        format regardless of which APIs are available or successful.
+        This is the main entry point for rating retrieval. It coordinates calls
+        to multiple external APIs and combines the results into a unified format.
+        The method handles errors gracefully - individual API failures don't
+        prevent other sources from being queried.
 
-        **Rating Retrieval Process:**
-        1. Check if rating service is enabled globally
-        2. Look for cached ratings to avoid unnecessary API calls
-        3. Identify which external APIs can provide data for this item
-        4. Make concurrent requests to all available APIs
-        5. Aggregate results into unified response format
-        6. Cache results for future requests
-        7. Return comprehensive rating information
-
-        **Response Format:**
-        The method returns a dictionary with rating sources as keys:
-        ```python
-        {
-            'imdb': {'rating': '8.7/10', 'votes': '1,500,000'},
-            'rotten_tomatoes': {'rating': '88%', 'consensus': 'Fresh'},
-            'metacritic': {'rating': '73/100', 'status': 'Generally favorable'},
-            'tmdb': {'rating': '8.2/10', 'vote_count': 12000},
-            'tvdb': {'rating': '9.0/10', 'series_slug': 'the-matrix'}
-        }
-        ```
+        **Rating Sources:**
+        - OMDb: IMDb ratings, Rotten Tomatoes scores, Metacritic scores
+        - TMDb: Community ratings and vote counts
+        - TVDb: TV show specific ratings and metadata
 
         **Caching Strategy:**
-        Ratings don't change frequently, so aggressive caching reduces API usage:
-        - Cache duration: Configurable (default 24 hours)
-        - Cache key: Based on item ID and available provider IDs
-        - Automatic cache expiration and cleanup
+        Ratings are cached aggressively since they don't change frequently.
+        Cache duration is configurable and helps reduce API usage and improve
+        response times for repeated requests.
 
         Args:
-            item (MediaItem): Media item to get ratings for (must have provider IDs)
+            item (MediaItem): Media item to get ratings for
 
         Returns:
-            Dict[str, Dict[str, Any]]: Comprehensive rating information from all sources
+            Dict[str, Dict[str, Any]]: Nested dictionary with ratings from each source.
+            Format: {source_name: {rating_type: value, ...}}
 
         Example:
             ```python
-            # Get ratings for a movie
-            movie = MediaItem(
-                item_id="abc123",
-                name="The Matrix",
-                item_type="Movie",
-                imdb_id="tt0133093",
-                tmdb_id="603"
-            )
+            ratings = await rating_service.get_ratings_for_item(media_item)
 
-            ratings = await rating_service.get_ratings_for_item(movie)
+            # Access different rating sources
+            imdb_rating = ratings.get('imdb', {}).get('rating')
+            rt_score = ratings.get('rotten_tomatoes', {}).get('rating')
+            tmdb_rating = ratings.get('tmdb', {}).get('rating')
 
-            # Display ratings in Discord notification
-            if ratings.get('imdb'):
-                print(f"IMDb: {ratings['imdb']['rating']}")
-            if ratings.get('rotten_tomatoes'):
-                print(f"RT: {ratings['rotten_tomatoes']['rating']}")
-            if ratings.get('tmdb'):
-                print(f"TMDb: {ratings['tmdb']['rating']}")
+            if imdb_rating:
+                logger.info(f"IMDb: {imdb_rating}/10")
+            if rt_score:
+                logger.info(f"Rotten Tomatoes: {rt_score}%")
             ```
 
         Note:
-            This method handles all error cases gracefully and will always return
-            a dictionary, even if all APIs fail. Individual API failures are logged
+            This method never raises exceptions. Individual API failures are logged
             but don't prevent other APIs from being queried successfully.
         """
         if not self.enabled:
@@ -880,98 +564,269 @@ class RatingService:
             item (MediaItem): Media item to check cache for
 
         Returns:
-            Optional[Dict[str, Dict[str, Any]]]: Cached ratings if found and not expired
-
-        Example:
-            ```python
-            # Internal cache check
-            cached_data = await self._get_cached_ratings(item)
-            if cached_data:
-                return cached_data  # Skip API calls
-            ```
+            Optional[Dict[str, Dict[str, Any]]]: Cached ratings if found and valid, None otherwise
         """
         if not self.db_manager:
             return None
 
         try:
             # Generate cache key based on provider IDs
-            cache_key = self._generate_cache_key(item)
+            cache_key_parts = []
+            if item.imdb_id:
+                cache_key_parts.append(f"imdb:{item.imdb_id}")
+            if item.tmdb_id:
+                cache_key_parts.append(f"tmdb:{item.tmdb_id}")
+            if item.tvdb_id:
+                cache_key_parts.append(f"tvdb:{item.tvdb_id}")
 
-            # Check database for cached ratings
-            # Implementation would query the database for cached rating data
-            # This is a placeholder for the actual database query
+            if not cache_key_parts:
+                # No provider IDs available for caching
+                return None
 
-            self.logger.debug(f"Checking cache for {cache_key}")
-            # Database query implementation would go here
+            cache_key = "_".join(cache_key_parts)
 
-            return None  # Placeholder - would return actual cached data
+            # Check database for cached ratings (implementation would depend on db_manager structure)
+            # This is a placeholder for the actual cache retrieval logic
+            # In a real implementation, you'd query the database for cached rating data
+
+            self.logger.debug(f"Checking cache for key: {cache_key}")
+            return None  # Placeholder - implement actual cache retrieval
 
         except Exception as e:
-            self.logger.error(f"Error checking rating cache: {e}")
+            self.logger.warning(f"Error checking rating cache: {e}")
             return None
 
-    def _generate_cache_key(self, item: MediaItem) -> str:
+    async def _cache_ratings(self, item: MediaItem, ratings: Dict[str, Dict[str, Any]]) -> None:
         """
-        Generate a unique cache key for rating data based on provider IDs.
+        Cache rating information for future use.
 
-        This private method creates a consistent cache key that can be used
-        to store and retrieve rating information across service restarts.
+        This private method stores rating data in the database cache with an
+        expiration timestamp based on the configured cache duration.
 
         Args:
-            item (MediaItem): Media item to generate cache key for
-
-        Returns:
-            str: Unique cache key for this item's rating data
-
-        Example:
-            ```python
-            # Internal cache key generation
-            cache_key = self._generate_cache_key(item)
-            # Returns: "ratings_imdb:tt0133093_tmdb:603_tvdb:290434"
-            ```
+            item (MediaItem): Media item the ratings belong to
+            ratings (Dict[str, Dict[str, Any]]): Ratings to cache
         """
-        key_parts = ['ratings']
-
-        if item.imdb_id:
-            key_parts.append(f'imdb:{item.imdb_id}')
-        if item.tmdb_id:
-            key_parts.append(f'tmdb:{item.tmdb_id}')
-        if item.tvdb_id:
-            key_parts.append(f'tvdb:{item.tvdb_id}')
-
-        return '_'.join(key_parts)
-
-    async def _cleanup_expired_cache(self):
-        """
-        Clean up expired rating cache entries from the database.
-
-        This private method removes old cached rating data that has exceeded
-        the configured cache duration. It's called during service initialization
-        and can be called periodically for maintenance.
-
-        Example:
-            ```python
-            # Internal cache maintenance
-            await self._cleanup_expired_cache()
-            ```
-
-        Note:
-            This method helps prevent the database from growing indefinitely
-            with stale rating data while maintaining good performance.
-        """
-        if not self.db_manager:
+        if not self.db_manager or not ratings:
             return
 
         try:
-            # Calculate expiration timestamp
-            expiration_time = datetime.now(timezone.utc) - timedelta(hours=self.cache_duration_hours)
+            # Generate same cache key as retrieval
+            cache_key_parts = []
+            if item.imdb_id:
+                cache_key_parts.append(f"imdb:{item.imdb_id}")
+            if item.tmdb_id:
+                cache_key_parts.append(f"tmdb:{item.tmdb_id}")
+            if item.tvdb_id:
+                cache_key_parts.append(f"tvdb:{item.tvdb_id}")
 
-            # Database cleanup implementation would go here
-            self.logger.debug("Cleaned up expired rating cache entries")
+            if not cache_key_parts:
+                return
+
+            cache_key = "_".join(cache_key_parts)
+
+            # Calculate expiration time
+            expiration = datetime.now(timezone.utc) + timedelta(hours=self.cache_duration_hours)
+
+            # Store in cache (implementation would depend on db_manager structure)
+            # This is a placeholder for the actual cache storage logic
+            self.logger.debug(f"Caching ratings for key: {cache_key} (expires: {expiration})")
 
         except Exception as e:
-            self.logger.error(f"Error cleaning up rating cache: {e}")
+            self.logger.warning(f"Error caching ratings: {e}")
 
-    # Additional private methods for specific API integrations would be implemented here
-    # (_get_omdb_ratings, _get_tmdb_ratings, _get_tvdb_ratings, _cache_ratings, etc.)
-    # These follow similar patterns with error handling, rate limiting, and data normalization
+    async def _get_omdb_ratings(self, item: MediaItem) -> Dict[str, Dict[str, Any]]:
+        """
+        Get ratings from OMDb API (IMDb, Rotten Tomatoes, Metacritic).
+
+        Args:
+            item (MediaItem): Media item to get ratings for
+
+        Returns:
+            Dict[str, Dict[str, Any]]: OMDb ratings data
+        """
+        if not self.omdb_api_key:
+            return {}
+
+        try:
+            # Use IMDb ID if available, otherwise try TMDb ID
+            query_param = None
+            if item.imdb_id:
+                query_param = f"i={item.imdb_id}"
+            elif item.tmdb_id:
+                query_param = f"i={item.tmdb_id}"
+
+            if not query_param:
+                self.logger.debug(f"No suitable ID for OMDb lookup: {item.name}")
+                return {}
+
+            # Rate limiting
+            await self._respect_rate_limit('omdb')
+
+            url = f"{self.omdb_config.base_url}?{query_param}&apikey={self.omdb_api_key}"
+
+            async with self.session.get(url, timeout=self.request_timeout) as response:
+                if response.status == 200:
+                    data = await response.json()
+
+                    if data.get('Response') == 'True':
+                        ratings = {}
+
+                        # Extract IMDb rating
+                        if data.get('imdbRating') and data['imdbRating'] != 'N/A':
+                            ratings['imdb'] = {
+                                'rating': data['imdbRating'],
+                                'votes': data.get('imdbVotes', ''),
+                                'source': 'OMDb'
+                            }
+
+                        # Extract other ratings from Ratings array
+                        for rating in data.get('Ratings', []):
+                            source = rating.get('Source', '').lower()
+                            value = rating.get('Value', '')
+
+                            if 'rotten tomatoes' in source:
+                                ratings['rotten_tomatoes'] = {
+                                    'rating': value.replace('%', ''),
+                                    'source': 'OMDb'
+                                }
+                            elif 'metacritic' in source:
+                                ratings['metacritic'] = {
+                                    'rating': value.split('/')[0],
+                                    'source': 'OMDb'
+                                }
+
+                        self.logger.debug(f"Retrieved {len(ratings)} OMDb ratings for {item.name}")
+                        return ratings
+                    else:
+                        self.logger.debug(f"OMDb: Item not found: {item.name}")
+                        return {}
+                else:
+                    self.logger.warning(f"OMDb API error: {response.status}")
+                    return {}
+
+        except Exception as e:
+            self.logger.error(f"OMDb API request failed for {item.name}: {e}")
+            return {}
+
+    async def _get_tmdb_ratings(self, item: MediaItem) -> Dict[str, Dict[str, Any]]:
+        """
+        Get ratings from TMDb API.
+
+        Args:
+            item (MediaItem): Media item to get ratings for
+
+        Returns:
+            Dict[str, Dict[str, Any]]: TMDb ratings data
+        """
+        if not self.tmdb_api_key:
+            return {}
+
+        try:
+            # Rate limiting
+            await self._respect_rate_limit('tmdb')
+
+            # Determine endpoint based on item type
+            if item.item_type == 'Movie':
+                endpoint = 'movie'
+            elif item.item_type in ['Episode', 'Series']:
+                endpoint = 'tv'
+            else:
+                return {}
+
+            # Use TMDb ID if available, otherwise search by IMDb ID
+            url = None
+            if item.tmdb_id:
+                url = f"{self.tmdb_config.base_url}{endpoint}/{item.tmdb_id}?api_key={self.tmdb_api_key}"
+            elif item.imdb_id:
+                url = f"{self.tmdb_config.base_url}find/{item.imdb_id}?api_key={self.tmdb_api_key}&external_source=imdb_id"
+
+            if not url:
+                return {}
+
+            async with self.session.get(url, timeout=self.request_timeout) as response:
+                if response.status == 200:
+                    data = await response.json()
+
+                    # Handle find results
+                    if 'movie_results' in data or 'tv_results' in data:
+                        results = data.get('movie_results', []) + data.get('tv_results', [])
+                        if results:
+                            data = results[0]
+                        else:
+                            return {}
+
+                    rating = data.get('vote_average')
+                    vote_count = data.get('vote_count')
+
+                    if rating:
+                        tmdb_ratings = {
+                            'tmdb': {
+                                'rating': str(rating),
+                                'vote_count': str(vote_count) if vote_count else '0',
+                                'source': 'TMDb'
+                            }
+                        }
+
+                        self.logger.debug(f"Retrieved TMDb rating for {item.name}: {rating}")
+                        return tmdb_ratings
+
+                    return {}
+                else:
+                    self.logger.warning(f"TMDb API error: {response.status}")
+                    return {}
+
+        except Exception as e:
+            self.logger.error(f"TMDb API request failed for {item.name}: {e}")
+            return {}
+
+    async def _get_tvdb_ratings(self, item: MediaItem) -> Dict[str, Dict[str, Any]]:
+        """
+        Get ratings from TVDB API.
+
+        Args:
+            item (MediaItem): Media item to get ratings for
+
+        Returns:
+            Dict[str, Dict[str, Any]]: TVDB ratings data
+        """
+        if not self.tvdb_api or not item.tvdb_id:
+            return {}
+
+        try:
+            series_info = await self.tvdb_api.get_series_info(item.tvdb_id)
+            if series_info:
+                rating = series_info.get('score')
+                if rating:
+                    tvdb_ratings = {
+                        'tvdb': {
+                            'rating': str(rating),
+                            'source': 'TVDB'
+                        }
+                    }
+
+                    self.logger.debug(f"Retrieved TVDB rating for {item.name}: {rating}")
+                    return tvdb_ratings
+
+            return {}
+
+        except Exception as e:
+            self.logger.error(f"TVDB API request failed for {item.name}: {e}")
+            return {}
+
+    async def _respect_rate_limit(self, service: str) -> None:
+        """
+        Implement rate limiting for external API calls.
+
+        Args:
+            service (str): Service name for rate limiting tracking
+        """
+        last_request = self.last_request_times.get(service, 0)
+        time_since_last = time.time() - last_request
+
+        if time_since_last < self.min_request_interval:
+            sleep_time = self.min_request_interval - time_since_last
+            self.logger.debug(f"Rate limiting {service}: sleeping {sleep_time:.2f}s")
+            await asyncio.sleep(sleep_time)
+
+        self.last_request_times[service] = time.time()

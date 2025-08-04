@@ -103,7 +103,7 @@ import uvicorn
 from config_models import AppConfig, ConfigurationValidator
 from webhook_models import WebhookPayload
 from webhook_service import WebhookService
-from utils import setup_logging
+from utils import setup_logging, get_logger
 
 # Global service instance - shared across the FastAPI application
 # This pattern allows us to initialize the service once during startup
@@ -172,99 +172,83 @@ async def lifespan(app: FastAPI):
         logger.info("Jellynouncer service started successfully")
         logger.info("=" * 60)
         logger.info("🎬 Jellynouncer is ready to receive webhooks!")
-        logger.info("📡 Listening for Jellyfin notifications...")
-        logger.info("💬 Ready to send Discord notifications")
+        logger.info("Send webhooks to: http://your-server:8080/webhook")
+        logger.info("Health check: http://your-server:8080/health")
         logger.info("=" * 60)
 
-    except Exception as e:
-        # If initialization fails, log the error and exit
-        # This prevents the application from starting in a broken state
-        logger.error(f"Failed to initialize Jellynouncer service: {e}")
-        logger.error("Application startup failed - exiting")
-        raise SystemExit(1)
+        # Yield control back to FastAPI to start serving requests
+        # Everything after this yield runs during shutdown
+        yield
 
-    # === YIELD CONTROL TO FASTAPI ===
-    # At this point, startup is complete and FastAPI takes over to handle requests
-    # The application will run normally until it receives a shutdown signal
-    yield
+    except Exception as e:
+        logger.error(f"Failed to start Jellynouncer: {e}", exc_info=True)
+        raise SystemExit(f"Service startup failed: {e}")
 
     # === SHUTDOWN PHASE ===
-    # This code runs when the FastAPI application is shutting down
-
-    logger.info("Shutting down Jellynouncer service...")
+    # This code runs when the FastAPI application stops
 
     try:
-        # Cancel background tasks gracefully
-        if 'background_task' in locals() and not background_task.done():
-            background_task.cancel()
-            try:
-                # Wait a bit for the task to finish cleanly
-                await asyncio.wait_for(background_task, timeout=5.0)
-            except (asyncio.TimeoutError, asyncio.CancelledError):
-                logger.warning("Background task took too long to cancel")
+        logger.info("Starting graceful shutdown...")
 
-        # Shutdown the webhook service and close all connections
         if webhook_service:
-            await webhook_service.shutdown()
+            # Cancel background tasks
+            if 'background_task' in locals():
+                background_task.cancel()
+                try:
+                    await background_task
+                except asyncio.CancelledError:
+                    pass
 
-        logger.info("Jellynouncer service shutdown completed")
+            # Clean up service resources
+            await webhook_service.cleanup()
+
+        logger.info("Jellynouncer shutdown completed successfully")
 
     except Exception as e:
-        # Log shutdown errors but don't prevent the application from stopping
-        logger.error(f"Error during shutdown: {e}")
+        logger.error(f"Error during shutdown: {e}", exc_info=True)
 
 
-# Create the FastAPI application with the lifespan manager
-# The lifespan parameter tells FastAPI to use our custom startup/shutdown logic
+# Create FastAPI application with lifespan management
 app = FastAPI(
-    title="Jellynouncer Discord Webhook Service",
-    description="Intelligent Discord notifications for Jellyfin media server",
+    title="Jellynouncer",
+    description="Advanced Discord webhook service for Jellyfin media notifications",
     version="2.0.0",
-    lifespan=lifespan,
-    # Disable automatic OpenAPI documentation in production for security
-    docs_url="/docs" if os.getenv("ENVIRONMENT", "production") == "development" else None,
-    redoc_url="/redoc" if os.getenv("ENVIRONMENT", "production") == "development" else None,
+    lifespan=lifespan
 )
 
 
 @app.post("/webhook")
-async def process_webhook(payload: WebhookPayload, request: Request):
+async def receive_webhook(payload: WebhookPayload):
     """
-    Process incoming webhooks from Jellyfin and trigger Discord notifications.
+    Main webhook endpoint for receiving notifications from Jellyfin.
 
-    This is the main endpoint that Jellyfin calls when media items are added
-    or updated. It validates the webhook payload using Pydantic models,
-    then delegates processing to the WebhookService for business logic.
+    This endpoint processes incoming webhooks from Jellyfin's webhook plugin
+    and triggers the appropriate notification workflow. It validates the
+    payload format and handles the complete notification pipeline.
 
     Args:
-        payload: Validated webhook payload from Jellyfin containing media information
-        request: FastAPI request object for accessing headers and client info
+        payload (WebhookPayload): Validated webhook data from Jellyfin
 
     Returns:
         dict: Processing result with status and details
 
     Raises:
-        HTTPException:
-            - 503 if the service is not ready or initializing
-            - 400 if the webhook payload is invalid
-            - 500 if processing fails due to internal errors
+        HTTPException: If service is not ready or processing fails
 
     Example:
-        This endpoint is called automatically by Jellyfin's webhook plugin:
+        Jellyfin webhook plugin should be configured to send POST requests to:
+        `http://your-jellynouncer-server:8080/webhook`
 
-        ```bash
-        curl -X POST http://jellynouncer:8080/webhook \
-             -H "Content-Type: application/json" \
-             -d '{"ItemId": "123", "Name": "Movie Title", "ItemType": "Movie", ...}'
+        Example webhook payload:
+        ```json
+        {
+            "ItemId": "abc123",
+            "Name": "The Matrix",
+            "ItemType": "Movie",
+            "NotificationType": "library.new"
+        }
         ```
-
-    Note:
-        The endpoint uses Pydantic's automatic validation to ensure the payload
-        matches the expected WebhookPayload model. Invalid payloads are automatically
-        rejected with detailed error messages.
     """
-    # Check if the service is ready to process webhooks
-    # During startup, the service might not be fully initialized
     if webhook_service is None:
         raise HTTPException(
             status_code=503,
@@ -272,132 +256,85 @@ async def process_webhook(payload: WebhookPayload, request: Request):
         )
 
     try:
-        # Get client information for logging and debugging
-        client_host = request.client.host if request.client else "unknown"
-        user_agent = request.headers.get("user-agent", "unknown")
-
-        # Log the incoming webhook for debugging and monitoring
-        webhook_service.logger.info(
-            f"Received webhook from {client_host} for item: {payload.Name} "
-            f"(ID: {payload.ItemId}, Type: {payload.ItemType})"
-        )
-
-        # Process the webhook through our business logic
-        # This handles change detection, Discord notifications, and database updates
+        # Process the webhook through our service layer
         result = await webhook_service.process_webhook(payload)
-
-        # Log the result for monitoring and debugging
-        if result.get("status") == "success":
-            webhook_service.logger.info(f"Successfully processed webhook for {payload.Name}")
-        else:
-            webhook_service.logger.warning(f"Webhook processing completed with issues: {result}")
-
         return result
 
-    except ValidationError as e:
-        # Handle Pydantic validation errors (invalid payload structure)
-        webhook_service.logger.error(f"Invalid webhook payload: {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid webhook payload: {str(e)}")
-
     except Exception as e:
-        # Handle unexpected errors during processing
-        webhook_service.logger.error(f"Error processing webhook: {e}", exc_info=True)
+        # Log the error but don't expose internal details to the client
+        webhook_service.logger.error(f"Webhook processing failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail="Internal server error while processing webhook"
+            detail="Internal error processing webhook"
         )
 
 
 @app.get("/health")
 async def health_check():
     """
-    Health check endpoint for monitoring and load balancer probes.
+    Health check endpoint for monitoring and load balancers.
 
-    This endpoint provides a quick way to verify that the Jellynouncer service
-    is running and healthy. It's designed to be called frequently by monitoring
-    systems, Docker health checks, and Kubernetes probes.
+    This endpoint provides a quick health check for external monitoring
+    systems, Docker health checks, and load balancers. It returns basic
+    service status without detailed component information.
 
     Returns:
-        dict: Health status information including:
-            - status: Overall health status ("healthy" or "unhealthy")
-            - timestamp: Current timestamp in ISO format
-            - service: Service name and version
-            - components: Status of individual service components
+        dict: Simple health status
 
     Example:
         ```bash
         curl http://jellynouncer:8080/health
-        # Returns: {"status": "healthy", "timestamp": "2024-01-15T10:30:00Z", ...}
+        # Returns: {"status": "healthy", "timestamp": "2024-01-01T12:00:00Z"}
         ```
 
     Note:
-        This endpoint is intentionally lightweight and fast to respond.
-        It performs minimal checks to avoid impacting performance when
-        called frequently by monitoring systems.
+        This endpoint is lightweight and designed for frequent polling.
+        For detailed service information, use the /stats endpoint instead.
     """
-    # Check if the service is initialized
     if webhook_service is None:
-        return {
-            "status": "unhealthy",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "service": "Jellynouncer",
-            "version": "2.0.0",
-            "error": "Service not initialized"
-        }
+        raise HTTPException(
+            status_code=503,
+            detail="Service not ready - still initializing"
+        )
 
     try:
-        # Perform a quick health check of the service
-        health_status = await webhook_service.health_check()
+        # Perform comprehensive health check
+        health_data = await webhook_service.health_check()
 
-        return {
-            "status": "healthy" if health_status.get("healthy", False) else "unhealthy",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "service": "Jellynouncer",
-            "version": "2.0.0",
-            "details": health_status
-        }
+        # Return appropriate HTTP status based on health
+        if health_data["status"] == "healthy":
+            return health_data
+        elif health_data["status"] == "degraded":
+            return JSONResponse(status_code=200, content=health_data)
+        else:
+            return JSONResponse(status_code=503, content=health_data)
 
     except Exception as e:
-        # If health check itself fails, return unhealthy status
-        return {
-            "status": "unhealthy",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "service": "Jellynouncer",
-            "version": "2.0.0",
-            "error": str(e)
-        }
+        raise HTTPException(
+            status_code=500,
+            detail=f"Health check failed: {str(e)}"
+        )
 
 
 @app.get("/stats")
-async def get_service_statistics():
+async def service_statistics():
     """
-    Get comprehensive service statistics for monitoring and debugging.
+    Detailed service statistics endpoint for monitoring and diagnostics.
 
-    This endpoint provides detailed information about the service's current
-    state, performance metrics, and component status. It's useful for
-    administrators and developers to understand how the service is performing.
+    This endpoint provides comprehensive statistics about the service
+    including database metrics, processing counts, and component status.
+    It's designed for administrative monitoring and troubleshooting.
 
     Returns:
-        dict: Detailed service statistics including:
-            - Service uptime and version information
-            - Database statistics (item counts, cache hit rates)
-            - Webhook processing metrics
-            - Jellyfin connection status
-            - Discord webhook configurations
-            - Memory and performance metrics
-
-    Raises:
-        HTTPException: 503 if service is not ready
+        dict: Detailed service statistics and metrics
 
     Example:
         ```bash
         curl http://jellynouncer:8080/stats
-        # Returns detailed JSON with service metrics
         ```
 
     Note:
-        This endpoint may take slightly longer to respond than /health
-        as it gathers comprehensive statistics from all service components.
+        This endpoint provides more detailed information than /health.
         It should not be called as frequently as the health check endpoint.
     """
     if webhook_service is None:
@@ -614,11 +551,13 @@ def setup_signal_handlers():
         On Windows, the application will still shut down cleanly when
         the process is terminated normally.
     """
+    # Get logger for signal handling
+    logger = get_logger("main")
 
     def signal_handler(signum, frame):
         """Handle shutdown signals gracefully."""
         signal_name = signal.Signals(signum).name
-        print(f"\nReceived {signal_name} signal - initiating graceful shutdown...")
+        logger.info(f"Received {signal_name} signal - initiating graceful shutdown...")
 
         # Exit with success code to trigger the lifespan shutdown
         sys.exit(0)

@@ -2,17 +2,16 @@
 """
 Jellynouncer Jellyfin API Client
 
-This module handles communication with the Jellyfin server including
-authentication, library retrieval, and media metadata extraction.
-It provides a high-level interface to the Jellyfin API with comprehensive
-error handling, retry logic, and efficient batch processing capabilities.
+This module provides a comprehensive async interface to the Jellyfin media server API.
+It handles authentication, connection management, item retrieval, and data conversion
+with robust error handling and retry logic for production reliability.
 
-The JellyfinAPI class wraps the official jellyfin-apiclient-python library
-and adds production-ready features like connection management, retry logic,
-and data normalization for consistent integration with other service components.
+The JellyfinAPI class serves as the primary interface between Jellynouncer and Jellyfin,
+abstracting away the complexities of the Jellyfin API while providing efficient access
+to media metadata and library information.
 
 Classes:
-    JellyfinAPI: Enhanced Jellyfin API client with retry logic and error handling
+    JellyfinAPI: Async Jellyfin API client with retry logic and connection management
 
 Author: Mark Newton
 Project: Jellynouncer
@@ -20,51 +19,42 @@ Version: 2.0.0
 License: MIT
 """
 
-import time
 import asyncio
+import time
 import logging
 from typing import Dict, Any, Optional, List, Callable
+from dataclasses import asdict
 
 from jellyfin_apiclient_python import JellyfinClient
 
 from config_models import JellyfinConfig
 from media_models import MediaItem
+from utils import get_logger
 
 
 class JellyfinAPI:
     """
-    Enhanced Jellyfin API client with retry logic and comprehensive error handling.
+    Async Jellyfin API client with comprehensive error handling and retry logic.
 
-    This class manages communication with the Jellyfin server, providing a reliable
-    interface for webhook processing and library synchronization. It builds upon
-    the official jellyfin-apiclient-python library with additional production-ready
-    features.
+    This class provides a high-level interface to the Jellyfin media server API,
+    handling authentication, connection management, and data retrieval. It's designed
+    for production use with robust error handling and automatic retry capabilities.
 
-    **Understanding API Clients for Beginners:**
-    
-    An API client is a piece of code that communicates with external services
-    (like Jellyfin) over HTTP. This class handles:
-    - Authentication (proving we're allowed to access the server)
-    - Request formatting (converting our needs into HTTP requests)
-    - Response processing (converting server responses into usable data)
-    - Error handling (dealing with network issues, server problems, etc.)
+    **Understanding Jellyfin API Authentication:**
 
-    **Key Features:**
-    - Connection management with automatic retry and exponential backoff
-    - API key authentication (more secure than passwords for services)
-    - Efficient batch retrieval of library items with pagination
-    - Media metadata extraction and normalization to MediaItem format
-    - Connection health monitoring with periodic checks
-    - Comprehensive error handling for production reliability
-    - Memory-efficient streaming of large library datasets
+    Jellyfin supports multiple authentication methods, but this client uses API keys
+    for service-to-service communication. API keys provide several advantages:
 
-    **Authentication Method:**
-    This client uses API key authentication rather than username/password.
-    API keys are more secure for automated services because they:
-    - Can be easily revoked without changing user passwords
-    - Have limited scope and permissions
-    - Don't expose user credentials in configuration files
-    - Can be regenerated independently
+    **API Key Benefits:**
+    - No password exposure in configuration files
+    - Can be easily revoked and regenerated
+    - Limited scope and permissions for security
+    - Perfect for automated service authentication
+
+    **Connection Management:**
+    The client maintains connection state and automatically reconnects when needed.
+    Connection health is checked periodically to ensure reliability during long
+    running operations like library synchronization.
 
     **Retry Logic:**
     Network operations can fail for many reasons (temporary network issues,
@@ -88,24 +78,24 @@ class JellyfinAPI:
             api_key="your_api_key_here",
             user_id="your_user_id_here"
         )
-        
+
         jellyfin_api = JellyfinAPI(jellyfin_config, logger)
-        
+
         # Establish connection with retry logic
         if await jellyfin_api.connect():
-            print("Successfully connected to Jellyfin")
-            
+            logger.info("Successfully connected to Jellyfin")
+
             # Get specific item details
             item_data = await jellyfin_api.get_item("item_id_123")
             if item_data:
                 media_item = jellyfin_api.extract_media_item(item_data)
-                print(f"Retrieved: {media_item.name}")
-            
+                logger.info(f"Retrieved: {media_item.name}")
+
             # Batch retrieve library items
             all_items = await jellyfin_api.get_all_items(batch_size=100)
-            print(f"Found {len(all_items)} items in library")
+            logger.info(f"Found {len(all_items)} items in library")
         else:
-            print("Failed to connect to Jellyfin server")
+            logger.error("Failed to connect to Jellyfin server")
         ```
 
     Note:
@@ -114,7 +104,7 @@ class JellyfinAPI:
         to minimize authentication overhead while ensuring reliability.
     """
 
-    def __init__(self, config: JellyfinConfig, logger: logging.Logger):
+    def __init__(self, config: JellyfinConfig):
         """
         Initialize Jellyfin API client with configuration and logging.
 
@@ -129,8 +119,7 @@ class JellyfinAPI:
 
         Args:
             config (JellyfinConfig): Jellyfin server configuration including
-                server URL, API key, user ID, and client identification
-            logger (logging.Logger): Logger instance for API operations
+                server URL, API key, and user ID
 
         Example:
             ```python
@@ -139,111 +128,90 @@ class JellyfinAPI:
                 api_key="your_api_key",
                 user_id="your_user_id"
             )
-            api = JellyfinAPI(config, logger)
+
+            jellyfin_api = JellyfinAPI(config)
+            logger.info(f"Jellyfin API client created for {config.server_url}")
             ```
         """
         self.config = config
-        self.logger = logger
-        self.client = None  # Will be initialized in connect()
-        self.last_connection_check = 0  # Unix timestamp of last check
-        self.connection_check_interval = 60  # Check connection every 60 seconds
-        self.max_retries = 3  # Maximum connection attempts
-        self.retry_delay = 5  # Base delay between retries (seconds)
+        self.logger = get_logger("jellyfin")
+        self.client = None
+
+        # Connection management
+        self.last_connection_check = 0
+        self.connection_check_interval = 300  # 5 minutes
+        self.max_retries = 3
+        self.retry_delay = 2  # seconds
+
+        self.logger.info(f"Jellyfin API client initialized for {config.server_url}")
 
     async def connect(self) -> bool:
         """
-        Connect to Jellyfin server with automatic retry logic.
+        Establish connection to Jellyfin server with retry logic.
 
-        This method attempts to establish a connection to the Jellyfin server
-        using the configured credentials. It includes sophisticated retry logic
-        to handle temporary network issues, server restarts, or high load conditions.
+        This method attempts to connect to the Jellyfin server using the
+        configured API key and user ID. It implements retry logic with
+        exponential backoff to handle temporary network issues.
 
-        **Exponential Backoff Strategy:**
-        The retry logic uses exponential backoff to avoid overwhelming a server
-        that might be temporarily overloaded:
-        - First retry: immediate
-        - Second retry: 5 seconds delay
-        - Third retry: 10 seconds delay
-        - Each failure doubles the delay (up to a maximum)
+        **Connection Process:**
+        1. Create Jellyfin client instance
+        2. Configure server URL and authentication
+        3. Verify connection with test API call
+        4. Log connection status and server information
 
-        **Authentication Process:**
-        1. Create new JellyfinClient instance
-        2. Configure client identification (app name, version, device info)
-        3. Set up SSL configuration based on server URL scheme
-        4. Authenticate using API key and user ID
-        5. Verify connection by requesting system information
+        **Retry Strategy:**
+        - Exponential backoff: 2s, 4s, 8s between retries
+        - Maximum 3 connection attempts
+        - Different error messages for different failure types
 
         Returns:
-            bool: True if connection successful, False after all retries exhausted
+            bool: True if connection successful, False otherwise
 
         Example:
             ```python
-            # Connect with automatic retries
             if await jellyfin_api.connect():
-                print("Connected successfully")
-                # Connection is now ready for API calls
+                logger.info("Ready to make API calls")
             else:
-                print("Connection failed after all retries")
-                # Handle connection failure appropriately
+                logger.error("Cannot proceed without Jellyfin connection")
+                return False
             ```
 
         Note:
-            This method can be called multiple times to re-establish connection
-            after network issues. It will always create a fresh connection
-            rather than attempting to reuse a potentially stale one.
+            This method should be called once during service initialization.
+            The connection is reused for all subsequent API calls.
         """
-        for attempt in range(self.max_retries):
+        for attempt in range(1, self.max_retries + 1):
             try:
-                self.logger.info(f"Attempting Jellyfin connection (attempt {attempt + 1}/{self.max_retries})")
-                
-                # Create new client instance for clean connection
+                self.logger.debug(f"Jellyfin connection attempt {attempt}/{self.max_retries}")
+
+                # Create and configure Jellyfin client
                 self.client = JellyfinClient()
+                self.client.config.app("Jellynouncer", "2.0.0", "jellynouncer", "1.0.0")
 
-                # Configure client identification for Jellyfin logs and dashboard
-                self.client.config.app(
-                    self.config.client_name,      # App name shown in Jellyfin
-                    self.config.client_version,   # Version for compatibility tracking
-                    self.config.device_name,      # Device name in dashboard
-                    self.config.device_id         # Unique device identifier
-                )
+                # Set server and authentication
+                self.client.config.data['auth.server'] = self.config.server_url
+                self.client.config.data['auth.server-name'] = "Jellyfin Server"
+                self.client.config.data['auth.user_id'] = self.config.user_id
+                self.client.config.data['auth.token'] = self.config.api_key
 
-                # Configure SSL based on server URL scheme
-                # This ensures proper certificate handling for HTTPS endpoints
-                self.client.config.data["auth.ssl"] = self.config.server_url.startswith('https')
+                # Test connection with system info call
+                system_info = await self.get_system_info()
+                if system_info:
+                    server_name = system_info.get('ServerName', 'Unknown')
+                    server_version = system_info.get('Version', 'Unknown')
 
-                # Use API key authentication (preferred for services)
-                # This is more secure than username/password for automated services
-                credentials = {
-                    "Servers": [{
-                        "AccessToken": self.config.api_key,
-                        "address": self.config.server_url,
-                        "UserId": self.config.user_id,
-                        "Id": self.config.device_id
-                    }]
-                }
-
-                # Authenticate with the server using API key
-                self.client.authenticate(credentials, discover=False)
-
-                # Test connection by requesting system information
-                # This verifies both authentication and basic API functionality
-                response = self.client.jellyfin.get_system_info()
-                if response:
-                    server_name = response.get('ServerName', 'Unknown')
-                    server_version = response.get('Version', 'Unknown')
                     self.logger.info(f"Connected to Jellyfin server: {server_name} v{server_version}")
                     self.last_connection_check = time.time()
                     return True
-
-                self.logger.warning(f"Connection attempt {attempt + 1} failed: No response from server")
+                else:
+                    raise Exception("Failed to retrieve system information")
 
             except Exception as e:
-                self.logger.warning(f"Connection attempt {attempt + 1} failed: {e}")
+                self.logger.warning(f"Connection attempt {attempt} failed: {e}")
 
-                # Wait before retrying (except on last attempt)
-                if attempt < self.max_retries - 1:
-                    delay = self.retry_delay * (2 ** attempt)  # Exponential backoff
-                    self.logger.info(f"Retrying connection in {delay} seconds...")
+                if attempt < self.max_retries:
+                    delay = self.retry_delay * (2 ** (attempt - 1))  # Exponential backoff
+                    self.logger.debug(f"Retrying in {delay} seconds...")
                     await asyncio.sleep(delay)
                 else:
                     self.logger.error(f"Failed to connect to Jellyfin after {self.max_retries} attempts")
@@ -252,62 +220,101 @@ class JellyfinAPI:
 
     async def is_connected(self) -> bool:
         """
-        Check if currently connected to Jellyfin server with intelligent caching.
+        Check if client is connected to Jellyfin server.
 
-        This method implements connection caching to avoid excessive API calls
-        while ensuring connection validity. It only performs actual connectivity
-        checks at specified intervals, returning cached results otherwise.
+        This method verifies the connection status and optionally performs
+        a health check if enough time has passed since the last check.
+        It's designed to be lightweight for frequent calls.
 
-        **Connection Caching Strategy:**
-        - Recent connections (within check interval): Return cached result
-        - Stale connections: Perform lightweight connectivity test
-        - Failed connections: Attempt reconnection automatically
-
-        **Lightweight Connectivity Test:**
-        Uses a minimal API call (system info) to verify the connection is
-        still active without transferring large amounts of data.
+        **Connection Verification Strategy:**
+        - Cached result for recent checks (within 5 minutes)
+        - Periodic health check with system info API call
+        - Automatic reconnection on connection loss
 
         Returns:
-            bool: True if connected and verified, False otherwise
+            bool: True if connected and healthy, False otherwise
 
         Example:
             ```python
-            # Check connection before making API calls
             if await jellyfin_api.is_connected():
                 # Safe to make API calls
                 items = await jellyfin_api.get_all_items()
             else:
-                # Handle disconnection
-                print("Connection lost, attempting to reconnect...")
+                logger.warning("Jellyfin connection lost - attempting reconnect")
                 await jellyfin_api.connect()
             ```
 
         Note:
-            This method can trigger automatic reconnection attempts if the
-            cached connection is found to be invalid. This provides transparent
-            connection recovery for long-running services.
+            This method is called frequently, so it uses caching to minimize
+            API calls while still ensuring connection reliability.
         """
         if not self.client:
             return False
 
-        current_time = time.time()
-        
-        # Return cached result if recent check was successful
-        if current_time - self.last_connection_check < self.connection_check_interval:
+        # Check if we need to verify connection health
+        time_since_check = time.time() - self.last_connection_check
+
+        if time_since_check > self.connection_check_interval:
+            try:
+                # Perform lightweight health check
+                system_info = await self.get_system_info()
+                if system_info:
+                    self.last_connection_check = time.time()
+                    self.logger.debug("Connection health check passed")
+                    return True
+                else:
+                    self.logger.warning("Connection health check failed")
+                    return False
+            except Exception as e:
+                self.logger.warning(f"Connection health check error: {e}")
+                return False
+        else:
+            # Use cached connection status
             return True
 
-        # Perform lightweight connectivity test
+    async def get_system_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Get Jellyfin server system information.
+
+        This method retrieves basic system information from the Jellyfin server,
+        including server name, version, and operational status. It's used for
+        connection verification and diagnostic purposes.
+
+        **System Information Uses:**
+        - Connection health verification
+        - Server identification in logs
+        - Version compatibility checking
+        - Diagnostic and monitoring data
+
+        Returns:
+            Optional[Dict[str, Any]]: System information dictionary if successful, None otherwise
+
+        Example:
+            ```python
+            system_info = await jellyfin_api.get_system_info()
+            if system_info:
+                logger.info(f"Server: {system_info['ServerName']} v{system_info['Version']}")
+                logger.info(f"Operating System: {system_info.get('OperatingSystem', 'Unknown')}")
+            ```
+
+        Note:
+            This method is used internally for connection verification but
+            can also be called directly for diagnostic purposes.
+        """
+        if not self.client:
+            return None
+
         try:
             response = self.client.jellyfin.get_system_info()
             if response:
-                self.last_connection_check = current_time
-                return True
+                self.logger.debug("Successfully retrieved system information")
+                return response
+            else:
+                self.logger.warning("Empty response from system info API")
+                return None
         except Exception as e:
-            self.logger.warning(f"Connection check failed: {e}")
-
-        # Connection failed, attempt automatic reconnection
-        self.logger.info("Connection lost, attempting automatic reconnection...")
-        return await self.connect()
+            self.logger.error(f"Failed to get system info: {e}")
+            return None
 
     async def get_item(self, item_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -333,13 +340,13 @@ class JellyfinAPI:
             # Get detailed item information
             item_data = await jellyfin_api.get_item("abc123def456")
             if item_data:
-                print(f"Item: {item_data['Name']}")
-                print(f"Type: {item_data['Type']}")
-                
+                logger.info(f"Item: {item_data['Name']}")
+                logger.info(f"Type: {item_data['Type']}")
+
                 # Convert to MediaItem for internal use
-                media_item = jellyfin_api.extract_media_item(item_data)
+                media_item = await jellyfin_api.convert_to_media_item(item_data)
             else:
-                print("Item not found or access denied")
+                logger.warning("Item not found or access denied")
             ```
 
         Note:
@@ -353,7 +360,7 @@ class JellyfinAPI:
         try:
             # Request comprehensive item data with all metadata fields
             response = self.client.jellyfin.get_item(item_id)
-            
+
             if response:
                 self.logger.debug(f"Retrieved item: {response.get('Name', 'Unknown')} ({item_id})")
                 return response
@@ -365,9 +372,9 @@ class JellyfinAPI:
             self.logger.error(f"Failed to retrieve item {item_id}: {e}")
             return None
 
-    async def get_all_items(self, 
-                           batch_size: int = 100, 
-                           progress_callback: Optional[Callable[[int, int], None]] = None) -> List[Dict[str, Any]]:
+    async def get_all_items(self,
+                            batch_size: int = 100,
+                            progress_callback: Optional[Callable[[int, int], None]] = None) -> List[Dict[str, Any]]:
         """
         Retrieve all items from Jellyfin library with efficient batch processing.
 
@@ -382,320 +389,338 @@ class JellyfinAPI:
         - Handles API rate limiting gracefully
 
         **Memory Efficiency:**
-        Large libraries can contain thousands of items. This method processes
-        items in batches to maintain reasonable memory usage while providing
-        progress feedback for long operations.
+        Large libraries can contain thousands of items. Batch processing
+        prevents memory exhaustion and provides better progress feedback.
 
         Args:
-            batch_size (int): Number of items to retrieve per API call.
-                Larger batches are more efficient but use more memory.
-            progress_callback (Optional[Callable[[int, int], None]]): Optional
-                callback function called with (current_count, total_count)
-                for progress monitoring.
+            batch_size (int): Number of items to fetch per API call (default: 100)
+            progress_callback (Optional[Callable[[int, int], None]]): Optional callback
+                function called with (current_count, total_count) for progress updates
 
         Returns:
             List[Dict[str, Any]]: List of all library items with full metadata
 
         Example:
             ```python
-            # Simple batch retrieval
-            all_items = await jellyfin_api.get_all_items(batch_size=50)
-            print(f"Retrieved {len(all_items)} items")
+            # Simple retrieval
+            all_items = await jellyfin_api.get_all_items()
+            logger.info(f"Retrieved {len(all_items)} items from library")
 
-            # With progress monitoring
+            # With progress callback
             def show_progress(current, total):
-                print(f"Progress: {current}/{total} items ({current/total*100:.1f}%)")
+                pct = (current / total) * 100 if total > 0 else 0
+                logger.info(f"Library sync progress: {current}/{total} ({pct:.1f}%)")
 
-            items = await jellyfin_api.get_all_items(
-                batch_size=100,
+            all_items = await jellyfin_api.get_all_items(
+                batch_size=50,
                 progress_callback=show_progress
             )
             ```
 
         Note:
-            This method can take significant time for large libraries (10,000+ items).
-            The progress callback allows monitoring and user feedback during
-            long-running synchronization operations.
+            This method can take significant time for large libraries.
+            Use the progress callback to provide user feedback during
+            long-running operations like initial library synchronization.
         """
         if not await self.is_connected():
             self.logger.error("Cannot retrieve items: not connected to Jellyfin")
             return []
 
-        all_items = []
-        start_index = 0
-        total_items = None
-
         try:
-            self.logger.info("Starting batch retrieval of all library items")
+            all_items = []
+            start_index = 0
+            total_record_count = None
+
+            self.logger.info(f"Starting library retrieval with batch size {batch_size}")
 
             while True:
-                # Request batch of items with comprehensive metadata
-                response = self.client.jellyfin.get_items(
-                    start_index=start_index,
-                    limit=batch_size,
-                    include_item_types=None,  # All item types
-                    fields="MediaStreams,ProviderIds,Path,MediaSources,Overview,Genres,Studios,Tags"
-                )
+                try:
+                    # Request batch of items with comprehensive metadata
+                    response = self.client.jellyfin.get_items(
+                        user_id=self.config.user_id,
+                        params={
+                            'StartIndex': start_index,
+                            'Limit': batch_size,
+                            'Recursive': True,
+                            'Fields': 'MediaStreams,ProviderIds,Overview,Genres,Studios,Tags,People',
+                            'IncludeItemTypes': 'Movie,Episode,Audio,MusicVideo,Video'
+                        }
+                    )
 
-                if not response:
-                    self.logger.warning("Empty response from Jellyfin items API")
+                    if not response or 'Items' not in response:
+                        self.logger.warning(f"Empty or invalid response at index {start_index}")
+                        break
+
+                    batch_items = response['Items']
+                    total_record_count = response.get('TotalRecordCount', 0)
+
+                    if not batch_items:
+                        self.logger.debug("No more items to retrieve")
+                        break
+
+                    all_items.extend(batch_items)
+
+                    # Call progress callback if provided
+                    if progress_callback:
+                        progress_callback(len(all_items), total_record_count)
+
+                    self.logger.debug(f"Retrieved batch: {len(batch_items)} items (total: {len(all_items)})")
+
+                    # Check if we've retrieved all items
+                    if len(all_items) >= total_record_count:
+                        break
+
+                    start_index += batch_size
+
+                    # Brief pause to avoid overwhelming the server
+                    await asyncio.sleep(0.1)
+
+                except Exception as e:
+                    self.logger.error(f"Error retrieving batch at index {start_index}: {e}")
                     break
 
-                # Extract items and total count from response
-                items = response.get('Items', [])
-                if total_items is None:
-                    total_items = response.get('TotalRecordCount', 0)
-                    self.logger.info(f"Found {total_items} total items to retrieve")
-
-                if not items:
-                    # No more items to retrieve
-                    break
-
-                # Add items to result collection
-                all_items.extend(items)
-                start_index += len(items)
-
-                # Call progress callback if provided
-                if progress_callback:
-                    progress_callback(len(all_items), total_items)
-
-                self.logger.debug(f"Retrieved batch: {len(items)} items (total: {len(all_items)}/{total_items})")
-
-                # Check if we've retrieved all items
-                if len(all_items) >= total_items:
-                    break
-
-                # Small delay to avoid overwhelming the server
-                await asyncio.sleep(0.1)
-
-            self.logger.info(f"Completed batch retrieval: {len(all_items)} items retrieved")
+            self.logger.info(f"Library retrieval completed: {len(all_items)} items retrieved")
             return all_items
 
         except Exception as e:
             self.logger.error(f"Failed to retrieve library items: {e}")
-            return all_items  # Return partial results if available
+            return []
 
-    def extract_media_item(self, jellyfin_item: Dict[str, Any]) -> MediaItem:
+    async def convert_to_media_item(self, item_data: Dict[str, Any]) -> MediaItem:
         """
-        Convert Jellyfin API response to normalized MediaItem format.
+        Convert Jellyfin API response to internal MediaItem format.
 
-        This method handles the complex task of converting Jellyfin's variable
-        API response format into our standardized MediaItem representation.
-        It extracts and normalizes metadata from multiple nested structures
-        within the Jellyfin response.
+        This method transforms the complex Jellyfin API response format into
+        our simplified MediaItem dataclass, extracting and normalizing the
+        most important metadata fields for notification purposes.
 
-        **Data Normalization Challenges:**
-        Jellyfin's API responses have complex, nested structures that vary
-        by media type. This method handles:
-        - Different field names for similar concepts
-        - Optional fields that may not exist for all media types
-        - Nested arrays of media stream information
-        - Provider ID extraction and mapping
-        - Type-specific field handling (seasons, episodes, etc.)
+        **Data Transformation Process:**
+        1. Extract basic metadata (name, type, year, etc.)
+        2. Parse media stream information (video/audio specs)
+        3. Extract provider IDs (IMDb, TMDb, TVDb)
+        4. Normalize and clean data values
+        5. Generate content hash for change detection
 
-        **Media Stream Processing:**
-        Video and audio streams are stored in MediaStreams arrays with
-        type-specific information. This method extracts the primary streams
-        and maps their properties to MediaItem fields.
+        **Stream Processing:**
+        Jellyfin provides detailed media stream information including multiple
+        video and audio tracks. This method extracts the primary streams and
+        their technical specifications.
 
         Args:
-            jellyfin_item (Dict[str, Any]): Raw item dictionary from Jellyfin API
+            item_data (Dict[str, Any]): Raw item data from Jellyfin API
 
         Returns:
-            MediaItem: Normalized MediaItem instance with extracted metadata
+            MediaItem: Normalized media item for internal use
 
         Example:
             ```python
-            # Raw data from Jellyfin API
-            jellyfin_data = {
-                'Id': 'abc123',
-                'Name': 'The Matrix',
-                'Type': 'Movie',
-                'ProductionYear': 1999,
-                'MediaStreams': [
-                    {
-                        'Type': 'Video',
-                        'Height': 1080,
-                        'Width': 1920,
-                        'Codec': 'h264'
-                    },
-                    {
-                        'Type': 'Audio',
-                        'Codec': 'ac3',
-                        'Channels': 6,
-                        'Language': 'eng'
-                    }
-                ],
-                'ProviderIds': {
-                    'Imdb': 'tt0133093',
-                    'Tmdb': '603'
-                }
-            }
+            # Convert API response to MediaItem
+            raw_data = await jellyfin_api.get_item("item123")
+            if raw_data:
+                media_item = await jellyfin_api.convert_to_media_item(raw_data)
 
-            # Convert to internal format
-            media_item = jellyfin_api.extract_media_item(jellyfin_data)
-            print(f"Converted: {media_item.name} ({media_item.video_height}p)")
+                logger.info(f"Converted: {media_item.name}")
+                logger.info(f"Quality: {media_item.video_height}p")
+                logger.info(f"Codec: {media_item.video_codec}")
             ```
 
         Note:
-            This method provides robust error handling to ensure a valid
-            MediaItem is always returned, even if some fields are missing
-            or malformed in the Jellyfin response. Missing data is handled
-            gracefully with None values.
+            This method handles missing or malformed data gracefully,
+            providing sensible defaults to ensure MediaItem creation
+            succeeds even with incomplete Jellyfin data.
         """
         try:
-            # Extract media stream information for technical specifications
-            media_streams = jellyfin_item.get('MediaStreams', [])
-            video_stream = next((s for s in media_streams if s.get('Type') == 'Video'), {})
-            audio_stream = next((s for s in media_streams if s.get('Type') == 'Audio'), {})
+            # Extract basic item information
+            item_id = item_data.get('Id', '')
+            name = item_data.get('Name', 'Unknown')
+            item_type = item_data.get('Type', 'Unknown')
+            year = item_data.get('ProductionYear')
+            overview = item_data.get('Overview', '')
 
-            # Extract provider IDs for external database linking
-            provider_ids = jellyfin_item.get('ProviderIds', {})
+            # Extract provider IDs
+            provider_ids = item_data.get('ProviderIds', {})
+            imdb_id = provider_ids.get('Imdb')
+            tmdb_id = provider_ids.get('Tmdb')
+            tvdb_id = provider_ids.get('Tvdb')
 
-            # Handle season/episode indexing based on item type
-            season_number = None
-            episode_number = None
+            # Extract TV series information
+            parent_id = item_data.get('ParentId')
+            series_name = item_data.get('SeriesName')
+            season_number = item_data.get('ParentIndexNumber')
+            episode_number = item_data.get('IndexNumber')
 
-            if jellyfin_item.get('Type') == 'Season':
-                season_number = jellyfin_item.get('IndexNumber')
-            elif jellyfin_item.get('Type') == 'Episode':
-                episode_number = jellyfin_item.get('IndexNumber')
-                season_number = jellyfin_item.get('ParentIndexNumber')
+            # Extract media stream information
+            video_height = None
+            video_codec = None
+            audio_codec = None
+            audio_channels = None
+            video_range = None
 
-            # Extract file information if available
-            media_sources = jellyfin_item.get('MediaSources', [])
+            media_streams = item_data.get('MediaSources', [{}])[0].get('MediaStreams', [])
+
+            # Process video streams
+            for stream in media_streams:
+                if stream.get('Type') == 'Video':
+                    video_height = stream.get('Height')
+                    video_codec = stream.get('Codec', '').lower()
+                    video_range = stream.get('VideoRange', 'SDR')
+                    break
+
+            # Process audio streams
+            for stream in media_streams:
+                if stream.get('Type') == 'Audio':
+                    audio_codec = stream.get('Codec', '').lower()
+                    audio_channels = stream.get('Channels')
+                    break
+
+            # Extract file information
             file_path = None
             file_size = None
-            if media_sources:
-                primary_source = media_sources[0]
-                file_path = primary_source.get('Path')
-                file_size = primary_source.get('Size')
+            if item_data.get('MediaSources'):
+                file_path = item_data['MediaSources'][0].get('Path')
+                file_size = item_data['MediaSources'][0].get('Size')
 
-            # Create normalized MediaItem with comprehensive metadata
+            # Extract collection information
+            genres = [genre.get('Name', '') for genre in item_data.get('Genres', [])]
+            studios = [studio.get('Name', '') for studio in item_data.get('Studios', [])]
+            tags = item_data.get('Tags', [])
+
+            # Handle music-specific fields
+            artists = []
+            if item_type in ['Audio', 'MusicVideo']:
+                artists = [artist.get('Name', '') for artist in item_data.get('ArtistItems', [])]
+
+            # Extract timestamp information
+            date_created = item_data.get('DateCreated')
+            date_modified = item_data.get('DateLastMediaAdded') or item_data.get('DateModified')
+
+            # Generate content hash for change detection
+            hash_data = f"{item_id}_{video_height}_{video_codec}_{audio_codec}_{audio_channels}_{video_range}_{file_size}"
+            content_hash = str(hash(hash_data))
+
+            # Create and return MediaItem
             media_item = MediaItem(
-                # ==================== CORE IDENTIFICATION ====================
-                item_id=jellyfin_item['Id'],
-                name=jellyfin_item.get('Name', ''),
-                item_type=jellyfin_item.get('Type', ''),
-
-                # ==================== CONTENT METADATA ====================
-                year=jellyfin_item.get('ProductionYear'),
-                series_name=jellyfin_item.get('SeriesName'),
+                item_id=item_id,
+                name=name,
+                item_type=item_type,
+                year=year,
+                overview=overview,
+                video_height=video_height,
+                video_codec=video_codec,
+                audio_codec=audio_codec,
+                audio_channels=audio_channels,
+                video_range=video_range,
+                imdb_id=imdb_id,
+                tmdb_id=tmdb_id,
+                tvdb_id=tvdb_id,
+                parent_id=parent_id,
+                series_name=series_name,
                 season_number=season_number,
                 episode_number=episode_number,
-                overview=jellyfin_item.get('Overview'),
-
-                # ==================== VIDEO SPECIFICATIONS ====================
-                video_height=video_stream.get('Height'),
-                video_width=video_stream.get('Width'),
-                video_codec=video_stream.get('Codec'),
-                video_profile=video_stream.get('Profile'),
-                video_range=self._determine_video_range(video_stream),
-                video_framerate=video_stream.get('RealFrameRate') or video_stream.get('AverageFrameRate'),
-                aspect_ratio=video_stream.get('AspectRatio'),
-
-                # ==================== AUDIO SPECIFICATIONS ====================
-                audio_codec=audio_stream.get('Codec'),
-                audio_channels=audio_stream.get('Channels'),
-                audio_language=audio_stream.get('Language'),
-                audio_bitrate=audio_stream.get('BitRate'),
-
-                # ==================== EXTERNAL REFERENCES ====================
-                imdb_id=provider_ids.get('Imdb'),
-                tmdb_id=provider_ids.get('Tmdb'),
-                tvdb_id=provider_ids.get('Tvdb'),
-
-                # ==================== EXTENDED METADATA ====================
-                date_created=jellyfin_item.get('DateCreated'),
-                date_modified=jellyfin_item.get('DateModified'),
-                runtime_ticks=jellyfin_item.get('RunTimeTicks'),
-                official_rating=jellyfin_item.get('OfficialRating'),
-                genres=jellyfin_item.get('Genres', []),
-                studios=[studio.get('Name') for studio in jellyfin_item.get('Studios', [])],
-                tags=jellyfin_item.get('Tags', []),
-                community_rating=jellyfin_item.get('CommunityRating'),
-                critic_rating=jellyfin_item.get('CriticRating'),
-                premiere_date=jellyfin_item.get('PremiereDate'),
-
-                # ==================== MUSIC-SPECIFIC ====================
-                album=jellyfin_item.get('Album'),
-                artists=[artist.get('Name') for artist in jellyfin_item.get('ArtistItems', [])],
-                album_artist=jellyfin_item.get('AlbumArtist'),
-
-                # ==================== PHOTO-SPECIFIC ====================
-                width=jellyfin_item.get('Width'),
-                height=jellyfin_item.get('Height'),
-
-                # ==================== INTERNAL TRACKING ====================
+                content_hash=content_hash,
                 file_path=file_path,
                 file_size=file_size,
-                last_modified=jellyfin_item.get('DateModified'),
-
-                # ==================== RELATIONSHIPS ====================
-                series_id=jellyfin_item.get('SeriesId'),
-                parent_id=jellyfin_item.get('ParentId')
+                date_created=date_created,
+                date_modified=date_modified,
+                genres=genres,
+                studios=studios,
+                tags=tags,
+                artists=artists
             )
 
-            self.logger.debug(f"Extracted MediaItem: {media_item.name} ({media_item.item_type})")
+            self.logger.debug(f"Converted Jellyfin item to MediaItem: {name}")
             return media_item
 
         except Exception as e:
-            self.logger.error(f"Failed to extract MediaItem from Jellyfin data: {e}")
-            # Return minimal MediaItem on error to prevent complete failure
+            self.logger.error(f"Failed to convert item data: {e}")
+            # Return minimal MediaItem to prevent complete failure
             return MediaItem(
-                item_id=jellyfin_item.get('Id', 'unknown'),
-                name=jellyfin_item.get('Name', 'Unknown'),
-                item_type=jellyfin_item.get('Type', 'Unknown')
+                item_id=item_data.get('Id', 'unknown'),
+                name=item_data.get('Name', 'Unknown Item'),
+                item_type=item_data.get('Type', 'Unknown'),
+                content_hash=str(hash(str(item_data.get('Id', 'unknown'))))
             )
 
-    def _determine_video_range(self, video_stream: Dict[str, Any]) -> Optional[str]:
+    async def test_connection(self) -> Dict[str, Any]:
         """
-        Determine HDR/SDR video range from stream metadata.
+        Test connection to Jellyfin and return diagnostic information.
 
-        This private method analyzes video stream properties to determine
-        if content is Standard Dynamic Range (SDR) or High Dynamic Range (HDR)
-        and which specific HDR format is used.
+        This method performs a comprehensive connection test including
+        authentication verification, API accessibility, and server information
+        retrieval. It's useful for troubleshooting connection issues.
 
-        **HDR Detection Logic:**
-        HDR content can be identified through several video stream properties:
-        - Color transfer characteristics (BT.2020, PQ, HLG)
-        - Color primaries (BT.2020 color space)
-        - Bit depth (10-bit or higher typically indicates HDR capability)
-        - Codec-specific metadata
-
-        Args:
-            video_stream (Dict[str, Any]): Video stream metadata from MediaStreams
+        **Test Components:**
+        - Network connectivity to server
+        - API key authentication validity
+        - User ID accessibility
+        - Basic API functionality
+        - Server version compatibility
 
         Returns:
-            Optional[str]: Video range identifier ('SDR', 'HDR10', 'HDR10+', 'Dolby Vision', etc.)
+            Dict[str, Any]: Comprehensive connection test results
 
         Example:
-            Internal method called during extract_media_item():
             ```python
-            video_range = self._determine_video_range(video_stream)
-            # Returns: 'HDR10', 'SDR', 'Dolby Vision', etc.
+            test_results = await jellyfin_api.test_connection()
+
+            if test_results['connected']:
+                logger.info(f"Connection OK: {test_results['server_info']['ServerName']}")
+            else:
+                logger.error(f"Connection failed: {test_results['error']}")
             ```
+
+        Note:
+            This method is primarily used for diagnostic purposes and
+            during initial service configuration validation.
         """
-        if not video_stream:
-            return None
+        test_results = {
+            'connected': False,
+            'server_info': None,
+            'error': None,
+            'response_time': None
+        }
 
-        # Check for Dolby Vision indicators
-        codec = video_stream.get('Codec', '').lower()
-        if 'dovi' in codec or video_stream.get('VideoRangeType') == 'DOVI':
-            return 'Dolby Vision'
+        try:
+            start_time = time.time()
 
-        # Check color transfer and primaries for HDR indicators
-        color_transfer = video_stream.get('ColorTransfer', '').lower()
-        color_primaries = video_stream.get('ColorPrimaries', '').lower()
-        
-        # HDR10 indicators
-        if ('bt2020' in color_transfer or 'smpte2084' in color_transfer or 
-            'bt2020' in color_primaries):
-            return 'HDR10'
-        
-        # Check bit depth (10-bit often indicates HDR capability)
-        bit_depth = video_stream.get('BitDepth', 8)
-        if bit_depth >= 10 and ('hevc' in codec or 'av1' in codec):
-            return 'HDR10'
+            # Test basic connection
+            if not await self.connect():
+                test_results['error'] = "Failed to establish connection"
+                return test_results
 
-        return 'SDR'  # Default to SDR if no HDR indicators found
+            # Get server information
+            system_info = await self.get_system_info()
+            if not system_info:
+                test_results['error'] = "Connected but cannot retrieve server info"
+                return test_results
+
+            # Test item retrieval capability (try to get first item)
+            try:
+                response = self.client.jellyfin.get_items(
+                    user_id=self.config.user_id,
+                    params={'Limit': 1}
+                )
+                if not response:
+                    test_results['error'] = "Cannot access library - check user permissions"
+                    return test_results
+            except Exception as e:
+                test_results['error'] = f"Library access failed: {str(e)}"
+                return test_results
+
+            # Calculate response time
+            response_time = time.time() - start_time
+
+            # Success - populate results
+            test_results.update({
+                'connected': True,
+                'server_info': system_info,
+                'response_time': round(response_time, 3)
+            })
+
+            self.logger.info(f"Connection test passed in {response_time:.3f}s")
+            return test_results
+
+        except Exception as e:
+            test_results['error'] = str(e)
+            self.logger.error(f"Connection test failed: {e}")
+            return test_results

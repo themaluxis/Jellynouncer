@@ -101,7 +101,7 @@ class ThumbnailManager:
         self.api_key = api_key
         self.session: Optional[aiohttp.ClientSession] = None
         self.cache: Dict[str, str] = {}
-        self.logger = get_logger("jellynouncer.discord.thumbnails")
+        self.logger = get_logger("discord.thumbnails")
 
     async def initialize(self) -> None:
         """
@@ -340,7 +340,7 @@ class DiscordNotifier:
         self.session: Optional[aiohttp.ClientSession] = None
         self.rate_limits: Dict[str, Dict[str, Any]] = {}
         self.jinja_env: Optional[Environment] = None
-        self.logger = get_logger("jellynouncer.discord.notifier")
+        self.logger = get_logger("discord.notifier")
 
     async def initialize(self) -> None:
         """
