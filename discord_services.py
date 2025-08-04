@@ -336,13 +336,14 @@ class DiscordNotifier:
 
         self.logger = get_logger("discord")
 
-    async def initialize(self, session: aiohttp.ClientSession, jellyfin_config) -> None:
+    async def initialize(self, session: aiohttp.ClientSession, jellyfin_config, templates_config) -> None:
         """
-        Initialize Discord notifier with HTTP session and Jellyfin config.
+        Initialize Discord notifier with HTTP session and configuration dependencies.
 
         Args:
             session (aiohttp.ClientSession): HTTP session for requests
             jellyfin_config: Jellyfin configuration for thumbnail manager
+            templates_config: Templates configuration for Jinja2 environment
         """
         self.session = session
 
@@ -356,10 +357,11 @@ class DiscordNotifier:
         # Initialize template environment
         if self.jinja_env is None:
             self.jinja_env = Environment(
-                loader=FileSystemLoader(self.config.templates.directory),
+                loader=FileSystemLoader(templates_config.directory),
                 trim_blocks=True,
                 lstrip_blocks=True
             )
+            self.logger.debug(f"Template environment initialized with directory: {templates_config.directory}")
 
         self.logger.info("Discord notifier initialized successfully")
 

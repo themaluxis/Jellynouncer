@@ -248,7 +248,7 @@ class WebhookService:
                 # Create aiohttp session for Discord
                 session = aiohttp.ClientSession()
                 self.discord = DiscordNotifier(self.config.discord)
-                await self.discord.initialize(session, self.config.jellyfin)
+                await self.discord.initialize(session, self.config.jellyfin, self.config.templates)
                 self.logger.info("Discord notification manager initialized")
             except Exception as e:
                 self.logger.error(f"Discord manager initialization failed: {e}")
