@@ -436,8 +436,8 @@ class JellyfinAPI:
                 try:
                     # Request batch of items with comprehensive metadata
                     response = self.client.jellyfin.get_items(
-                        user_id=self.config.user_id,
                         params={
+                            'UserId': self.config.user_id,
                             'StartIndex': start_index,
                             'Limit': batch_size,
                             'Recursive': True,
@@ -696,8 +696,10 @@ class JellyfinAPI:
             # Test item retrieval capability (try to get first item)
             try:
                 response = self.client.jellyfin.get_items(
-                    user_id=self.config.user_id,
-                    params={'Limit': 1}
+                    params={
+                        'UserId': self.config.user_id,
+                        'Limit': 1
+                    }
                 )
                 if not response:
                     test_results['error'] = "Cannot access library - check user permissions"
