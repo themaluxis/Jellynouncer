@@ -21,7 +21,7 @@ License: MIT
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional, List
 
@@ -76,90 +76,142 @@ class MediaItem:
         item_type (str): Media type (Movie, Episode, Series, Audio, Album, Book, etc.)
 
     **Content Metadata:**
-    These fields describe the media content:
+    Basic descriptive information about the media:
 
     Attributes:
         year (Optional[int]): Release year for movies, air year for TV episodes
-        series_name (Optional[str]): TV series name (for episodes only)
-        season_number (Optional[int]): Season number within series (for episodes)
-        episode_number (Optional[int]): Episode number within season (for episodes)
-        overview (Optional[str]): Plot summary, description, or synopsis
+        series_name (Optional[str]): TV series name (for episodes and seasons)
+        season_number (Optional[int]): Season number (for TV episodes)
+        episode_number (Optional[int]): Episode number within season
+        overview (Optional[str]): Content description, plot summary, or synopsis
 
     **Video Technical Specifications:**
-    These fields describe video stream properties used for upgrade detection:
+    Video stream properties for quality detection and upgrade notifications:
 
     Attributes:
-        video_height (Optional[int]): Resolution height in pixels (720, 1080, 2160, etc.)
-        video_width (Optional[int]): Resolution width in pixels (1280, 1920, 3840, etc.)
-        video_codec (Optional[str]): Video codec (h264, hevc, av1, vp9, etc.)
-        video_profile (Optional[str]): Codec profile (High, Main, etc.)
-        video_range (Optional[str]): Dynamic range (SDR, HDR10, HDR10+, Dolby Vision)
-        video_framerate (Optional[float]): Frames per second (23.976, 25, 29.97, 60, etc.)
-        aspect_ratio (Optional[str]): Display aspect ratio (16:9, 21:9, 4:3, etc.)
+        video_height (Optional[int]): Video resolution height in pixels (720, 1080, 2160, etc.)
+        video_width (Optional[int]): Video resolution width in pixels (1280, 1920, 3840, etc.)
+        video_codec (Optional[str]): Video codec (h264, hevc, av1, mpeg2, etc.)
+        video_profile (Optional[str]): Codec profile (High, Main, Main10, etc.)
+        video_range (Optional[str]): Video range (SDR, HDR10, HDR10+, Dolby Vision)
+        video_framerate (Optional[float]): Frames per second (23.976, 24, 25, 29.97, 30, 50, 60)
+        aspect_ratio (Optional[str]): Display aspect ratio (16:9, 4:3, 2.35:1, etc.)
+        video_title (Optional[str]): Video stream title/name from container
+        video_type (Optional[str]): Stream type identifier
+        video_language (Optional[str]): Video stream language code (eng, spa, fra, etc.)
+        video_level (Optional[str]): Codec level specification (3.1, 4.0, 5.1, etc.)
+        video_interlaced (Optional[bool]): Whether video uses interlaced scanning
+        video_bitrate (Optional[int]): Video bitrate in bits per second
+        video_bitdepth (Optional[int]): Color bit depth (8, 10, 12)
+        video_colorspace (Optional[str]): Color space specification (bt709, bt2020nc, etc.)
+        video_colortransfer (Optional[str]): Color transfer characteristics (bt709, smpte2084, etc.)
+        video_colorprimaries (Optional[str]): Color primaries specification (bt709, bt2020, etc.)
+        video_pixelformat (Optional[str]): Pixel format (yuv420p, yuv420p10le, etc.)
+        video_refframes (Optional[int]): Number of reference frames used by codec
 
     **Audio Technical Specifications:**
-    These fields describe audio stream properties:
+    Audio stream properties for quality detection:
 
     Attributes:
-        audio_codec (Optional[str]): Audio codec (aac, ac3, dts, flac, opus, etc.)
-        audio_channels (Optional[int]): Channel count (2, 6, 8 for stereo, 5.1, 7.1)
-        audio_language (Optional[str]): Primary audio language code (eng, spa, fra, etc.)
+        audio_codec (Optional[str]): Audio codec (aac, ac3, dts, flac, mp3, etc.)
+        audio_channels (Optional[int]): Number of audio channels (2, 6, 8 for stereo, 5.1, 7.1)
+        audio_language (Optional[str]): Audio language code (eng, spa, fra, etc.)
         audio_bitrate (Optional[int]): Audio bitrate in bits per second
+        audio_title (Optional[str]): Audio stream title/name from container
+        audio_type (Optional[str]): Stream type identifier
+        audio_samplerate (Optional[int]): Sample rate in Hz (48000, 44100, 96000, etc.)
+        audio_default (Optional[bool]): Whether this is the default audio track
+
+    **Subtitle Information:**
+    Subtitle/caption tracks available:
+
+    Attributes:
+        subtitle_title (Optional[str]): Subtitle stream title/name
+        subtitle_type (Optional[str]): Subtitle stream type identifier
+        subtitle_language (Optional[str]): Subtitle language code (eng, spa, fra, etc.)
+        subtitle_codec (Optional[str]): Subtitle format (srt, ass, pgs, vtt, etc.)
+        subtitle_default (Optional[bool]): Whether this is the default subtitle track
+        subtitle_forced (Optional[bool]): Whether subtitle is forced display
+        subtitle_external (Optional[bool]): Whether subtitle is external file vs embedded
 
     **External References:**
-    These fields link to external movie/TV databases:
+    External provider IDs for linking to movie/TV databases:
 
     Attributes:
-        imdb_id (Optional[str]): Internet Movie Database identifier
+        imdb_id (Optional[str]): Internet Movie Database identifier (tt1234567)
         tmdb_id (Optional[str]): The Movie Database identifier
         tvdb_id (Optional[str]): The TV Database identifier
+        tvdb_slug (Optional[str]): TVDB URL slug identifier
 
-    **Extended Metadata from API:**
-    These fields are populated from Jellyfin API calls (not available in webhooks):
+    **Server Information:**
+    Context about the Jellyfin server:
 
     Attributes:
-        date_created (Optional[str]): When item was added to Jellyfin (ISO format)
-        date_modified (Optional[str]): When item was last modified (ISO format)
+        server_id (Optional[str]): Jellyfin server unique identifier
+        server_name (Optional[str]): Human-readable server name
+        server_version (Optional[str]): Jellyfin server version string
+        server_url (Optional[str]): Public URL of the Jellyfin server
+        notification_type (Optional[str]): Type of notification event (ItemAdded, etc.)
+
+    **File System Information:**
+    File system and library organization:
+
+    Attributes:
+        file_path (Optional[str]): File system path to the media file
+        library_name (Optional[str]): Name of the Jellyfin library containing this item
+        file_size (Optional[int]): File size in bytes
+
+    **TV Series Data:**
+    Detailed TV series organization and numbering:
+
+    Attributes:
+        series_id (Optional[str]): Parent series unique identifier
+        series_premiere_date (Optional[str]): Series premiere date
+        season_id (Optional[str]): Parent season unique identifier
+        season_number_padded (Optional[str]): Zero-padded season number (01, 02, etc.)
+        season_number_padded_3 (Optional[str]): Three-digit padded season number (001, 002, etc.)
+        episode_number_padded (Optional[str]): Zero-padded episode number (05, 10, etc.)
+        episode_number_padded_3 (Optional[str]): Three-digit padded episode number (005, 010, etc.)
+        air_time (Optional[str]): Episode air time
+
+    **Extended Metadata from API:**
+    These fields come from Jellyfin API calls (not available in webhook):
+
+    Attributes:
+        date_created (Optional[str]): When item was added to Jellyfin
+        date_modified (Optional[str]): When item was last modified in Jellyfin
         runtime_ticks (Optional[int]): Duration in Jellyfin's tick format (10,000 ticks = 1ms)
-        official_rating (Optional[str]): Content rating (G, PG, PG-13, R, TV-MA, etc.)
-        genres (Optional[List[str]]): List of genre names
-        studios (Optional[List[str]]): Production studios/companies
-        tags (Optional[List[str]]): User-defined or imported tags
-        community_rating (Optional[float]): User/community rating score
-        critic_rating (Optional[float]): Professional critic rating score
-        premiere_date (Optional[str]): Original air/release date
+        runtime_formatted (Optional[str]): Human-readable duration string (2h 15m)
+        official_rating (Optional[str]): MPAA rating (G, PG, R), TV rating (TV-MA), etc.
+        tagline (Optional[str]): Marketing tagline or promotional text
+        genres (List[str]): List of genre names (Action, Comedy, Drama, etc.)
+        studios (List[str]): Production companies/studios
+        tags (List[str]): User-defined or imported tags
 
     **Music-Specific Metadata:**
-    These fields apply to audio content:
+    Fields specific to audio content:
 
     Attributes:
         album (Optional[str]): Album name (for music tracks)
-        artists (Optional[List[str]]): List of artist names
+        artists (List[str]): List of artist names
         album_artist (Optional[str]): Primary album artist
 
     **Photo-Specific Metadata:**
-    These fields apply to image content:
+    Fields specific to image content:
 
     Attributes:
         width (Optional[int]): Image width in pixels
         height (Optional[int]): Image height in pixels
 
     **Internal Tracking Fields:**
-    These fields are used for service operations:
+    Fields used for service operations and change detection:
 
     Attributes:
-        content_hash (Optional[str]): MD5 hash for change detection (auto-generated)
-        timestamp (Optional[str]): When this object was created (auto-generated)
-        file_path (Optional[str]): File system path to media file
-        file_size (Optional[int]): File size in bytes
-        last_modified (Optional[str]): File modification timestamp
-
-    **Relationships:**
-    These fields establish parent/child relationships:
-
-    Attributes:
-        series_id (Optional[str]): Parent series ID (for episodes and seasons)
-        parent_id (Optional[str]): Direct parent ID (season for episodes, series for seasons)
+        content_hash (str): MD5 hash for change detection (auto-generated)
+        timestamp_created (str): When this object was created (auto-generated)
+        timestamp (Optional[str]): Local timestamp with timezone from webhook
+        utc_timestamp (Optional[str]): UTC timestamp from webhook
+        premiere_date (Optional[str]): Original release/air date
 
     Example:
         ```python
@@ -196,7 +248,7 @@ class MediaItem:
 
     Note:
         The __post_init__ method handles initialization of derived fields like
-        content_hash and timestamp. This ensures consistent object state
+        content_hash and timestamp_created. This ensures consistent object state
         regardless of how the object is created.
 
         The content hash is crucial for change detection - it allows the service
@@ -228,6 +280,20 @@ class MediaItem:
     video_framerate: Optional[float] = None
     aspect_ratio: Optional[str] = None
 
+    # Additional video properties from webhook for template customization
+    video_title: Optional[str] = None
+    video_type: Optional[str] = None
+    video_language: Optional[str] = None
+    video_level: Optional[str] = None
+    video_interlaced: Optional[bool] = None
+    video_bitrate: Optional[int] = None
+    video_bitdepth: Optional[int] = None
+    video_colorspace: Optional[str] = None
+    video_colortransfer: Optional[str] = None
+    video_colorprimaries: Optional[str] = None
+    video_pixelformat: Optional[str] = None
+    video_refframes: Optional[int] = None
+
     # ==================== AUDIO TECHNICAL SPECIFICATIONS ====================
     # Audio stream properties for quality detection
     audio_codec: Optional[str] = None
@@ -235,29 +301,77 @@ class MediaItem:
     audio_language: Optional[str] = None
     audio_bitrate: Optional[int] = None
 
+    # Additional audio properties from webhook for template customization
+    audio_title: Optional[str] = None
+    audio_type: Optional[str] = None
+    audio_samplerate: Optional[int] = None
+    audio_default: Optional[bool] = None
+
+    # ==================== SUBTITLE INFORMATION ====================
+    # Subtitle properties from webhook for template customization
+    subtitle_title: Optional[str] = None
+    subtitle_type: Optional[str] = None
+    subtitle_language: Optional[str] = None
+    subtitle_codec: Optional[str] = None
+    subtitle_default: Optional[bool] = None
+    subtitle_forced: Optional[bool] = None
+    subtitle_external: Optional[bool] = None
+
     # ==================== EXTERNAL REFERENCES ====================
     # External provider IDs for linking to movie/TV databases
     imdb_id: Optional[str] = None
     tmdb_id: Optional[str] = None
     tvdb_id: Optional[str] = None
 
+    # Additional provider ID from webhook
+    tvdb_slug: Optional[str] = None
+
+    # ==================== SERVER INFORMATION ====================
+    # Server context from webhook for template customization
+    server_id: Optional[str] = None
+    server_name: Optional[str] = None
+    server_version: Optional[str] = None
+    server_url: Optional[str] = None
+    notification_type: Optional[str] = None
+
+    # ==================== FILE SYSTEM INFORMATION ====================
+    # File system data from webhook for template customization
+    file_path: Optional[str] = None
+    library_name: Optional[str] = None
+
+    # ==================== TV SERIES DATA ====================
+    # TV series fields
+    series_id: Optional[str] = None  # Parent series ID (for episodes and seasons)
+    series_premiere_date: Optional[str] = None
+    season_id: Optional[str] = None
+    season_number_padded: Optional[str] = None  # SeasonNumber00
+    season_number_padded_3: Optional[str] = None  # SeasonNumber000
+    episode_number_padded: Optional[str] = None  # EpisodeNumber00
+    episode_number_padded_3: Optional[str] = None  # EpisodeNumber000
+    air_time: Optional[str] = None
+
+    # ==================== TIMESTAMP INFORMATION ====================
+    # Timestamp data
+    timestamp: Optional[str] = None  # Local timestamp
+    utc_timestamp: Optional[str] = None  # UTC timestamp
+    premiere_date: Optional[str] = None
+
     # ==================== EXTENDED METADATA FROM API ====================
     # These fields come from Jellyfin API calls (not available in webhook)
     date_created: Optional[str] = None
     date_modified: Optional[str] = None
     runtime_ticks: Optional[int] = None  # Jellyfin uses "ticks" for duration (10,000 ticks = 1ms)
+    runtime_formatted: Optional[str] = None  # Human-readable runtime
     official_rating: Optional[str] = None  # MPAA rating (G, PG, R), TV rating (TV-MA), etc.
-    genres: Optional[List[str]] = None  # List of genre names
-    studios: Optional[List[str]] = None  # Production companies/studios
-    tags: Optional[List[str]] = None  # User-defined or imported tags
-    community_rating: Optional[float] = None  # User community rating
-    critic_rating: Optional[float] = None  # Professional critic rating
-    premiere_date: Optional[str] = None  # Original air/release date
+    tagline: Optional[str] = None
+    genres: List[str] = field(default_factory=list)  # List of genre names
+    studios: List[str] = field(default_factory=list)  # Production companies/studios
+    tags: List[str] = field(default_factory=list)  # User-defined or imported tags
 
     # ==================== MUSIC-SPECIFIC METADATA ====================
     # Fields specific to audio content
     album: Optional[str] = None
-    artists: Optional[List[str]] = None  # List of artist names
+    artists: List[str] = field(default_factory=list)  # List of artist names
     album_artist: Optional[str] = None  # Primary album artist
 
     # ==================== PHOTO-SPECIFIC METADATA ====================
@@ -267,18 +381,11 @@ class MediaItem:
 
     # ==================== INTERNAL TRACKING ====================
     # Fields used for service operations and change detection
-    content_hash: Optional[str] = None  # MD5 hash for change detection (auto-generated)
-    timestamp: Optional[str] = None  # Object creation timestamp (auto-generated)
-    file_path: Optional[str] = None  # File system path
+    content_hash: str = field(default="", init=False)  # MD5 hash for change detection (auto-generated)
+    timestamp_created: str = field(default="", init=False)  # Object creation timestamp (auto-generated)
     file_size: Optional[int] = None  # File size in bytes
-    last_modified: Optional[str] = None  # File modification timestamp
 
-    # ==================== RELATIONSHIPS ====================
-    # Parent/child relationships for complex media structures
-    series_id: Optional[str] = None  # Parent series ID (for episodes and seasons)
-    parent_id: Optional[str] = None  # Direct parent ID (season for episodes, etc.)
-
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """
         Initialize derived fields after dataclass construction.
 
@@ -303,61 +410,38 @@ class MediaItem:
 
         This ensures that only meaningful quality changes trigger upgrade notifications.
         """
-        # Generate timestamp if not provided
-        if self.timestamp is None:
-            self.timestamp = datetime.now(timezone.utc).isoformat()
+        # Set creation timestamp if not already set
+        if not self.timestamp_created:
+            self.timestamp_created = datetime.now(timezone.utc).isoformat()
 
         # Generate content hash for change detection
-        if self.content_hash is None:
-            self.content_hash = self._generate_content_hash()
+        # This hash includes all technical specifications that matter for upgrades
+        hash_data = {
+            # Core identification
+            "item_id": self.item_id,
+            "name": self.name,
+            "item_type": self.item_type,
 
-    def _generate_content_hash(self) -> str:
-        """
-        Generate MD5 hash of key content specifications for change detection.
+            # Video specifications (all technical properties for change detection)
+            "video_height": self.video_height,
+            "video_width": self.video_width,
+            "video_codec": self.video_codec,
+            "video_profile": self.video_profile,
+            "video_range": self.video_range,
+            "video_framerate": self.video_framerate,
+            "video_bitrate": self.video_bitrate,
+            "video_bitdepth": self.video_bitdepth,
 
-        This private method creates a hash that represents the "quality signature"
-        of the media item. The hash includes technical specifications that affect
-        media quality but excludes metadata that changes frequently.
+            # Audio specifications (all technical properties for change detection)
+            "audio_codec": self.audio_codec,
+            "audio_channels": self.audio_channels,
+            "audio_bitrate": self.audio_bitrate,
+            "audio_samplerate": self.audio_samplerate,
 
-        **Hash Algorithm:**
-        1. Create dictionary of relevant technical specifications
-        2. Convert to JSON string with sorted keys for consistency
-        3. Generate MD5 hash of the JSON string
-        4. Return hexadecimal digest
-
-        Returns:
-            str: MD5 hexadecimal digest of content specifications
-
-        Example:
-            Two MediaItem instances with the same technical specs will have
-            identical content hashes, even if they have different timestamps
-            or file paths.
-        """
-        # Build dictionary of fields that affect content quality
-        hash_fields = {
-            # Video specifications that indicate quality level
-            'video_height': self.video_height,
-            'video_width': self.video_width,
-            'video_codec': self.video_codec,
-            'video_profile': self.video_profile,
-            'video_range': self.video_range,  # HDR vs SDR is significant
-
-            # Audio specifications that indicate quality level
-            'audio_codec': self.audio_codec,
-            'audio_channels': self.audio_channels,
-            'audio_language': self.audio_language,
-
-            # File size can indicate quality differences
-            'file_size': self.file_size,
-
-            # Provider IDs can change when metadata is enhanced
-            'imdb_id': self.imdb_id,
-            'tmdb_id': self.tmdb_id,
-            'tvdb_id': self.tvdb_id
+            # File path for detecting file replacements
+            "file_path": self.file_path,
         }
 
-        # Convert to JSON string with sorted keys for consistent hashing
-        hash_string = json.dumps(hash_fields, sort_keys=True, default=str)
-
-        # Generate MD5 hash of the JSON string
-        return hashlib.md5(hash_string.encode('utf-8')).hexdigest()
+        # Create MD5 hash from JSON representation
+        hash_string = json.dumps(hash_data, sort_keys=True, default=str)
+        self.content_hash = hashlib.md5(hash_string.encode('utf-8')).hexdigest()

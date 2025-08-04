@@ -574,118 +574,188 @@ class WebhookService:
                 and validated for internal use.
 
         Raises:
-            ValueError: If required fields are missing or invalid
+            ValueError: If required fields are missing or invalid.
 
         Example:
             ```python
-            # Jellyfin webhook payload
-            payload = WebhookPayload(
-                ItemId="12345",
-                Name="Breaking Bad",
-                ItemType="Episode",
-                SeriesName="Breaking Bad",
-                SeasonNumber="1",
-                EpisodeNumber="1"
-            )
-
-            # Extract to our internal format
+            # Process webhook payload
+            payload = WebhookPayload(**webhook_data)
             media_item = service._extract_from_webhook(payload)
-
-            # Now we have a MediaItem with normalized data
-            print(f"Item: {media_item.name}")
-            print(f"Season: {media_item.season_number}")  # Now an integer
+            print(f"Extracted: {media_item.name} ({media_item.item_type})")
             ```
         """
-        try:
-            # Validate the most critical fields first
-            # Without these, we can't process the item at all
-            if not payload.ItemId:
-                raise ValueError("ItemId is required but was not provided")
-            if not payload.Name:
-                raise ValueError("Name is required but was not provided")
-            if not payload.ItemType:
-                raise ValueError("ItemType is required but was not provided")
+        self.logger.debug(f"Extracting MediaItem from webhook payload for {payload.Name} ({payload.ItemType})")
 
-            # Extract and validate season/episode numbers from multiple possible sources
-            # Jellyfin sometimes provides these in different fields
-            season_number = None
-            episode_number = None
+        # Validate required fields first
+        if not payload.ItemId or not payload.Name or not payload.ItemType:
+            raise ValueError("Missing required fields: ItemId, Name, and ItemType are mandatory")
 
-            # Try integer fields first (more reliable than string fields)
-            if payload.SeasonNumber is not None:
-                season_number = payload.SeasonNumber
-            elif payload.SeasonNumber00:
-                try:
-                    season_number = int(payload.SeasonNumber00)
-                except (ValueError, TypeError) as e:
-                    self.logger.warning(f"Invalid season number '{payload.SeasonNumber00}': {e}")
+        # ==================== PARSE SEASON/EPISODE NUMBERS ====================
+        # Handle multiple season number formats with fallback logic
+        # Jellyfin can send SeasonNumber (int) or SeasonNumber00 (padded string)
+        season_number = None
+        if payload.SeasonNumber is not None:
+            season_number = payload.SeasonNumber
+        elif payload.SeasonNumber00:
+            try:
+                season_number = int(payload.SeasonNumber00)
+            except (ValueError, TypeError) as e:
+                self.logger.warning(f"Invalid season number '{payload.SeasonNumber00}': {e}")
 
-            if payload.EpisodeNumber is not None:
-                episode_number = payload.EpisodeNumber
-            elif payload.EpisodeNumber00:
-                try:
-                    episode_number = int(payload.EpisodeNumber00)
-                except (ValueError, TypeError) as e:
-                    self.logger.warning(f"Invalid episode number '{payload.EpisodeNumber00}': {e}")
+        # Handle multiple episode number formats with fallback logic
+        # Jellyfin can send EpisodeNumber (int) or EpisodeNumber00 (padded string)
+        episode_number = None
+        if payload.EpisodeNumber is not None:
+            episode_number = payload.EpisodeNumber
+        elif payload.EpisodeNumber00:
+            try:
+                episode_number = int(payload.EpisodeNumber00)
+            except (ValueError, TypeError) as e:
+                self.logger.warning(f"Invalid episode number '{payload.EpisodeNumber00}': {e}")
 
-            # Parse genres from comma-separated string to list
-            # Jellyfin sends genres as "Action, Drama, Thriller" but we want a list
-            genres_list = []
-            if payload.Genres:
-                try:
-                    # Split on commas and strip whitespace from each genre
-                    genres_list = [genre.strip() for genre in payload.Genres.split(',') if genre.strip()]
-                except Exception as e:
-                    self.logger.warning(f"Error parsing genres '{payload.Genres}': {e}")
+        # ==================== PARSE GENRES ====================
+        # Parse genres from comma-separated string to list for template use
+        # This allows templates to iterate over genres or display them as needed
+        genres_list = []
+        if payload.Genres:
+            try:
+                genres_list = [genre.strip() for genre in payload.Genres.split(',') if genre.strip()]
+            except Exception as e:
+                self.logger.warning(f"Error parsing genres '{payload.Genres}': {e}")
 
-            # Create MediaItem with comprehensive webhook data mapping
-            # We map from Jellyfin's field names to our internal field names
-            return MediaItem(
-                # ==================== CORE IDENTIFICATION ====================
-                item_id=payload.ItemId,
-                name=payload.Name,
-                item_type=payload.ItemType,
-                year=payload.Year,
-                series_name=payload.SeriesName,
-                season_number=season_number,
-                episode_number=episode_number,
-                overview=payload.Overview,
+        # ==================== CREATE MEDIA ITEM WITH ALL PROPERTIES ====================
+        # Map ALL webhook properties to MediaItem fields for template availability
+        return MediaItem(
+            # ==================== CORE IDENTIFICATION ====================
+            # Required fields (unchanged for backward compatibility)
+            item_id=payload.ItemId,
+            name=payload.Name,
+            item_type=payload.ItemType,
 
-                # ==================== ENHANCED METADATA ====================
-                series_id=payload.SeriesId,  # Critical for episode thumbnails
-                parent_id=payload.SeasonId,  # Season ID for episodes
-                premiere_date=payload.PremiereDate,
-                runtime_ticks=payload.RunTimeTicks,
-                genres=genres_list,
+            # ==================== CONTENT METADATA ====================
+            # Basic metadata (unchanged for backward compatibility)
+            year=payload.Year,
+            series_name=payload.SeriesName,
+            season_number=season_number,
+            episode_number=episode_number,
+            overview=payload.Overview,
 
-                # ==================== VIDEO PROPERTIES ====================
-                video_height=payload.Video_0_Height,
-                video_width=payload.Video_0_Width,
-                video_codec=payload.Video_0_Codec,
-                video_profile=payload.Video_0_Profile,
-                video_range=payload.Video_0_VideoRange,
-                video_framerate=payload.Video_0_FrameRate,
-                aspect_ratio=payload.Video_0_AspectRatio,
+            # ==================== VIDEO TECHNICAL SPECIFICATIONS ====================
+            # Existing video properties (unchanged for backward compatibility)
+            video_height=payload.Video_0_Height,
+            video_width=payload.Video_0_Width,
+            video_codec=payload.Video_0_Codec,
+            video_profile=payload.Video_0_Profile,
+            video_range=payload.Video_0_VideoRange,
+            video_framerate=payload.Video_0_FrameRate,
+            aspect_ratio=payload.Video_0_AspectRatio,
 
-                # ==================== AUDIO PROPERTIES ====================
-                audio_codec=payload.Audio_0_Codec,
-                audio_channels=payload.Audio_0_Channels,
-                audio_language=payload.Audio_0_Language,
-                audio_bitrate=payload.Audio_0_Bitrate,
+            # Additional video properties from webhook (now available in templates)
+            video_title=payload.Video_0_Title,
+            video_type=payload.Video_0_Type,
+            video_language=payload.Video_0_Language,
+            video_level=payload.Video_0_Level,
+            video_interlaced=payload.Video_0_Interlaced,
+            video_bitrate=payload.Video_0_Bitrate,
+            video_bitdepth=payload.Video_0_BitDepth,
+            video_colorspace=payload.Video_0_ColorSpace,
+            video_colortransfer=payload.Video_0_ColorTransfer,
+            video_colorprimaries=payload.Video_0_ColorPrimaries,
+            video_pixelformat=payload.Video_0_PixelFormat,
+            video_refframes=payload.Video_0_RefFrames,
 
-                # ==================== EXTERNAL PROVIDER IDS ====================
-                imdb_id=payload.Provider_imdb,
-                tmdb_id=payload.Provider_tmdb,
-                tvdb_id=payload.Provider_tvdb,
+            # ==================== AUDIO TECHNICAL SPECIFICATIONS ====================
+            # Existing audio properties (unchanged for backward compatibility)
+            audio_codec=payload.Audio_0_Codec,
+            audio_channels=payload.Audio_0_Channels,
+            audio_language=payload.Audio_0_Language,
+            audio_bitrate=payload.Audio_0_Bitrate,
 
-                # ==================== FILE INFORMATION ====================
-                path=payload.Path,
-                file_size=payload.Size
-            )
+            # Additional audio properties from webhook (now available in templates)
+            audio_title=payload.Audio_0_Title,
+            audio_type=payload.Audio_0_Type,
+            audio_samplerate=payload.Audio_0_SampleRate,
+            audio_default=payload.Audio_0_Default,
 
-        except Exception as e:
-            self.logger.error(f"Failed to extract MediaItem from webhook payload: {e}")
-            raise ValueError(f"Invalid webhook payload: {str(e)}")
+            # ==================== SUBTITLE INFORMATION ====================
+            # All subtitle properties from webhook (now available in templates)
+            subtitle_title=payload.Subtitle_0_Title,
+            subtitle_type=payload.Subtitle_0_Type,
+            subtitle_language=payload.Subtitle_0_Language,
+            subtitle_codec=payload.Subtitle_0_Codec,
+            subtitle_default=payload.Subtitle_0_Default,
+            subtitle_forced=payload.Subtitle_0_Forced,
+            subtitle_external=payload.Subtitle_0_External,
+
+            # ==================== EXTERNAL REFERENCES ====================
+            # Existing provider IDs (unchanged for backward compatibility)
+            imdb_id=payload.Provider_imdb,
+            tmdb_id=payload.Provider_tmdb,
+            tvdb_id=payload.Provider_tvdb,
+
+            # Additional provider ID (now available in templates)
+            tvdb_slug=payload.Provider_tvdbslug,
+
+            # ==================== SERVER INFORMATION ====================
+            # Server context from webhook (now available in templates)
+            server_id=payload.ServerId,
+            server_name=payload.ServerName,
+            server_version=payload.ServerVersion,
+            server_url=payload.ServerUrl,
+            notification_type=payload.NotificationType,
+
+            # ==================== FILE SYSTEM INFORMATION ====================
+            # File system data from webhook (now available in templates)
+            file_path=payload.Path,
+            library_name=payload.LibraryName,
+
+            # ==================== TV SERIES DATA ====================
+            # Existing series ID (unchanged for backward compatibility)
+            series_id=payload.SeriesId,
+
+            # Additional TV series fields from webhook (now available in templates)
+            series_premiere_date=payload.SeriesPremiereDate,
+            season_id=payload.SeasonId,
+            season_number_padded=payload.SeasonNumber00,
+            season_number_padded_3=payload.SeasonNumber000,
+            episode_number_padded=payload.EpisodeNumber00,
+            episode_number_padded_3=payload.EpisodeNumber000,
+            air_time=payload.AirTime,
+
+            # ==================== TIMESTAMP INFORMATION ====================
+            # Timestamp data from webhook (now available in templates)
+            timestamp=payload.Timestamp,
+            utc_timestamp=payload.UtcTimestamp,
+            premiere_date=payload.PremiereDate,
+
+            # ==================== EXTENDED METADATA ====================
+            # Existing fields (unchanged for backward compatibility)
+            runtime_ticks=payload.RunTimeTicks,
+            genres=genres_list,  # Parsed from comma-separated string for template iteration
+
+            # Additional metadata fields from webhook (now available in templates)
+            tagline=payload.Tagline,
+            runtime_formatted=payload.RunTime,
+
+            # ==================== API-ONLY FIELDS WITH DEFAULTS ====================
+            # These fields come from API calls, not webhooks, so set sensible defaults
+            # They will be populated later via API enrichment if available
+            date_created=payload.UtcTimestamp,  # Use webhook timestamp as creation time
+            date_modified=payload.UtcTimestamp,
+            official_rating=None,  # Not available in webhook - set via API later
+            studios=[],  # Not available in webhook - set via API later
+            tags=[],  # Not available in webhook - set via API later
+
+            # ==================== MUSIC/PHOTO FIELDS ====================
+            # These remain as defaults since they're typically set via API enrichment
+            # for music and photo content types
+            album=None,
+            artists=[],
+            album_artist=None,
+            width=None,
+            height=None,
+            file_size=None,
+        )
 
     async def health_check(self) -> Dict[str, Any]:
         """
