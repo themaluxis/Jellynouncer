@@ -435,14 +435,13 @@ class JellyfinAPI:
             while True:
                 try:
                     # Request batch of items with comprehensive metadata
-                    response = self.client.jellyfin.get_items(
+                    response = self.client.jellyfin.user_items(
                         params={
-                            'UserId': self.config.user_id,
                             'StartIndex': start_index,
                             'Limit': batch_size,
                             'Recursive': True,
-                            'Fields': 'MediaStreams,ProviderIds,Overview,Genres,Studios,Tags,People',
-                            'IncludeItemTypes': 'Movie,Episode,Audio,MusicVideo,Video'
+                            'Fields': "Overview,MediaStreams,ProviderIds,Path,MediaSources,DateCreated,DateModified,ProductionYear,RunTimeTicks,OfficialRating,Genres,Studios,Tags,IndexNumber,ParentIndexNumber,Album,Artists,AlbumArtist,Width,Height,Budget,Revenue,Chapters,People,Taglines,TrailerUrls,HomePageUrl,SortName,PrimaryImageAspectRatio,ParentId,ExternalUrls,CommunityRating,DateLastMediaAdded,DateLastRefreshed,DateLastSaved,PremiereDate,ChildCount,CumulativeRunTimeTicks,ImageTags,BackdropImageTags,ScreenshotImageTags,SeriesPrimaryImageTag,LocalTrailerCount,ThemeSongIds,ThemeVideoIds,SpecialFeatureCount,EnableMediaSourceDisplay,MediaSourceCount,InheritedParentalRatingValue,RemoteTrailers",
+                            'IncludeItemTypes': 'Movie,Series,Season,Episode,MusicVideo,Audio,Video,MusicAlbum,MusicArtist,Book,Photo,BoxSet'
                         }
                     )
 
