@@ -23,7 +23,6 @@ import asyncio
 import time
 import logging
 from typing import Dict, Any, Optional, List, Callable
-from dataclasses import asdict
 
 from jellyfin_apiclient_python import JellyfinClient
 

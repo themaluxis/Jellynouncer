@@ -53,6 +53,7 @@ from urllib.parse import urlparse
 
 import yaml
 from pydantic import BaseModel, Field, ConfigDict, ValidationError, field_validator
+from utils import get_logger
 
 
 # ==================== JELLYFIN CONFIGURATION ====================
@@ -1014,14 +1015,11 @@ class ConfigurationValidator:
         ```
     """
 
-    def __init__(self, logger: logging.Logger):
+    def __init__(self):
         """
         Initialize validator with logger and empty error/warning lists.
-
-        Args:
-            logger (logging.Logger): Logger instance for reporting validation progress
         """
-        self.logger = logger
+        self.logger = get_logger("config")
         self.errors: List[str] = []
         self.warnings: List[str] = []
 

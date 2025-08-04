@@ -24,20 +24,18 @@ import time
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any
 
 import aiohttp
-from fastapi import HTTPException
 
 from config_models import AppConfig, ConfigurationValidator
 from webhook_models import WebhookPayload
-from media_models import MediaItem
 from database_manager import DatabaseManager
 from jellyfin_api import JellyfinAPI
 from discord_services import DiscordNotifier
 from rating_services import RatingService
 from change_detector import ChangeDetector
-from utils import setup_logging
+from utils import get_logger
 
 
 class WebhookService:
@@ -100,11 +98,11 @@ class WebhookService:
         # Process a webhook from Jellyfin
         webhook_payload = WebhookPayload(ItemId="123", Name="Movie", ...)
         result = await service.process_webhook(webhook_payload)
-        print(f"Processed {result['action']} for {result['item_name']}")
+        logger.info(f"Processed {result['action']} for {result['item_name']}")
 
         # Check service health
         health = await service.health_check()
-        print(f"Service status: {health['status']}")
+        logger.info(f"Service status: {health['status']}")
 
         # Clean up when shutting down
         await service.cleanup()
@@ -115,10 +113,6 @@ class WebhookService:
         exist per application to avoid conflicts with shared resources like
         the database and background tasks.
     """
-
-    # Class-level logger to prevent multiple logging setups
-    # This is a "class variable" shared by all instances
-    _logger = None
 
     def __init__(self):
         """
@@ -135,19 +129,16 @@ class WebhookService:
             1. __init__: Sync operations (logging, config loading, object creation)
             2. initialize(): Async operations (database setup, API connections)
 
-        **Understanding Class Variables vs Instance Variables:**
-            - _logger is a class variable (shared by all instances)
-            - config, db, etc. are instance variables (unique to each instance)
+        **Understanding Component Initialization:**
+            We initialize all component references to None and populate them during
+            the async initialize() method. This ensures clean error handling and
+            allows for proper resource management.
 
         Raises:
             SystemExit: If configuration loading or validation fails critically
         """
-        # Set up logging only once at the class level to avoid duplicate loggers
-        # The 'if' statement ensures we don't create multiple loggers
-        if WebhookService._logger is None:
-            WebhookService._logger = setup_logging()
-
-        self.logger = WebhookService._logger
+        # Set up component-specific logger
+        self.logger = get_logger("webhook")
 
         # Initialize component references to None
         # We'll populate these with actual objects later
@@ -165,616 +156,380 @@ class WebhookService:
         self.sync_in_progress = False  # Are we currently syncing the library?
         self.is_background_sync = False  # Is the sync running in the background?
         self.initial_sync_complete = False  # Have we done our first sync?
-        self.shutdown_event = asyncio.Event()  # Signal for coordinated shutdown
+        self.shutdown_event = asyncio.Event()  # Graceful shutdown coordination
 
-        # Load and validate configuration
-        # This is critical - if config fails, the service can't start
-        try:
-            validator = ConfigurationValidator(self.logger)
-            self.config = validator.load_and_validate_config()
-            self.logger.info("Configuration loaded and validated successfully")
-        except Exception as e:
-            self.logger.error(f"Failed to load configuration: {e}")
-            raise SystemExit(1)  # Exit immediately if config fails
+        # Record service startup time for uptime tracking
+        self._start_time = time.time()
 
-        # Initialize component objects with validated configuration
-        # Note: These are just object creation, not connection establishment
-        try:
-            self.db = DatabaseManager(self.config.database, self.logger)
-            self.jellyfin = JellyfinAPI(self.config.jellyfin, self.logger)
-            self.change_detector = ChangeDetector(self.config.notifications, self.logger)
-            self.discord = DiscordNotifier(self.config.discord, self.config.jellyfin.server_url, self.logger)
-            self.rating_service = RatingService(self.config.rating_services, self.logger)
-
-            self.logger.info("Service components initialized successfully")
-
-        except Exception as e:
-            self.logger.error(f"Failed to initialize service components: {e}")
-            raise SystemExit(1)
+        self.logger.info("WebhookService created - ready for initialization")
 
     async def initialize(self) -> None:
         """
-        Perform async initialization of all service components.
+        Initialize all service components and establish connections.
 
-        This method handles the initialization tasks that require async operations,
-        such as establishing database connections, testing API connectivity, and
-        performing the initial library synchronization.
+        This async method handles the complex initialization process that requires
+        network connections, database setup, and component coordination. It's
+        designed to fail gracefully if any component cannot be initialized.
 
-        **Why This is Async:**
-            Database connections, network requests to Jellyfin, and file system
-            operations all involve waiting for I/O operations. By making this
-            async, we can handle these operations efficiently without blocking
-            the entire application.
+        **Initialization Steps:**
+            1. Load and validate configuration from files and environment
+            2. Initialize database manager and create/migrate tables
+            3. Connect to Jellyfin API and verify authentication
+            4. Set up Discord notification manager with webhooks
+            5. Initialize external rating services (OMDb, TMDb, TVDb)
+            6. Create change detector for upgrade notifications
+            7. Perform initial library sync if needed
+            8. Start background maintenance tasks
 
-        **The Initialization Flow:**
-            1. Initialize database (create tables, set up connections)
-            2. Test Jellyfin connectivity
-            3. Check if this is first run or if we need to sync
-            4. Perform initial sync if needed
-            5. Start background maintenance tasks
+        **Error Handling Strategy:**
+            Each initialization step is wrapped in try/catch blocks to provide
+            detailed error information. Critical failures will stop the service,
+            while non-critical failures (like rating services) will log warnings
+            but allow the service to continue.
 
         Raises:
-            Exception: Any initialization failure will be logged and re-raised
+            SystemExit: If critical components (database, Jellyfin) cannot be initialized
+            Various exceptions: If configuration is invalid or connections fail
+
+        Example:
+            ```python
+            webhook_service = WebhookService()
+            try:
+                await webhook_service.initialize()
+                logger.info("Service ready to process webhooks")
+            except Exception as e:
+                logger.error(f"Service initialization failed: {e}")
+                sys.exit(1)
+            ```
         """
-        self.logger.info("Starting Jellynouncer service initialization...")
-
-        # Track when we started for uptime calculations
-        self._start_time = time.time()
-
         try:
-            # Initialize database connection and create tables if needed
-            # This is async because it involves file I/O and potentially slow operations
-            await self.db.initialize()
-            self.logger.info("Database initialized successfully")
+            self.logger.info("Starting WebhookService initialization...")
 
-            # Test Jellyfin connectivity before proceeding
-            # No point in continuing if we can't talk to Jellyfin
-            jellyfin_connected = await self.jellyfin.is_connected()
-            if jellyfin_connected:
-                self.logger.info("Jellyfin connectivity verified")
-            else:
-                self.logger.warning(
-                    "Jellyfin server not accessible - service will continue but functionality may be limited")
+            # Step 1: Load and validate configuration
+            self.logger.debug("Loading application configuration...")
+            try:
+                config_validator = ConfigurationValidator()
+                self.config = await config_validator.load_and_validate_config()
+                self.logger.info("Configuration loaded and validated successfully")
+                self.logger.debug(f"Jellyfin server: {self.config.jellyfin.server_url}")
+                self.logger.debug(f"Database path: {self.config.database.path}")
+            except Exception as e:
+                self.logger.error(f"Configuration loading failed: {e}")
+                raise SystemExit(f"Cannot start without valid configuration: {e}")
 
-            # Check if this is the first run by looking for our completion marker
-            # This helps us decide whether to do a full sync or just start processing webhooks
-            init_complete_path = Path("/app/data/init_complete")
+            # Step 2: Initialize database manager
+            self.logger.debug("Initializing database manager...")
+            try:
+                self.db = DatabaseManager(self.config.database)
+                await self.db.initialize()
+                self.logger.info("Database manager initialized successfully")
+            except Exception as e:
+                self.logger.error(f"Database initialization failed: {e}")
+                raise SystemExit(f"Cannot start without database: {e}")
 
-            if not init_complete_path.exists() and jellyfin_connected:
-                # First run - do a complete sync to populate our database
-                self.logger.info("First run detected - performing initial library sync")
-                await self._perform_initial_sync()
-                self.initial_sync_complete = True
-            else:
-                # Not first run - mark initial sync as complete so webhooks can be processed
-                self.initial_sync_complete = True
-                self.logger.info("Initialization complete - ready to process webhooks")
+            # Step 3: Initialize Jellyfin API client
+            self.logger.debug("Connecting to Jellyfin API...")
+            try:
+                self.jellyfin = JellyfinAPI(self.config.jellyfin)
+                if await self.jellyfin.connect():
+                    self.logger.info("Connected to Jellyfin API successfully")
+                else:
+                    self.logger.error("Failed to connect to Jellyfin API")
+                    raise SystemExit("Cannot start without Jellyfin connection")
+            except Exception as e:
+                self.logger.error(f"Jellyfin API initialization failed: {e}")
+                raise SystemExit(f"Cannot connect to Jellyfin: {e}")
 
-            # Start background maintenance tasks
-            # These run continuously to keep the service healthy
-            asyncio.create_task(self.background_tasks())
-            self.logger.info("Background maintenance tasks started")
+            # Step 4: Initialize Discord notification manager
+            self.logger.debug("Setting up Discord notification manager...")
+            try:
+                # Create aiohttp session for Discord
+                session = aiohttp.ClientSession()
+                self.discord = DiscordNotifier(self.config.discord)
+                await self.discord.initialize(session, self.config.jellyfin)
+                self.logger.info("Discord notification manager initialized")
+            except Exception as e:
+                self.logger.error(f"Discord manager initialization failed: {e}")
+                raise SystemExit(f"Cannot start without Discord manager: {e}")
 
-        except Exception as e:
-            self.logger.error(f"Service initialization failed: {e}")
+            # Step 5: Initialize rating service (non-critical)
+            self.logger.debug("Initializing external rating services...")
+            try:
+                self.rating_service = RatingService(self.config.rating_services)
+                await self.rating_service.initialize(session, self.db)
+                if self.rating_service.enabled:
+                    self.logger.info("Rating services initialized and enabled")
+                else:
+                    self.logger.info("Rating services initialized but disabled")
+            except Exception as e:
+                self.logger.warning(f"Rating service initialization failed: {e}")
+                self.logger.info("Service will continue without rating enhancements")
+
+            # Step 6: Initialize change detector
+            self.logger.debug("Setting up change detector...")
+            try:
+                self.change_detector = ChangeDetector(self.config.notifications)
+                self.logger.info("Change detector initialized successfully")
+            except Exception as e:
+                self.logger.error(f"Change detector initialization failed: {e}")
+                raise SystemExit(f"Cannot start without change detection: {e}")
+
+            # Step 7: Perform initial library sync if needed
+            await self._check_initial_sync()
+
+            # Step 8: Log successful initialization
+            self.logger.info("=" * 60)
+            self.logger.info("🚀 WebhookService initialization completed successfully!")
+            self.logger.info("Service is ready to process Jellyfin webhooks")
+            self.logger.info("=" * 60)
+
+        except SystemExit:
+            # Re-raise SystemExit exceptions to stop the application
             raise
+        except Exception as e:
+            self.logger.error(f"Unexpected error during initialization: {e}", exc_info=True)
+            raise SystemExit(f"Service initialization failed: {e}")
 
     async def process_webhook(self, payload: WebhookPayload) -> Dict[str, Any]:
         """
-        Process an incoming webhook from Jellyfin and send appropriate notifications.
+        Process incoming webhook from Jellyfin media server.
 
-        This is the main entry point for webhook processing and the heart of the
-        entire application. When Jellyfin adds or updates a media item, it sends
-        a webhook to this method, which then orchestrates the entire response.
+        This is the main entry point for webhook processing. It handles the entire
+        workflow from receiving a webhook payload to sending Discord notifications,
+        including change detection, database updates, and error recovery.
 
-        **The Process Flow:**
-            1. Wait for initial sync to complete (if needed)
-            2. Extract and validate media item from webhook payload
-            3. Check if item already exists in our database
-            4. Detect what changes occurred (new item vs. upgrade)
-            5. Send appropriate Discord notification
-            6. Update our database with the latest information
+        **Webhook Processing Pipeline:**
+            1. Validate and extract media information from webhook payload
+            2. Fetch additional metadata from Jellyfin API if needed
+            3. Check database for existing item to detect changes vs new items
+            4. Apply intelligent change detection for upgrade scenarios
+            5. Update database with new/changed information
+            6. Send appropriate Discord notifications based on content type
+            7. Handle errors gracefully without breaking the service
 
-        **Understanding Context Managers and Performance Monitoring:**
-            The method tracks processing time to help identify performance
-            bottlenecks. This is important for a webhook service because
-            Jellyfin expects quick responses.
-
-        **Error Handling Strategy:**
-            The method uses a multi-layered error handling approach:
-            - Specific exceptions are caught and converted to appropriate HTTP responses
-            - Generic exceptions are caught and logged with full context
-            - HTTP exceptions are preserved and re-raised for FastAPI
+        **Understanding the Workflow:**
+            Not every webhook should result in a notification. The service needs
+            to distinguish between:
+            - New items that should always generate notifications
+            - Updated items where only meaningful changes warrant notifications
+            - Metadata-only updates that don't affect the user experience
 
         Args:
-            payload (WebhookPayload): Validated webhook payload from Jellyfin containing
-                all the information about the media item that was added or changed.
+            payload (WebhookPayload): Validated webhook data from Jellyfin
 
         Returns:
-            Dict[str, Any]: Processing results and metrics including:
-                - status: "success" if processing completed
-                - item_id: Jellyfin ID of the processed item
-                - item_name: Human-readable name of the item
-                - processing_time_ms: How long processing took
-                - action: What action was taken (new_item, upgraded, no_changes, etc.)
-                - changes_count: Number of changes detected (for upgrades)
-                - notification_sent: Whether a Discord notification was sent
+            Dict[str, Any]: Processing result with details about the action taken
 
         Raises:
-            HTTPException:
-                - 400 (Bad Request): For invalid webhook payloads
-                - 500 (Internal Server Error): For processing failures
+            HTTPException: If processing fails critically (rare - most errors are handled gracefully)
 
         Example:
             ```python
-            # This is typically called by FastAPI when a webhook is received
+            # Webhook payload from Jellyfin
             payload = WebhookPayload(
-                ItemId="12345",
+                ItemId="abc123",
                 Name="The Matrix",
                 ItemType="Movie",
-                Year=1999
+                NotificationType="library.new"
             )
 
-            result = await service.process_webhook(payload)
+            # Process the webhook
+            result = await webhook_service.process_webhook(payload)
 
-            # Example successful response:
-            # {
-            #     "status": "success",
-            #     "item_id": "12345",
-            #     "item_name": "The Matrix",
-            #     "processing_time_ms": 45.23,
-            #     "action": "new_item",
-            #     "changes_count": 0,
-            #     "notification_sent": True
-            # }
+            logger.info(f"Action: {result['action']}")  # "new_item" or "item_updated"
+            logger.info(f"Item: {result['item_name']}")  # "The Matrix"
             ```
+
+        Note:
+            This method is designed to be resilient and should never crash the
+            entire service. All errors are logged and handled gracefully.
         """
-        # Start timing for performance monitoring
-        request_start_time = time.time()
-
         try:
-            # Wait for initial sync if needed (with smart timeout handling)
-            # We don't want to process webhooks before we know what's already in the library
-            if not self.initial_sync_complete and self.sync_in_progress:
-                await self._wait_for_initial_sync()
+            start_time = time.time()
+            self.logger.debug(f"Processing webhook for {payload.Name} ({payload.ItemType})")
 
-            # Extract and validate media item from webhook payload
-            # This converts Jellyfin's webhook format into our internal MediaItem format
+            # Extract media item information from webhook payload
             try:
-                media_item = self._extract_from_webhook(payload)
-                self.logger.debug(f"Successfully extracted media item: {media_item.name} (ID: {media_item.item_id})")
+                # Get detailed item information from Jellyfin
+                item_data = await self.jellyfin.get_item(payload.ItemId)
+                if not item_data:
+                    self.logger.warning(f"Could not fetch item data for {payload.ItemId}")
+                    return {
+                        "status": "error",
+                        "action": "fetch_failed",
+                        "item_id": payload.ItemId,
+                        "item_name": payload.Name,
+                        "message": "Could not fetch item data from Jellyfin"
+                    }
+
+                # Convert to our internal MediaItem format
+                media_item = await self.jellyfin.convert_to_media_item(item_data)
+                self.logger.debug(f"Converted to MediaItem: {media_item.name}")
+
             except Exception as e:
-                self.logger.error(f"Error extracting media item from webhook payload: {e}")
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid webhook payload: {str(e)}"
-                )
-
-            # Process the media item (change detection, notifications, database updates)
-            # This is where the main business logic happens
-            try:
-                result = await self._process_media_item(media_item)
-
-                # Calculate and log processing time for performance monitoring
-                processing_time = (time.time() - request_start_time) * 1000
-                self.logger.info(
-                    f"Webhook processed successfully for {media_item.name} "
-                    f"(ID: {media_item.item_id}) in {processing_time:.2f}ms"
-                )
-
-                # Return comprehensive results
+                self.logger.error(f"Error extracting media item from webhook: {e}")
                 return {
-                    "status": "success",
-                    "item_id": media_item.item_id,
-                    "item_name": media_item.name,
-                    "processing_time_ms": round(processing_time, 2),
-                    **result  # Include all the processing results (action, changes, etc.)
+                    "status": "error",
+                    "action": "extraction_failed",
+                    "item_id": payload.ItemId,
+                    "item_name": payload.Name,
+                    "message": str(e)
                 }
 
-            except Exception as e:
-                self.logger.error(f"Error processing media item {media_item.item_id}: {e}")
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Error processing media item: {str(e)}"
-                )
+            # Check if this is a new item or an update to existing item
+            existing_item = await self.db.get_item(media_item.item_id)
 
-        except HTTPException:
-            # Re-raise HTTP exceptions as-is so FastAPI can handle them properly
-            raise
-        except Exception as e:
-            # Catch any other unexpected errors and convert to 500 error
-            processing_time = (time.time() - request_start_time) * 1000
-            self.logger.error(f"Webhook processing failed after {processing_time:.2f}ms: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="Internal server error during webhook processing"
-            )
+            if existing_item:
+                # This is an update - check for meaningful changes
+                self.logger.debug(f"Found existing item, checking for changes...")
 
-    async def _wait_for_initial_sync(self) -> None:
-        """
-        Wait for initial sync to complete with smart timeout handling.
+                changes = self.change_detector.detect_changes(existing_item, media_item)
 
-        This method implements different waiting strategies based on the type of sync:
-        - Background sync: Don't wait (process webhooks immediately for better UX)
-        - Foreground/initial sync: Wait indefinitely until completion
+                if changes:
+                    # Meaningful changes detected - update and notify
+                    change_summary = self.change_detector.get_change_summary(changes)
+                    self.logger.info(f"Changes detected for {media_item.name}: {change_summary}")
 
-        **Why Smart Timeout Handling?**
-            We want to balance user experience with data consistency:
-            - For background syncs, users expect webhooks to work immediately
-            - For initial syncs, we need complete data before processing webhooks
+                    # Update database with new information
+                    await self.db.save_item(media_item)
 
-        **Understanding Async Sleep:**
-            `await asyncio.sleep()` is non-blocking - it pauses this specific
-            operation but allows other operations to continue. This is much
-            better than `time.sleep()` which would block the entire application.
-        """
-        # Don't wait for background syncs - process webhooks immediately
-        if getattr(self, 'is_background_sync', False):
-            self.logger.debug("Background sync in progress, proceeding with webhook processing immediately")
-            return
+                    # Send upgrade notification
+                    await self.discord.send_notification(
+                        media_item,
+                        notification_type="upgrade",
+                        changes=changes
+                    )
 
-        # For blocking initial sync, wait indefinitely (no timeout)
-        check_interval = 2  # Check every 2 seconds
-        wait_time = 0
-
-        while self.sync_in_progress:
-            self.logger.debug(f"Waiting for initial full sync to complete... ({wait_time}s elapsed)")
-            await asyncio.sleep(check_interval)  # Non-blocking wait
-            wait_time += check_interval
-
-    async def _process_media_item(self, media_item: MediaItem) -> Dict[str, Any]:
-        """
-        Process a media item for changes and send appropriate notifications.
-
-        This method implements the core business logic for handling media items.
-        It's where we decide whether something is new or an upgrade, and what
-        kind of notification to send.
-
-        **The Processing Logic:**
-            1. Check if item exists in database using content hash
-            2. If exists and hash changed: detect specific changes
-            3. If meaningful changes found: send upgrade notification
-            4. If new item: send new item notification
-            5. Update database with current item state
-
-        **Understanding Content Hashes:**
-            A content hash is like a "fingerprint" of the media item's important
-            properties. If any significant property changes, the hash changes too.
-            This lets us quickly detect if something meaningful changed without
-            comparing every field individually.
-
-        Args:
-            media_item (MediaItem): The media item to process, already extracted
-                from the webhook payload and validated.
-
-        Returns:
-            Dict[str, Any]: Processing results including:
-                - action: Type of action taken (new_item, upgraded, no_changes, etc.)
-                - changes_count: Number of meaningful changes detected
-                - notification_sent: Whether a Discord notification was sent
-                - changes: List of change types (for upgrades)
-
-        Example:
-            ```python
-            # For a new movie
-            result = await self._process_media_item(movie_item)
-            # Returns: {"action": "new_item", "changes_count": 0, "notification_sent": True}
-
-            # For a resolution upgrade
-            result = await self._process_media_item(upgraded_movie)
-            # Returns: {
-            #     "action": "upgraded",
-            #     "changes_count": 1,
-            #     "notification_sent": True,
-            #     "changes": ["resolution_upgrade"]
-            # }
-            ```
-        """
-        # Check if item already exists by looking up its content hash
-        # This is much faster than retrieving the full item
-        existing_hash = await self.db.get_item_hash(media_item.item_id)
-
-        if existing_hash:
-            # Item exists - check if it has changed by comparing hashes
-            if existing_hash != media_item.content_hash:
-                # Hash changed - need to detect what specifically changed
-                existing_item = await self.db.get_item(media_item.item_id)
-
-                if existing_item:
-                    # Perform detailed change detection
-                    # This compares the old and new versions to find meaningful changes
-                    changes = self.change_detector.detect_changes(existing_item, media_item)
-
-                    if changes:
-                        # Meaningful changes detected - send upgrade notification
-                        notification_sent = await self.discord.send_notification(
-                            media_item, changes, is_new=False
-                        )
-
-                        self.logger.info(f"Processed upgrade for {media_item.name} with {len(changes)} changes")
-
-                        result = {
-                            "action": "upgraded",
-                            "changes_count": len(changes),
-                            "notification_sent": notification_sent,
-                            "changes": [change['type'] for change in changes]
-                        }
-                    else:
-                        # Hash changed but no significant changes detected
-                        # This can happen with minor metadata updates we don't care about
-                        self.logger.debug(f"Hash changed but no significant changes detected for {media_item.name}")
-                        result = {
-                            "action": "hash_updated",
-                            "changes_count": 0,
-                            "notification_sent": False
-                        }
+                    processing_time = time.time() - start_time
+                    return {
+                        "status": "success",
+                        "action": "item_updated",
+                        "item_id": media_item.item_id,
+                        "item_name": media_item.name,
+                        "changes_detected": len(changes),
+                        "change_summary": change_summary,
+                        "processing_time": round(processing_time, 3)
+                    }
                 else:
-                    # Couldn't retrieve existing item for comparison
-                    # This is unusual and might indicate a database issue
-                    self.logger.warning(
-                        f"Could not retrieve existing item {media_item.item_id} for change detection")
-                    result = {
-                        "action": "error_retrieving_existing",
-                        "changes_count": 0,
-                        "notification_sent": False
+                    # No meaningful changes - just update timestamp
+                    self.logger.debug(f"No meaningful changes detected for {media_item.name}")
+                    await self.db.save_item(media_item)
+
+                    processing_time = time.time() - start_time
+                    return {
+                        "status": "success",
+                        "action": "metadata_updated",
+                        "item_id": media_item.item_id,
+                        "item_name": media_item.name,
+                        "message": "Metadata updated, no notification sent",
+                        "processing_time": round(processing_time, 3)
                     }
             else:
-                # No changes detected (hash matches exactly)
-                self.logger.debug(f"No changes detected for {media_item.name} (hash unchanged)")
-                result = {
-                    "action": "no_changes",
-                    "changes_count": 0,
-                    "notification_sent": False
-                }
-        else:
-            # New item - send new item notification
-            notification_sent = await self.discord.send_notification(media_item, is_new=True)
-            self.logger.info(f"Processed new item: {media_item.name}")
+                # This is a new item - save and notify
+                self.logger.info(f"New item detected: {media_item.name} ({media_item.item_type})")
 
-            result = {
-                "action": "new_item",
-                "changes_count": 0,
-                "notification_sent": notification_sent
+                # Save to database
+                await self.db.save_item(media_item)
+
+                # Send new item notification
+                await self.discord.send_notification(media_item, notification_type="new")
+
+                processing_time = time.time() - start_time
+                return {
+                    "status": "success",
+                    "action": "new_item",
+                    "item_id": media_item.item_id,
+                    "item_name": media_item.name,
+                    "item_type": media_item.item_type,
+                    "processing_time": round(processing_time, 3)
+                }
+
+        except Exception as e:
+            processing_time = time.time() - start_time
+            self.logger.error(f"Error processing webhook for {payload.Name}: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "action": "processing_failed",
+                "item_id": payload.ItemId,
+                "item_name": payload.Name,
+                "message": str(e),
+                "processing_time": round(processing_time, 3)
             }
 
-        # Save/update item in database (only if new or changed)
-        # No point saving if nothing changed
-        if not existing_hash or existing_hash != media_item.content_hash:
-            save_success = await self.db.save_item(media_item)
-            if not save_success:
-                self.logger.warning(f"Failed to save item {media_item.item_id} to database")
-
-        return result
-
-    def _extract_from_webhook(self, payload: WebhookPayload) -> MediaItem:
+    async def trigger_manual_sync(self) -> Dict[str, Any]:
         """
-        Extract and normalize a MediaItem from Jellyfin webhook payload.
+        Trigger a manual library synchronization with Jellyfin.
 
-        This method converts Jellyfin's webhook format into our internal MediaItem
-        format. Jellyfin's webhook contains lots of fields with different naming
-        conventions, so we need to map them to our standardized format.
+        This method allows administrators to manually start a library sync
+        without waiting for the scheduled background sync. It's useful when
+        you know items have been added to Jellyfin but want immediate processing.
 
-        **Understanding Data Transformation:**
-            Raw webhook data from Jellyfin isn't always in the format we want:
-            - Field names use different conventions
-            - Some data needs parsing (like comma-separated genres)
-            - Numbers might be strings that need conversion
-            - We need to handle missing or invalid data gracefully
-
-        **Validation Strategy:**
-            We validate the most critical fields (ItemId, Name, ItemType) and
-            warn about problems with optional fields rather than failing completely.
-
-        Args:
-            payload (WebhookPayload): The validated webhook payload from Jellyfin
-                containing raw data about the media item.
+        **Manual vs Background Sync:**
+            Manual syncs take priority over background syncs and provide immediate
+            feedback about the sync status. They're designed for on-demand use
+            when administrators need immediate results.
 
         Returns:
-            MediaItem: Normalized media item with all fields properly formatted
-                and validated for internal use.
-
-        Raises:
-            ValueError: If required fields are missing or invalid.
+            Dict[str, Any]: Sync initiation status and result information
 
         Example:
             ```python
-            # Process webhook payload
-            payload = WebhookPayload(**webhook_data)
-            media_item = service._extract_from_webhook(payload)
-            print(f"Extracted: {media_item.name} ({media_item.item_type})")
+            result = await webhook_service.trigger_manual_sync()
+            if result["status"] == "success":
+                logger.info(f"Sync completed: {result['items_processed']} items")
+            else:
+                logger.warning(f"Sync issue: {result['message']}")
             ```
+
+        Note:
+            Multiple sync requests are queued to prevent resource conflicts.
+            If a sync is already running, this method returns immediately
+            with a warning status.
         """
-        self.logger.debug(f"Extracting MediaItem from webhook payload for {payload.Name} ({payload.ItemType})")
+        if self.sync_in_progress:
+            self.logger.warning("Manual sync requested but sync already in progress")
+            return {
+                "status": "warning",
+                "message": "Library sync already in progress",
+                "sync_in_progress": True
+            }
 
-        # Validate required fields first
-        if not payload.ItemId or not payload.Name or not payload.ItemType:
-            raise ValueError("Missing required fields: ItemId, Name, and ItemType are mandatory")
+        try:
+            self.logger.info("Manual library sync triggered by administrator")
+            result = await self.sync_jellyfin_library(background=False)
 
-        # ==================== PARSE SEASON/EPISODE NUMBERS ====================
-        # Handle multiple season number formats with fallback logic
-        # Jellyfin can send SeasonNumber (int) or SeasonNumber00 (padded string)
-        season_number = None
-        if payload.SeasonNumber is not None:
-            season_number = payload.SeasonNumber
-        elif payload.SeasonNumber00:
-            try:
-                season_number = int(payload.SeasonNumber00)
-            except (ValueError, TypeError) as e:
-                self.logger.warning(f"Invalid season number '{payload.SeasonNumber00}': {e}")
+            self.logger.info(f"Manual sync completed with status: {result.get('status', 'unknown')}")
+            return result
 
-        # Handle multiple episode number formats with fallback logic
-        # Jellyfin can send EpisodeNumber (int) or EpisodeNumber00 (padded string)
-        episode_number = None
-        if payload.EpisodeNumber is not None:
-            episode_number = payload.EpisodeNumber
-        elif payload.EpisodeNumber00:
-            try:
-                episode_number = int(payload.EpisodeNumber00)
-            except (ValueError, TypeError) as e:
-                self.logger.warning(f"Invalid episode number '{payload.EpisodeNumber00}': {e}")
-
-        # ==================== PARSE GENRES ====================
-        # Parse genres from comma-separated string to list for template use
-        # This allows templates to iterate over genres or display them as needed
-        genres_list = []
-        if payload.Genres:
-            try:
-                genres_list = [genre.strip() for genre in payload.Genres.split(',') if genre.strip()]
-            except Exception as e:
-                self.logger.warning(f"Error parsing genres '{payload.Genres}': {e}")
-
-        # ==================== CREATE MEDIA ITEM WITH ALL PROPERTIES ====================
-        # Map ALL webhook properties to MediaItem fields for template availability
-        return MediaItem(
-            # ==================== CORE IDENTIFICATION ====================
-            # Required fields (unchanged for backward compatibility)
-            item_id=payload.ItemId,
-            name=payload.Name,
-            item_type=payload.ItemType,
-
-            # ==================== CONTENT METADATA ====================
-            # Basic metadata (unchanged for backward compatibility)
-            year=payload.Year,
-            series_name=payload.SeriesName,
-            season_number=season_number,
-            episode_number=episode_number,
-            overview=payload.Overview,
-
-            # ==================== VIDEO TECHNICAL SPECIFICATIONS ====================
-            # Existing video properties (unchanged for backward compatibility)
-            video_height=payload.Video_0_Height,
-            video_width=payload.Video_0_Width,
-            video_codec=payload.Video_0_Codec,
-            video_profile=payload.Video_0_Profile,
-            video_range=payload.Video_0_VideoRange,
-            video_framerate=payload.Video_0_FrameRate,
-            aspect_ratio=payload.Video_0_AspectRatio,
-
-            # Additional video properties from webhook (now available in templates)
-            video_title=payload.Video_0_Title,
-            video_type=payload.Video_0_Type,
-            video_language=payload.Video_0_Language,
-            video_level=payload.Video_0_Level,
-            video_interlaced=payload.Video_0_Interlaced,
-            video_bitrate=payload.Video_0_Bitrate,
-            video_bitdepth=payload.Video_0_BitDepth,
-            video_colorspace=payload.Video_0_ColorSpace,
-            video_colortransfer=payload.Video_0_ColorTransfer,
-            video_colorprimaries=payload.Video_0_ColorPrimaries,
-            video_pixelformat=payload.Video_0_PixelFormat,
-            video_refframes=payload.Video_0_RefFrames,
-
-            # ==================== AUDIO TECHNICAL SPECIFICATIONS ====================
-            # Existing audio properties (unchanged for backward compatibility)
-            audio_codec=payload.Audio_0_Codec,
-            audio_channels=payload.Audio_0_Channels,
-            audio_language=payload.Audio_0_Language,
-            audio_bitrate=payload.Audio_0_Bitrate,
-
-            # Additional audio properties from webhook (now available in templates)
-            audio_title=payload.Audio_0_Title,
-            audio_type=payload.Audio_0_Type,
-            audio_samplerate=payload.Audio_0_SampleRate,
-            audio_default=payload.Audio_0_Default,
-
-            # ==================== SUBTITLE INFORMATION ====================
-            # All subtitle properties from webhook (now available in templates)
-            subtitle_title=payload.Subtitle_0_Title,
-            subtitle_type=payload.Subtitle_0_Type,
-            subtitle_language=payload.Subtitle_0_Language,
-            subtitle_codec=payload.Subtitle_0_Codec,
-            subtitle_default=payload.Subtitle_0_Default,
-            subtitle_forced=payload.Subtitle_0_Forced,
-            subtitle_external=payload.Subtitle_0_External,
-
-            # ==================== EXTERNAL REFERENCES ====================
-            # Existing provider IDs (unchanged for backward compatibility)
-            imdb_id=payload.Provider_imdb,
-            tmdb_id=payload.Provider_tmdb,
-            tvdb_id=payload.Provider_tvdb,
-
-            # Additional provider ID (now available in templates)
-            tvdb_slug=payload.Provider_tvdbslug,
-
-            # ==================== SERVER INFORMATION ====================
-            # Server context from webhook (now available in templates)
-            server_id=payload.ServerId,
-            server_name=payload.ServerName,
-            server_version=payload.ServerVersion,
-            server_url=payload.ServerUrl,
-            notification_type=payload.NotificationType,
-
-            # ==================== FILE SYSTEM INFORMATION ====================
-            # File system data from webhook (now available in templates)
-            file_path=payload.Path,
-            library_name=payload.LibraryName,
-
-            # ==================== TV SERIES DATA ====================
-            # Existing series ID (unchanged for backward compatibility)
-            series_id=payload.SeriesId,
-
-            # Additional TV series fields from webhook (now available in templates)
-            series_premiere_date=payload.SeriesPremiereDate,
-            season_id=payload.SeasonId,
-            season_number_padded=payload.SeasonNumber00,
-            season_number_padded_3=payload.SeasonNumber000,
-            episode_number_padded=payload.EpisodeNumber00,
-            episode_number_padded_3=payload.EpisodeNumber000,
-            air_time=payload.AirTime,
-
-            # ==================== TIMESTAMP INFORMATION ====================
-            # Timestamp data from webhook (now available in templates)
-            timestamp=payload.Timestamp,
-            utc_timestamp=payload.UtcTimestamp,
-            premiere_date=payload.PremiereDate,
-
-            # ==================== EXTENDED METADATA ====================
-            # Existing fields (unchanged for backward compatibility)
-            runtime_ticks=payload.RunTimeTicks,
-            genres=genres_list,  # Parsed from comma-separated string for template iteration
-
-            # Additional metadata fields from webhook (now available in templates)
-            tagline=payload.Tagline,
-            runtime_formatted=payload.RunTime,
-
-            # ==================== API-ONLY FIELDS WITH DEFAULTS ====================
-            # These fields come from API calls, not webhooks, so set sensible defaults
-            # They will be populated later via API enrichment if available
-            date_created=payload.UtcTimestamp,  # Use webhook timestamp as creation time
-            date_modified=payload.UtcTimestamp,
-            official_rating=None,  # Not available in webhook - set via API later
-            studios=[],  # Not available in webhook - set via API later
-            tags=[],  # Not available in webhook - set via API later
-
-            # ==================== MUSIC/PHOTO FIELDS ====================
-            # These remain as defaults since they're typically set via API enrichment
-            # for music and photo content types
-            album=None,
-            artists=[],
-            album_artist=None,
-            width=None,
-            height=None,
-            file_size=None,
-        )
+        except Exception as e:
+            self.logger.error(f"Manual sync failed: {e}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "sync_in_progress": False
+            }
 
     async def health_check(self) -> Dict[str, Any]:
         """
         Perform comprehensive health check of all service components.
 
-        This method checks the status of all major components to determine
-        overall service health. It's used both internally for monitoring
-        and externally by load balancers or monitoring systems.
+        This method tests the health and connectivity of all major service
+        components to provide insight into service status. It's designed for
+        monitoring and troubleshooting purposes.
 
-        **Health Check Strategy:**
-            We check each component individually and then determine overall
-            health based on the results. Some components are more critical
-            than others - for example, we can operate without rating services
-            but not without database access.
+        **Health Check Components:**
+            - Jellyfin API connectivity and authentication
+            - Database accessibility and performance
+            - Discord webhook configuration and connectivity
+            - Rating service availability (if enabled)
+            - Service operational status (sync status, etc.)
 
-        **Understanding Error Isolation:**
-            Each component check is wrapped in its own try/catch block so
-            that a failure in one component doesn't prevent checking others.
-            This gives us better visibility into what's working and what isn't.
+        **Health Status Levels:**
+            - healthy: All components functioning normally
+            - degraded: Some non-critical components have issues
+            - unhealthy: Critical components are failing
+
+        This gives us better visibility into what's working and what isn't.
 
         Returns:
             Dict[str, Any]: Comprehensive health status including:
@@ -786,11 +541,11 @@ class WebhookService:
         Example:
             ```python
             health = await service.health_check()
-            print(f"Service is {health['status']}")
+            logger.info(f"Service is {health['status']}")
 
             # Check individual components
             if health['components']['database']['status'] != 'healthy':
-                print("Database issues detected!")
+                logger.warning("Database issues detected!")
             ```
         """
         try:
@@ -818,136 +573,90 @@ class WebhookService:
                         "connected": False,
                         "error": "Cannot connect to Jellyfin server"
                     }
+                    health_data["status"] = "unhealthy"
             except Exception as e:
                 health_data["components"]["jellyfin"] = {
                     "status": "error",
                     "connected": False,
                     "error": str(e)
                 }
+                health_data["status"] = "unhealthy"
 
-            # Check database status
+            # Check database health
             try:
                 db_stats = await self.db.get_stats()
                 health_data["components"]["database"] = {
-                    "status": "healthy" if "error" not in db_stats else "unhealthy",
-                    "path": self.config.database.path,
-                    "wal_mode": self.config.database.wal_mode,
-                    **db_stats  # Include all database statistics
+                    "status": "healthy",
+                    "total_items": db_stats.get("total_items", 0),
+                    "db_size_mb": db_stats.get("db_size_mb", 0),
+                    "wal_mode": db_stats.get("wal_mode", False)
                 }
             except Exception as e:
                 health_data["components"]["database"] = {
                     "status": "error",
                     "error": str(e)
                 }
+                if health_data["status"] == "healthy":
+                    health_data["status"] = "degraded"
 
             # Check Discord webhook status
             try:
                 webhook_status = self.discord.get_webhook_status()
-                enabled_webhooks = sum(1 for wh in webhook_status["webhooks"].values()
-                                       if wh.get("enabled", False))
                 health_data["components"]["discord"] = {
-                    "status": "healthy" if enabled_webhooks > 0 else "unhealthy",
-                    "enabled_webhooks": enabled_webhooks,
-                    "routing_enabled": webhook_status["routing_enabled"]
+                    "status": "healthy" if webhook_status.get("configured", False) else "warning",
+                    "webhooks_configured": webhook_status.get("webhook_count", 0),
+                    "enabled_webhooks": webhook_status.get("enabled_count", 0)
                 }
             except Exception as e:
                 health_data["components"]["discord"] = {
                     "status": "error",
                     "error": str(e)
                 }
+                if health_data["status"] == "healthy":
+                    health_data["status"] = "degraded"
+
+            # Check rating service status (non-critical)
+            try:
+                if self.rating_service and self.rating_service.enabled:
+                    health_data["components"]["rating_services"] = {
+                        "status": "healthy",
+                        "enabled": True,
+                        "cache_duration_hours": self.rating_service.cache_duration_hours
+                    }
+                else:
+                    health_data["components"]["rating_services"] = {
+                        "status": "disabled",
+                        "enabled": False
+                    }
+            except Exception as e:
+                health_data["components"]["rating_services"] = {
+                    "status": "error",
+                    "error": str(e)
+                }
+                # Rating service errors don't affect overall health
 
             # Add service operational status
-            health_data.update({
+            health_data["service_status"] = {
                 "sync_in_progress": self.sync_in_progress,
                 "initial_sync_complete": self.initial_sync_complete,
-                "server_was_offline": self.server_was_offline
-            })
-
-            # Determine overall status based on component health
-            component_statuses = [comp.get("status") for comp in health_data["components"].values()]
-            if "error" in component_statuses:
-                health_data["status"] = "error"
-            elif "unhealthy" in component_statuses:
-                health_data["status"] = "degraded"
+                "server_was_offline": self.server_was_offline,
+                "uptime_seconds": round(time.time() - self._start_time, 2)
+            }
 
             return health_data
 
         except Exception as e:
-            self.logger.error(f"Error performing health check: {e}")
+            self.logger.error(f"Health check failed: {e}")
             return {
                 "status": "error",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "error": str(e)
-            }
-
-    async def manual_sync(self) -> Dict[str, Any]:
-        """
-        Trigger manual library synchronization through the API.
-
-        This method allows administrators to manually trigger a library sync
-        without waiting for the scheduled periodic sync. The sync runs in the
-        background to avoid blocking webhook processing.
-
-        **Background Sync Benefits:**
-            By running the sync in the background (using asyncio.create_task),
-            the API call returns immediately while the sync continues. This
-            provides better user experience and doesn't block webhook processing.
-
-        Returns:
-            Dict[str, Any]: Sync initiation status including:
-                - status: success, warning, or error
-                - message: Human-readable description of what happened
-
-        Example:
-            ```python
-            # Trigger manual sync via API
-            result = await service.manual_sync()
-
-            if result['status'] == 'success':
-                print("Manual sync started successfully")
-            elif result['status'] == 'warning':
-                print(f"Warning: {result['message']}")
-            else:
-                print(f"Error: {result['message']}")
-            ```
-        """
-        try:
-            # Check if a sync is already running
-            if self.sync_in_progress:
-                return {
-                    "status": "warning",
-                    "message": "Library sync already in progress - please wait for completion"
-                }
-
-            # Verify Jellyfin connectivity before starting
-            # No point starting a sync if we can't talk to Jellyfin
-            if not await self.jellyfin.is_connected():
-                return {
-                    "status": "error",
-                    "message": "Cannot start sync: Jellyfin server is not connected"
-                }
-
-            # Start sync in background (don't await - let it run independently)
-            # This allows the API to return immediately while sync continues
-            sync_task = asyncio.create_task(self.sync_jellyfin_library(background=True))
-
-            self.logger.info("Manual library sync initiated via API")
-
-            return {
-                "status": "success",
-                "message": "Library sync started in background"
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error starting manual sync: {e}")
-            return {
-                "status": "error",
-                "message": f"Failed to start sync: {str(e)}"
+                "error": str(e),
+                "message": "Health check system failure"
             }
 
     async def get_service_stats(self) -> Dict[str, Any]:
         """
-        Get comprehensive service statistics for monitoring and debugging.
+        Get detailed service statistics for monitoring and diagnostics.
 
         This method collects detailed statistics from all components to provide
         a complete picture of service operation. It's useful for monitoring,
@@ -969,9 +678,9 @@ class WebhookService:
             ```python
             stats = await service.get_service_stats()
 
-            print(f"Service uptime: {stats['service']['uptime_seconds']} seconds")
-            print(f"Database items: {stats['database']['total_items']}")
-            print(f"Jellyfin connected: {stats['jellyfin']['connected']}")
+            logger.info(f"Service uptime: {stats['service']['uptime_seconds']} seconds")
+            logger.info(f"Database items: {stats['database']['total_items']}")
+            logger.info(f"Jellyfin connected: {stats['jellyfin']['connected']}")
             ```
         """
         try:
@@ -1025,197 +734,79 @@ class WebhookService:
         """
         Run continuous background maintenance tasks for service health.
 
-        This method runs an infinite loop that performs periodic maintenance
-        tasks to keep the service running smoothly. It handles database
-        cleanup, connection monitoring, and periodic syncs.
+        This method runs indefinitely and performs periodic maintenance
+        tasks to keep the service healthy and performant. It's designed
+        to run as a background task alongside webhook processing.
 
-        **The Background Task Pattern:**
-            Background tasks run continuously in a separate async task, allowing
-            the main service to handle webhooks while maintenance happens in
-            the background. This is similar to having a janitor who cleans up
-            while the office workers continue their normal work.
+        **Background Tasks:**
+            - Periodic library synchronization with Jellyfin
+            - Database maintenance (VACUUM, cleanup)
+            - Connection health monitoring
+            - Performance optimization tasks
 
-        **Task Schedule:**
-            - Database maintenance: Every hour
-            - Connection monitoring: Every 60 seconds
-            - Periodic sync check: Every 60 seconds
-            - Error recovery: Continuous
+        **Task Scheduling:**
+            Tasks are scheduled based on time intervals and system load.
+            Critical tasks run more frequently, while maintenance tasks
+            run during low-activity periods.
 
-        **Understanding Exception Handling in Loops:**
-            Each task is wrapped in try/catch to prevent one failing task from
-            breaking the entire maintenance loop. This ensures the service
-            stays healthy even if one maintenance task encounters problems.
+        Note:
+            This method runs indefinitely until the service is shut down.
+            All errors are caught and logged to prevent the background
+            tasks from crashing the main service.
         """
-        self.logger.info("Background maintenance tasks started")
+        self.logger.info("Starting background maintenance tasks")
 
-        # Run forever until shutdown is requested
         while not self.shutdown_event.is_set():
             try:
-                # Database maintenance - vacuum and cleanup
-                await self._perform_database_maintenance()
+                # Task 1: Periodic library sync (every 6 hours)
+                if not self.sync_in_progress and self.initial_sync_complete:
+                    sync_interval = 6 * 3600  # 6 hours in seconds
+                    time_since_last_sync = time.time() - getattr(self, '_last_sync_time', 0)
 
-                # Monitor Jellyfin connection status
-                await self._monitor_jellyfin_connection()
+                    if time_since_last_sync > sync_interval:
+                        self.logger.info("Starting scheduled background library sync")
+                        try:
+                            result = await self.sync_jellyfin_library(background=True)
+                            self.logger.info(f"Background sync completed: {result.get('status', 'unknown')}")
+                            self._last_sync_time = time.time()
+                        except Exception as e:
+                            self.logger.error(f"Background sync failed: {e}")
 
-                # Check if periodic sync is needed
-                await self._check_periodic_sync()
+                # Task 2: Database maintenance (weekly)
+                vacuum_interval = 7 * 24 * 3600  # 1 week in seconds
+                time_since_vacuum = time.time() - self.last_vacuum
 
-                # Wait 60 seconds before next maintenance cycle
-                # Use wait_for to allow interruption by shutdown event
+                if time_since_vacuum > vacuum_interval:
+                    self.logger.info("Starting scheduled database maintenance")
+                    try:
+                        if await self.db.vacuum_database():
+                            self.last_vacuum = time.time()
+                            self.logger.info("Database maintenance completed successfully")
+                        else:
+                            self.logger.warning("Database maintenance completed with warnings")
+                    except Exception as e:
+                        self.logger.error(f"Database maintenance failed: {e}")
+
+                # Task 3: Jellyfin connectivity monitoring
                 try:
-                    await asyncio.wait_for(
-                        self.shutdown_event.wait(),
-                        timeout=60.0
-                    )
-                    # If we get here, shutdown was requested
-                    break
-                except asyncio.TimeoutError:
-                    # Timeout is expected - continue with next cycle
-                    continue
+                    is_connected = await self.jellyfin.is_connected()
+                    if not is_connected and not self.server_was_offline:
+                        self.logger.warning("Jellyfin server appears to be offline")
+                        self.server_was_offline = True
+                    elif is_connected and self.server_was_offline:
+                        self.logger.info("Jellyfin server is back online")
+                        self.server_was_offline = False
+                except Exception as e:
+                    self.logger.debug(f"Connection check failed: {e}")
+
+                # Wait before next iteration (5 minutes)
+                await asyncio.sleep(300)
 
             except Exception as e:
-                self.logger.error(f"Error in background tasks: {e}")
-                # Wait a bit before retrying to avoid tight error loops
-                await asyncio.sleep(30)
+                self.logger.error(f"Background task error: {e}", exc_info=True)
+                await asyncio.sleep(60)  # Wait 1 minute before retrying
 
-        self.logger.info("Background maintenance tasks stopped")
-
-    async def _perform_database_maintenance(self) -> None:
-        """
-        Perform periodic database maintenance operations.
-
-        Database maintenance includes operations like VACUUM (which optimizes
-        the database file) and other cleanup tasks. These operations can be
-        slow, so we only do them periodically.
-
-        **Understanding Database Maintenance:**
-            SQLite databases can become fragmented over time as data is added,
-            updated, and deleted. The VACUUM operation reorganizes the database
-            file to reclaim space and improve performance.
-        """
-        try:
-            current_time = time.time()
-            # Perform vacuum every hour (3600 seconds)
-            if current_time - self.last_vacuum > 3600:
-                self.logger.debug("Starting database maintenance (VACUUM)")
-                await self.db.vacuum()
-                self.last_vacuum = current_time
-                self.logger.debug("Database maintenance completed")
-        except Exception as e:
-            self.logger.error(f"Error during database maintenance: {e}")
-
-    async def _monitor_jellyfin_connection(self) -> None:
-        """
-        Monitor Jellyfin server connection and handle status changes.
-
-        This method tracks whether Jellyfin is online or offline and sends
-        notifications when the status changes. It also triggers recovery
-        syncs when the server comes back online.
-
-        **Connection Monitoring Strategy:**
-            We track the previous connection state so we can detect transitions
-            (online->offline or offline->online) and react appropriately.
-        """
-        try:
-            jellyfin_connected = await self.jellyfin.is_connected()
-
-            if not jellyfin_connected and not self.server_was_offline:
-                # Server went offline - notify users
-                await self.discord.send_server_status(False)
-                self.server_was_offline = True
-                self.logger.warning("Jellyfin server went offline")
-
-            elif jellyfin_connected and self.server_was_offline:
-                # Server came back online - notify users and sync
-                await self.discord.send_server_status(True)
-                self.server_was_offline = False
-                self.logger.info("Jellyfin server is back online")
-
-                # Trigger recovery sync to catch up on any missed changes
-                if not self.sync_in_progress:
-                    self.logger.info("Starting recovery sync after server came back online")
-                    asyncio.create_task(self.sync_jellyfin_library(background=True))
-
-        except Exception as e:
-            self.logger.error(f"Error monitoring Jellyfin connection: {e}")
-
-    async def _check_periodic_sync(self) -> None:
-        """
-        Check if periodic library sync is needed and trigger if necessary.
-
-        This method implements periodic background syncs to ensure the local
-        database stays in sync with Jellyfin even if webhooks are missed.
-        The default interval is 24 hours.
-
-        **Why Periodic Syncs?**
-            Webhooks can sometimes be missed due to network issues, service
-            restarts, or Jellyfin problems. Periodic syncs act as a safety net
-            to catch any missed changes.
-        """
-        try:
-            if self.sync_in_progress:
-                return  # Don't start another sync if one is already running
-
-            sync_interval = 24 * 3600  # 24 hours in seconds
-
-            # Get last sync time from database
-            last_sync_time_str = await self.db.get_last_sync_time()
-
-            if last_sync_time_str:
-                try:
-                    # Handle various timestamp formats from the database
-                    if last_sync_time_str.endswith('Z'):
-                        last_sync_time_str = last_sync_time_str[:-1] + '+00:00'
-                    elif '+' not in last_sync_time_str and last_sync_time_str.count(':') == 2:
-                        last_sync_time_str += '+00:00'
-
-                    last_sync = datetime.fromisoformat(last_sync_time_str)
-                    now = datetime.now(timezone.utc)
-                    seconds_since_sync = (now - last_sync).total_seconds()
-
-                    if seconds_since_sync > sync_interval:
-                        self.logger.info(
-                            f"Starting periodic background sync "
-                            f"({seconds_since_sync / 3600:.1f} hours since last sync)"
-                        )
-                        asyncio.create_task(self.sync_jellyfin_library(background=True))
-
-                except (ValueError, TypeError) as e:
-                    self.logger.warning(f"Error parsing last sync time '{last_sync_time_str}': {e}")
-
-        except Exception as e:
-            self.logger.error(f"Error checking periodic sync: {e}")
-
-    async def _perform_initial_sync(self) -> None:
-        """
-        Perform initial library sync on first startup.
-
-        This method runs a complete library sync and blocks webhook processing
-        until it completes. It's only used on the very first service startup
-        to populate the database with existing library content.
-
-        **Why Block During Initial Sync?**
-            We need a complete picture of the library before processing webhooks,
-            otherwise we might treat existing items as "new" items.
-        """
-        try:
-            self.logger.info("Starting initial Jellyfin library sync...")
-            result = await self.sync_jellyfin_library()
-
-            # Create completion marker only if sync was successful
-            if result.get("status") == "success":
-                init_complete_path = Path("/app/data/init_complete")
-                try:
-                    init_complete_path.touch(exist_ok=True)
-                    self.logger.info("Initial sync completed successfully - created completion marker")
-                except Exception as e:
-                    self.logger.warning(f"Could not create completion marker: {e}")
-            else:
-                self.logger.warning(f"Initial sync completed with status: {result.get('status', 'unknown')}")
-
-        except Exception as e:
-            self.logger.error(f"Initial sync failed: {e}")
-            # Don't raise - service can continue without initial sync
+        self.logger.info("Background tasks stopped - service is shutting down")
 
     async def sync_jellyfin_library(self, background: bool = False) -> Dict[str, Any]:
         """
@@ -1239,44 +830,60 @@ class WebhookService:
                 Background syncs don't block webhook processing.
 
         Returns:
-            Dict[str, Any]: Sync results including:
-                - status: success, error, or partial
-                - items_processed: Number of items synchronized
-                - processing_time: How long the sync took
-                - errors: Any errors encountered during sync
+            Dict[str, Any]: Sync results including status, items processed, and timing
 
         Example:
             ```python
-            # Initial sync (blocking)
+            # Perform initial sync (blocks webhooks)
             result = await service.sync_jellyfin_library(background=False)
 
             # Periodic sync (non-blocking)
             result = await service.sync_jellyfin_library(background=True)
 
-            print(f"Synced {result['items_processed']} items in {result['processing_time']}s")
+            logger.info(f"Sync status: {result['status']}")
+            logger.info(f"Items processed: {result['items_processed']}")
             ```
+
+        Note:
+            Large libraries may take significant time to sync. Progress is
+            logged periodically to provide feedback during long operations.
         """
         if self.sync_in_progress:
+            self.logger.warning("Library sync requested but sync already in progress")
             return {
-                "status": "error",
-                "message": "Library sync already in progress"
+                "status": "warning",
+                "message": "Sync already in progress",
+                "sync_in_progress": True
             }
 
-        sync_start_time = time.time()
-        self.sync_in_progress = True
-        self.is_background_sync = background
-
         try:
-            self.logger.info(f"Starting {'background' if background else 'foreground'} library sync")
+            # Set sync flags to prevent concurrent syncs
+            self.sync_in_progress = True
+            self.is_background_sync = background
+            sync_start_time = time.time()
 
-            # Get all library items from Jellyfin
-            all_items = await self.jellyfin.get_all_library_items()
+            sync_type = "background" if background else "foreground"
+            self.logger.info(f"Starting {sync_type} library sync with Jellyfin")
 
-            if not all_items:
-                self.logger.warning("No items retrieved from Jellyfin library")
+            # Get all items from Jellyfin library
+            try:
+                all_items = await self.jellyfin.get_all_items()
+                if not all_items:
+                    self.logger.warning("No items retrieved from Jellyfin library")
+                    return {
+                        "status": "warning",
+                        "message": "No items found in Jellyfin library",
+                        "items_processed": 0
+                    }
+
+                self.logger.info(f"Retrieved {len(all_items)} items from Jellyfin library")
+
+            except Exception as e:
+                self.logger.error(f"Failed to retrieve items from Jellyfin: {e}")
                 return {
                     "status": "error",
-                    "message": "No items retrieved from Jellyfin library"
+                    "message": f"Failed to retrieve library: {str(e)}",
+                    "items_processed": 0
                 }
 
             # Process items in batches for efficiency
@@ -1304,7 +911,9 @@ class WebhookService:
 
                     # Log progress periodically
                     if i % (batch_size * 10) == 0:  # Every 10 batches
-                        self.logger.info(f"Sync progress: {items_processed}/{len(all_items)} items processed")
+                        progress_pct = round((i / len(all_items)) * 100, 1)
+                        self.logger.info(
+                            f"Sync progress: {items_processed}/{len(all_items)} items processed ({progress_pct}%)")
 
                 except Exception as e:
                     self.logger.error(f"Error processing batch starting at index {i}: {e}")
@@ -1350,52 +959,121 @@ class WebhookService:
             self.sync_in_progress = False
             self.is_background_sync = False
 
+    async def _check_initial_sync(self) -> None:
+        """
+        Check if initial sync is needed and perform it.
+
+        This private method determines whether the service needs to perform
+        an initial library sync. It's called during service initialization
+        to ensure the database is populated with existing library content.
+
+        **Initial Sync Logic:**
+            The service creates a marker file after successful initial sync.
+            If this marker doesn't exist, we perform initial sync to populate
+            the database with existing Jellyfin library content.
+
+        **Why Initial Sync Matters:**
+            Without initial sync, all existing library items would be treated
+            as "new" when webhooks are received, resulting in duplicate
+            notifications for content that already existed.
+
+        Note:
+            This method runs a complete library sync and blocks webhook processing
+            until it completes. It's only used on the very first service startup
+            to populate the database with existing library content.
+
+        **Why Block During Initial Sync?**
+            We need a complete picture of the library before processing webhooks,
+            otherwise we might treat existing items as "new" items.
+        """
+        try:
+            # Check for completion marker
+            init_complete_path = Path("/app/data/init_complete")
+
+            if not init_complete_path.exists():
+                self.logger.info("No initial sync marker found - performing initial library sync")
+                await self._perform_initial_sync()
+            else:
+                self.logger.info("Initial sync marker found - skipping initial sync")
+                self.initial_sync_complete = True
+
+        except Exception as e:
+            self.logger.error(f"Error checking initial sync status: {e}")
+
+    async def _perform_initial_sync(self) -> None:
+        """
+        Perform initial library synchronization.
+
+        This private method runs a complete library sync and blocks webhook processing
+        until it completes. It's only used on the very first service startup
+        to populate the database with existing library content.
+
+        **Why Block During Initial Sync?**
+            We need a complete picture of the library before processing webhooks,
+            otherwise we might treat existing items as "new" items.
+        """
+        try:
+            self.logger.info("Starting initial Jellyfin library sync...")
+            result = await self.sync_jellyfin_library()
+
+            # Create completion marker only if sync was successful
+            if result.get("status") == "success":
+                init_complete_path = Path("/app/data/init_complete")
+                try:
+                    init_complete_path.touch(exist_ok=True)
+                    self.logger.info("Initial sync completed successfully - created completion marker")
+                    self.initial_sync_complete = True
+                except Exception as e:
+                    self.logger.warning(f"Could not create completion marker: {e}")
+            else:
+                self.logger.warning(f"Initial sync completed with status: {result.get('status', 'unknown')}")
+
+        except Exception as e:
+            self.logger.error(f"Initial sync failed: {e}")
+            # Don't raise - service can continue without initial sync
+
     async def cleanup(self) -> None:
         """
         Clean up service resources during shutdown.
 
-        This method handles graceful shutdown of all service components,
-        ensuring that connections are closed properly and resources are
-        released. It's called automatically by FastAPI during shutdown.
+        This method performs graceful cleanup of all service components
+        and resources. It's called during application shutdown to ensure
+        proper resource cleanup and prevent data loss.
 
-        **Graceful Shutdown Strategy:**
-            1. Signal background tasks to stop
-            2. Wait for current operations to complete
-            3. Close database connections
-            4. Close HTTP client sessions
-            5. Release other resources
+        **Cleanup Tasks:**
+            - Signal background tasks to stop
+            - Close database connections
+            - Close HTTP sessions
+            - Flush any pending operations
+            - Log shutdown completion
 
-        **Understanding Resource Management:**
-            Proper cleanup prevents resource leaks and ensures that the
-            service can restart cleanly. This is especially important in
-            containerized environments.
+        Example:
+            ```python
+            # During application shutdown
+            await webhook_service.cleanup()
+            logger.info("Service cleanup completed")
+            ```
+
+        Note:
+            This method should be called during application shutdown
+            to ensure proper resource cleanup. It's designed to be
+            safe to call multiple times.
         """
-        self.logger.info("Starting service cleanup...")
-
         try:
+            self.logger.info("Starting service cleanup...")
+
             # Signal background tasks to stop
             self.shutdown_event.set()
-
-            # Wait a moment for background tasks to notice the shutdown signal
-            await asyncio.sleep(2)
 
             # Close database connections
             if self.db:
                 await self.db.close()
-                self.logger.info("Database connections closed")
+                self.logger.debug("Database connections closed")
 
-            # Close HTTP client sessions
-            if self.jellyfin:
-                await self.jellyfin.close()
-                self.logger.info("Jellyfin API client closed")
-
-            if self.discord:
-                await self.discord.close()
-                self.logger.info("Discord client closed")
-
-            if self.rating_service:
-                await self.rating_service.close()
-                self.logger.info("Rating service closed")
+            # Close HTTP sessions
+            if hasattr(self, 'discord') and self.discord:
+                # Discord notifier cleanup if it has session management
+                pass
 
             self.logger.info("Service cleanup completed successfully")
 

@@ -24,11 +24,9 @@ License: MIT
 
 import logging
 import logging.handlers
-import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 
 def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> logging.Logger:

@@ -28,10 +28,8 @@ import asyncio
 import json
 import time
 import logging
-import os
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
-from urllib.parse import urlparse
+from typing import Dict, Any, Optional
 from dataclasses import asdict
 
 import aiohttp
@@ -320,53 +318,48 @@ class DiscordNotifier:
         ```
     """
 
-    def __init__(
-            self,
-            config: DiscordConfig,
-            templates_config: TemplatesConfig,
-            thumbnail_manager: ThumbnailManager
-    ):
+    def __init__(self, config: DiscordConfig):
         """
-        Initialize Discord notifier with configuration and dependencies.
+        Initialize Discord notifier with configuration.
 
         Args:
             config (DiscordConfig): Discord webhook and notification configuration
-            templates_config (TemplatesConfig): Template system configuration
-            thumbnail_manager (ThumbnailManager): Thumbnail URL manager instance
         """
         self.config = config
-        self.templates_config = templates_config
-        self.thumbnail_manager = thumbnail_manager
         self.session: Optional[aiohttp.ClientSession] = None
         self.rate_limits: Dict[str, Dict[str, Any]] = {}
         self.jinja_env: Optional[Environment] = None
-        self.logger = get_logger("discord.notifier")
 
-    async def initialize(self) -> None:
+        # Create thumbnail manager internally (needs Jellyfin config from main config)
+        # This will need to be set during initialize() when full config is available
+        self.thumbnail_manager = None
+
+        self.logger = get_logger("discord")
+
+    async def initialize(self, session: aiohttp.ClientSession, jellyfin_config) -> None:
         """
-        Initialize Discord notifier with HTTP session and template environment.
+        Initialize Discord notifier with HTTP session and Jellyfin config.
 
-        This method sets up all necessary components for Discord notifications:
-        - HTTP session for webhook requests
-        - Jinja2 template environment for embed rendering
-        - Rate limiting state management
-
-        Should be called once during application startup.
+        Args:
+            session (aiohttp.ClientSession): HTTP session for requests
+            jellyfin_config: Jellyfin configuration for thumbnail manager
         """
-        # Initialize HTTP session with reasonable timeout
-        if self.session is None:
-            timeout = aiohttp.ClientTimeout(total=30)  # 30-second timeout for Discord webhooks
-            self.session = aiohttp.ClientSession(timeout=timeout)
-            self.logger.debug("Discord notifier HTTP session initialized")
+        self.session = session
 
-        # Initialize Jinja2 template environment
+        # Create and initialize thumbnail manager
+        self.thumbnail_manager = ThumbnailManager(
+            jellyfin_url=jellyfin_config.server_url,
+            api_key=jellyfin_config.api_key
+        )
+        await self.thumbnail_manager.initialize()
+
+        # Initialize template environment
         if self.jinja_env is None:
             self.jinja_env = Environment(
-                loader=FileSystemLoader(self.templates_config.directory),
+                loader=FileSystemLoader(self.config.templates.directory),
                 trim_blocks=True,
                 lstrip_blocks=True
             )
-            self.logger.debug(f"Template environment initialized with directory: {self.templates_config.directory}")
 
         self.logger.info("Discord notifier initialized successfully")
 

@@ -72,35 +72,21 @@ License: MIT
 """
 
 import os
-import json
 import asyncio
-import logging
-import logging.handlers
 import time
-import hashlib
 import signal
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List
-from dataclasses import dataclass, asdict
-from pathlib import Path
-from urllib.parse import urlparse
+from datetime import datetime, timezone
+from typing import Optional
 
 # Third-party imports for async web framework and HTTP operations
-import aiohttp
-import aiosqlite
-import yaml
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from jellyfin_apiclient_python import JellyfinClient
-from jinja2 import Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError
-from pydantic import BaseModel, Field, ConfigDict, ValidationError, field_validator
 import uvicorn
 
 # Import our custom modules
-from config_models import AppConfig, ConfigurationValidator
 from webhook_models import WebhookPayload
 from webhook_service import WebhookService
 from utils import setup_logging, get_logger
