@@ -217,130 +217,171 @@ class DatabaseManager:
                 # Create the complete media_items table with ALL MediaItem fields
                 # This ensures complete webhook field synchronization and prevents data loss
                 await db.execute("""
-                    CREATE TABLE IF NOT EXISTS media_items
-                    (
-                        -- ==================== CORE IDENTIFICATION ====================
-                        -- Required fields for all items (primary key and basic info)
-                        item_id                   TEXT PRIMARY KEY,  -- Unique Jellyfin identifier
-                        name                      TEXT NOT NULL,     -- Display name of the item
-                        item_type                 TEXT NOT NULL,     -- Media type (Movie, Episode, etc.)
-
-                        -- ==================== CONTENT METADATA ====================
-                        -- Basic metadata common across media types
-                        year                      INTEGER,           -- Production/release year
-                        series_name               TEXT,              -- TV series name (for episodes/seasons)
-                        season_number             INTEGER,           -- Season number
-                        episode_number            INTEGER,           -- Episode number
-                        overview                  TEXT,              -- Description/synopsis
-
-                        -- ==================== SERVER INFORMATION ====================
-                        -- Server context from webhook (ServerId, ServerName, etc.)
-                        server_id                 TEXT,              -- Jellyfin server unique identifier  
-                        server_name               TEXT,              -- Human-readable server name
-                        server_version            TEXT,              -- Jellyfin server version string
-                        server_url                TEXT,              -- Public URL of the Jellyfin server
-                        notification_type         TEXT,              -- Type of notification event (ItemAdded, etc.)
-
-                        -- ==================== VIDEO TECHNICAL SPECIFICATIONS ====================
-                        -- Complete video stream metadata for quality analysis and display
-                        video_height              INTEGER,           -- Video resolution height (1080, 720, 2160, etc.)
-                        video_width               INTEGER,           -- Video resolution width (1920, 1280, 3840, etc.)
-                        video_codec               TEXT,              -- Video codec (h264, hevc, av1, vp9, etc.)
-                        video_bitrate             INTEGER,           -- Video bitrate in bits per second
-                        video_framerate           REAL,              -- Frames per second (23.976, 29.970, 60.000, etc.)
-                        video_language            TEXT,              -- Video language code (eng, spa, fra, etc.)
-                        video_title               TEXT,              -- Video stream title/name from container
-                        video_type                TEXT,              -- Stream type identifier
-                        video_profile             TEXT,              -- Codec profile (High, Main, Baseline, etc.)
-                        video_level               TEXT,              -- Codec level (4.1, 5.1, etc.)
-                        video_pixelaspect         TEXT,              -- Pixel aspect ratio (1:1, etc.)
-                        video_colorspace          TEXT,              -- Color space (bt709, bt2020, etc.)
-                        video_colortransfer       TEXT,              -- Color transfer characteristics (bt709, smpte2084, etc.)
-                        video_colorprimaries      TEXT,              -- Color primaries specification (bt709, bt2020, etc.)
-                        video_pixelformat         TEXT,              -- Pixel format (yuv420p, yuv420p10le, etc.)
-                        video_refframes           INTEGER,           -- Number of reference frames used by codec
-
-                        -- ==================== AUDIO TECHNICAL SPECIFICATIONS ====================
-                        -- Complete audio stream metadata for quality detection and display
-                        audio_codec               TEXT,              -- Audio codec (aac, ac3, dts, flac, mp3, etc.)
-                        audio_channels            INTEGER,           -- Number of audio channels (2, 6, 8 for stereo, 5.1, 7.1)
-                        audio_language            TEXT,              -- Audio language code (eng, spa, fra, etc.)
-                        audio_bitrate             INTEGER,           -- Audio bitrate in bits per second
-                        audio_title               TEXT,              -- Audio stream title/name from container
-                        audio_type                TEXT,              -- Stream type identifier
-                        audio_samplerate          INTEGER,           -- Sample rate in Hz (48000, 44100, 96000, etc.)
-                        audio_default             BOOLEAN,           -- Whether this is the default audio track
-
-                        -- ==================== SUBTITLE INFORMATION ====================
-                        -- Subtitle/caption tracks available for the content
-                        subtitle_title            TEXT,              -- Subtitle stream title/name
-                        subtitle_type             TEXT,              -- Subtitle stream type identifier
-                        subtitle_language         TEXT,              -- Subtitle language code (eng, spa, fra, etc.)
-                        subtitle_codec            TEXT,              -- Subtitle format (srt, ass, pgs, vtt, etc.)
-                        subtitle_default          BOOLEAN,           -- Default subtitle track flag
-                        subtitle_forced           BOOLEAN,           -- Forced subtitle display flag
-                        subtitle_external         BOOLEAN,           -- External subtitle file flag
-
-                        -- ==================== EXTERNAL PROVIDER IDS ====================
-                        -- Links to external movie/TV databases for metadata enrichment
-                        imdb_id                   TEXT,              -- Internet Movie Database ID (tt1234567)
-                        tmdb_id                   TEXT,              -- The Movie Database ID
-                        tvdb_id                   TEXT,              -- The TV Database ID
-                        tvdb_slug                 TEXT,              -- TVDB URL slug identifier [FIXED: Previously missing]
-
-                        -- ==================== TV SERIES HIERARCHY ====================
-                        -- TV series organization and hierarchy for episodes and seasons
-                        series_id                 TEXT,              -- Parent series unique identifier
-                        series_premiere_date      TEXT,              -- Series original premiere date
-                        season_id                 TEXT,              -- Season unique identifier
-                        season_number_padded      TEXT,              -- Zero-padded season number (02, 03, etc.)
-                        season_number_padded_3    TEXT,              -- Zero-padded season number (002, 003, etc.)
-                        episode_number_padded     TEXT,              -- Zero-padded episode number (04, 05, etc.)
-                        episode_number_padded_3   TEXT,              -- Zero-padded episode number (004, 005, etc.)
-                        air_time                  TEXT,              -- Original broadcast time (21:30, etc.)
-
-                        -- ==================== RUNTIME INFORMATION ====================
-                        -- Duration and timing information in multiple formats
-                        runtime_ticks             INTEGER,           -- Jellyfin duration in ticks (10,000 ticks = 1ms)
-                        runtime_formatted         TEXT,              -- Human-readable runtime (1h 30m)
-
-                        -- ==================== TIMESTAMPS ====================
-                        -- Creation, modification, and processing timestamps
-                        date_created              TEXT,              -- When item was added to Jellyfin (ISO format)
-                        date_modified             TEXT,              -- When item was last modified (ISO format)
-                        timestamp                 TEXT DEFAULT CURRENT_TIMESTAMP, -- Service processing timestamp
-
-                        -- ==================== CONTENT METADATA ====================
-                        -- Descriptive metadata and categorization
-                        tagline                   TEXT,              -- Marketing tagline or promotional text
-                        genres                    TEXT,              -- JSON array of genre names
-                        studios                   TEXT,              -- JSON array of production companies/studios
-                        tags                      TEXT,              -- JSON array of user-defined or imported tags
-                        official_rating           TEXT,              -- MPAA rating (G, PG, R), TV rating (TV-MA), etc.
-
-                        -- ==================== MUSIC-SPECIFIC METADATA ====================
-                        -- Fields specific to audio content (songs, albums, artists)
-                        album                     TEXT,              -- Album name (for music tracks)
-                        artists                   TEXT,              -- JSON array of artist names
-                        album_artist              TEXT,              -- Primary album artist
-
-                        -- ==================== PHOTO-SPECIFIC METADATA ====================
-                        -- Fields specific to image content
-                        width                     INTEGER,           -- Image width in pixels
-                        height                    INTEGER,           -- Image height in pixels
-
-                        -- ==================== FILE SYSTEM INFORMATION ====================
-                        -- File location and metadata from the storage system
-                        file_path                 TEXT,              -- Full file path on server
-                        file_size                 INTEGER,           -- File size in bytes
-                        library_name              TEXT,              -- Jellyfin library name
-
-                        -- ==================== INTERNAL TRACKING ====================
-                        -- Fields used for service operations and change detection
-                        content_hash              TEXT               -- MD5 hash for change detection
-                    )
+                    CREATE TABLE IF NOT EXISTS media_items (
+                    -- =============================================================================
+                    -- CORE IDENTIFICATION (Required Fields)
+                    -- =============================================================================
+                    -- Primary identification fields that are always present
+                    item_id                   TEXT PRIMARY KEY,          -- Unique Jellyfin identifier (primary key)
+                    name                      TEXT NOT NULL,             -- Display name of the media item
+                    item_type                 TEXT NOT NULL,             -- Media type (Movie, Episode, Series, Audio, etc.)
+                
+                    -- =============================================================================
+                    -- CONTENT METADATA
+                    -- =============================================================================
+                    -- Basic metadata common across media types
+                    year                      INTEGER,                   -- Production/release year
+                    series_name               TEXT,                      -- TV series name (for episodes)
+                    season_number             INTEGER,                   -- Season number for TV episodes
+                    episode_number            INTEGER,                   -- Episode number for TV episodes
+                    overview                  TEXT,                      -- Plot summary/description
+                
+                    -- =============================================================================
+                    -- VIDEO TECHNICAL SPECIFICATIONS
+                    -- =============================================================================
+                    -- Core video stream properties for quality detection and upgrade notifications
+                    video_height              INTEGER,                   -- Video resolution height (720, 1080, 2160, etc.)
+                    video_width               INTEGER,                   -- Video resolution width (1280, 1920, 3840, etc.)
+                    video_codec               TEXT,                      -- Video codec (h264, hevc, av1, etc.)
+                    video_profile             TEXT,                      -- Codec profile (High, Main, Main10, etc.)
+                    video_range               TEXT,                      -- Video range (SDR, HDR10, HDR10+, Dolby Vision)
+                    video_framerate           REAL,                      -- Frames per second (23.976, 24, 25, 29.97, etc.)
+                    aspect_ratio              TEXT,                      -- Display aspect ratio (16:9, 21:9, etc.)
+                
+                    -- Additional video properties from webhook for complete template customization
+                    video_title               TEXT,                      -- Video stream title/name from container
+                    video_type                TEXT,                      -- Stream type identifier
+                    video_language            TEXT,                      -- Video stream language code (eng, spa, fra, etc.)
+                    video_level               TEXT,                      -- Codec level specification (3.1, 4.0, 5.1, etc.)
+                    video_interlaced          BOOLEAN,                   -- Whether video uses interlaced scanning
+                    video_bitrate             INTEGER,                   -- Video bitrate in bits per second
+                    video_bitdepth            INTEGER,                   -- Color bit depth (8, 10, 12)
+                    video_colorspace          TEXT,                      -- Color space specification (bt709, bt2020nc, etc.)
+                    video_colortransfer       TEXT,                      -- Color transfer characteristics (bt709, smpte2084, etc.)
+                    video_colorprimaries      TEXT,                      -- Color primaries specification (bt709, bt2020, etc.)
+                    video_pixelformat         TEXT,                      -- Pixel format (yuv420p, yuv420p10le, etc.)
+                    video_refframes           INTEGER,                   -- Number of reference frames used by codec
+                
+                    -- =============================================================================
+                    -- AUDIO TECHNICAL SPECIFICATIONS
+                    -- =============================================================================
+                    -- Core audio stream properties for quality detection
+                    audio_codec               TEXT,                      -- Audio codec (aac, ac3, dts, flac, mp3, etc.)
+                    audio_channels            INTEGER,                   -- Number of audio channels (2, 6, 8 for stereo, 5.1, 7.1)
+                    audio_language            TEXT,                      -- Audio language code (eng, spa, fra, etc.)
+                    audio_bitrate             INTEGER,                   -- Audio bitrate in bits per second
+                
+                    -- Additional audio properties from webhook for template customization
+                    audio_title               TEXT,                      -- Audio stream title/name from container
+                    audio_type                TEXT,                      -- Stream type identifier
+                    audio_samplerate          INTEGER,                   -- Sample rate in Hz (48000, 44100, 96000, etc.)
+                    audio_default             BOOLEAN,                   -- Whether this is the default audio track
+                
+                    -- =============================================================================
+                    -- SUBTITLE INFORMATION
+                    -- =============================================================================
+                    -- Subtitle/caption tracks available for the content
+                    subtitle_title            TEXT,                      -- Subtitle stream title/name
+                    subtitle_type             TEXT,                      -- Subtitle stream type identifier
+                    subtitle_language         TEXT,                      -- Subtitle language code (eng, spa, fra, etc.)
+                    subtitle_codec            TEXT,                      -- Subtitle format (srt, ass, pgs, vtt, etc.)
+                    subtitle_default          BOOLEAN,                   -- Whether this is the default subtitle track
+                    subtitle_forced           BOOLEAN,                   -- Whether subtitle is forced display
+                    subtitle_external         BOOLEAN,                   -- Whether subtitle is external file vs embedded
+                
+                    -- =============================================================================
+                    -- EXTERNAL PROVIDER IDS
+                    -- =============================================================================
+                    -- Links to external movie/TV databases for metadata enrichment
+                    imdb_id                   TEXT,                      -- Internet Movie Database ID (tt1234567)
+                    tmdb_id                   TEXT,                      -- The Movie Database ID
+                    tvdb_id                   TEXT,                      -- The TV Database ID
+                    tvdb_slug                 TEXT,                      -- TVDB URL slug identifier
+                
+                    -- =============================================================================
+                    -- SERVER INFORMATION
+                    -- =============================================================================
+                    -- Context about the Jellyfin server for webhook compatibility
+                    server_id                 TEXT,                      -- Jellyfin server unique identifier
+                    server_name               TEXT,                      -- Human-readable server name
+                    server_version            TEXT,                      -- Jellyfin server version string
+                    server_url                TEXT,                      -- Public URL of the Jellyfin server
+                    notification_type         TEXT,                      -- Type of notification event (ItemAdded, etc.)
+                
+                    -- =============================================================================
+                    -- FILE SYSTEM INFORMATION
+                    -- =============================================================================
+                    -- File system data from webhook for template customization
+                    file_path                 TEXT,                      -- Full file system path
+                    library_name              TEXT,                      -- Jellyfin library name
+                    file_size                 INTEGER,                   -- File size in bytes
+                
+                    -- =============================================================================
+                    -- TV SERIES HIERARCHY DATA
+                    -- =============================================================================
+                    -- TV series organization and hierarchy for episodes and seasons
+                    series_id                 TEXT,                      -- Parent series unique identifier
+                    series_premiere_date      TEXT,                      -- Series original premiere date
+                    season_id                 TEXT,                      -- Season unique identifier
+                    season_number_padded      TEXT,                      -- Zero-padded season number (02, 03, etc.)
+                    season_number_padded_3    TEXT,                      -- Three-digit padded season number (002, 003, etc.)
+                    episode_number_padded     TEXT,                      -- Zero-padded episode number (04, 05, etc.)
+                    episode_number_padded_3   TEXT,                      -- Three-digit padded episode number (004, 005, etc.)
+                    air_time                  TEXT,                      -- Original broadcast time/date
+                
+                    -- =============================================================================
+                    -- TIMESTAMP INFORMATION
+                    -- =============================================================================
+                    -- Timestamp data for tracking and template customization
+                    timestamp                 TEXT,                      -- Local timestamp with timezone
+                    utc_timestamp             TEXT,                      -- UTC timestamp
+                    premiere_date             TEXT,                      -- Original release/air date
+                
+                    -- =============================================================================
+                    -- EXTENDED METADATA FROM API
+                    -- =============================================================================
+                    -- Additional fields from Jellyfin API calls (not available in webhook)
+                    date_created              TEXT,                      -- When item was added to Jellyfin
+                    date_modified             TEXT,                      -- When item was last modified
+                    runtime_ticks             INTEGER,                   -- Duration in Jellyfin ticks (10,000 ticks = 1ms)
+                    runtime_formatted         TEXT,                      -- Human-readable runtime (1h 23m)
+                    official_rating           TEXT,                      -- MPAA rating (G, PG, R), TV rating (TV-MA), etc.
+                    tagline                   TEXT,                      -- Marketing tagline or promotional text
+                
+                    -- Serialized JSON fields for list data
+                    genres                    TEXT,                      -- JSON array of genre names (Action, Comedy, Drama)
+                    studios                   TEXT,                      -- JSON array of production companies/studios
+                    tags                      TEXT,                      -- JSON array of user-defined or imported tags
+                
+                    -- =============================================================================
+                    -- MUSIC-SPECIFIC METADATA
+                    -- =============================================================================
+                    -- Fields specific to audio content
+                    album                     TEXT,                      -- Album name (for music tracks)
+                    album_artist              TEXT,                      -- Primary album artist
+                    
+                    -- Serialized JSON field for list data
+                    artists                   TEXT,                      -- JSON array of artist names
+                
+                    -- =============================================================================
+                    -- PHOTO-SPECIFIC METADATA
+                    -- =============================================================================
+                    -- Fields specific to image content
+                    width                     INTEGER,                   -- Image width in pixels
+                    height                    INTEGER,                   -- Image height in pixels
+                
+                    -- =============================================================================
+                    -- INTERNAL TRACKING FIELDS
+                    -- =============================================================================
+                    -- Fields used for service operations and change detection
+                    content_hash              TEXT NOT NULL,             -- MD5 hash for change detection (auto-generated)
+                    timestamp_created         TEXT NOT NULL              -- Object creation timestamp (auto-generated)
+                );
                 """)
 
+                # =============================================================================
+                # INDEXES FOR PERFORMANCE OPTIMIZATION
+                # =============================================================================
                 # Create indexes for optimal query performance
                 # These indexes support common query patterns used by the service
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_item_type ON media_items(item_type)")
@@ -353,6 +394,17 @@ class DatabaseManager:
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_video_codec ON media_items(video_codec)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_audio_codec ON media_items(audio_codec)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_tvdb_slug ON media_items(tvdb_slug)")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_year ON media_items(year)")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_timestamp_created ON media_items(timestamp_created)")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_imdb_id ON media_items(imdb_id)")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_tmdb_id ON media_items(tmdb_id)")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_tvdb_id ON media_items(tvdb_id)")
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_season_episode ON media_items(series_name, season_number, episode_number)")
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_video_specs ON media_items(video_height, video_codec, video_range)")
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_audio_specs ON media_items(audio_codec, audio_channels)")
 
                 # Create sync status tracking table for monitoring library synchronization
                 await db.execute("""
