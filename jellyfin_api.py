@@ -374,7 +374,7 @@ class JellyfinAPI:
             return None
 
     async def get_all_items(self,
-                            batch_size: int = 100,
+                            batch_size: int = 1000,
                             progress_callback: Optional[Callable[[int, int], None]] = None) -> List[Dict[str, Any]]:
         """
         Retrieve all items from Jellyfin library with efficient batch processing.
@@ -521,7 +521,7 @@ class JellyfinAPI:
                     if progress_callback:
                         progress_callback(len(all_items), total_record_count)
 
-                    self.logger.debug(f"Retrieved batch: {len(batch_items)} items (total: {len(all_items)})")
+                    self.logger.info(f"Retrieved batch: {len(batch_items)} items (total: {len(all_items)})")
 
                     # Check if we've retrieved all items
                     if len(all_items) >= total_record_count:
@@ -990,7 +990,6 @@ class JellyfinAPI:
                 height=height,
 
                 # Internal tracking
-                content_hash=content_hash,
                 file_size=file_size
             )
 
@@ -1004,7 +1003,6 @@ class JellyfinAPI:
                 item_id=item_data.get('Id', 'unknown'),
                 name=item_data.get('Name', 'Unknown Item'),
                 item_type=item_data.get('Type', 'Unknown'),
-                content_hash=str(hash(str(item_data.get('Id', 'unknown'))))
             )
 
     async def test_connection(self) -> Dict[str, Any]:
