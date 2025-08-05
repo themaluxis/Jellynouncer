@@ -86,6 +86,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 import uvicorn
+from pydantic import ValidationError
 
 # Import our custom modules
 from webhook_models import WebhookPayload
