@@ -408,8 +408,10 @@ class WebhookService:
             This method is designed to be resilient and should never crash the
             entire service. All errors are logged and handled gracefully.
         """
+        # Initialize timing variable
+        start_time = time.time()
+
         try:
-            start_time = time.time()
             self.logger.debug(f"Processing webhook for {payload.Name} ({payload.ItemType})")
 
             # Extract media item information from webhook payload
@@ -927,6 +929,9 @@ class WebhookService:
             Large libraries now process much faster due to batch operations.
             Progress is logged periodically to provide feedback during operations.
         """
+        # Initialize timing variable
+        sync_start_time = time.time()
+
         # Prevent multiple syncs from running simultaneously
         if self.sync_in_progress:
             self.logger.warning("Library sync already in progress - skipping")
@@ -943,7 +948,6 @@ class WebhookService:
             # Set sync state flags
             self.sync_in_progress = True
             self.is_background_sync = background
-            sync_start_time = time.time()
 
             if background:
                 self.logger.info("Starting background library sync...")

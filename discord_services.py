@@ -98,7 +98,7 @@ class ThumbnailManager:
         self.base_url = jellyfin_url.rstrip('/')
         self.api_key = api_key
         self.session: Optional[aiohttp.ClientSession] = None
-        self.cache: Dict[str, str] = {}
+        self.cache: Dict[str, Optional[str]] = {}
         self.logger = get_logger("jellynouncer.discord.thumbnails")
         self._owns_session = False
 
@@ -188,8 +188,13 @@ class ThumbnailManager:
         # Check cache first to avoid repeated verification
         cache_key = f"{item_id}:{primary_image_tag}:{backdrop_image_tag}:{logo_image_tag}"
         if cache_key in self.cache:
-            self.logger.debug(f"Using cached thumbnail for item {item_id}")
-            return self.cache[cache_key]
+            cached_url = self.cache[cache_key]
+            if cached_url is not None:
+                self.logger.debug(f"Using cached thumbnail for item {item_id}")
+                return cached_url
+            else:
+                self.logger.debug(f"Cached result shows no thumbnail available for item {item_id}")
+                return None
 
         # Standardized image parameters for consistency with templates
         image_params = "api_key={}&quality=90&maxWidth=500&maxHeight=400".format(self.api_key)
@@ -480,6 +485,9 @@ class DiscordNotifier:
                 logger.error(f"Notification failed: {result['error']}")
             ```
         """
+        # Initialize webhook_url early to avoid reference errors
+        webhook_url = None
+
         try:
             # Get appropriate webhook URL for this media type
             webhook_url = self.get_webhook_url(item.item_type)
@@ -540,7 +548,7 @@ class DiscordNotifier:
             return {
                 "success": False,
                 "error": str(e),
-                "webhook_url": webhook_url if 'webhook_url' in locals() else None
+                "webhook_url": webhook_url
             }
 
     async def render_embed(self, item: MediaItem, action: str, thumbnail_url: Optional[str]) -> Dict[str, Any]:
