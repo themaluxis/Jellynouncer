@@ -1150,6 +1150,12 @@ class ConfigurationValidator:
             config_data['discord'] = {'webhooks': {}}
         if 'webhooks' not in config_data['discord']:
             config_data['discord']['webhooks'] = {}
+        if 'server' not in config_data:
+            config_data['server'] = {}
+        if 'database' not in config_data:
+            config_data['database'] = {}
+        if 'rating_services' not in config_data:
+            config_data['rating_services'] = {}
 
         # Jellyfin overrides
         env_mappings = {
@@ -1162,6 +1168,21 @@ class ConfigurationValidator:
             'DISCORD_WEBHOOK_URL_MOVIES': ['discord', 'webhooks', 'movies', 'url'],
             'DISCORD_WEBHOOK_URL_TV': ['discord', 'webhooks', 'tv', 'url'],
             'DISCORD_WEBHOOK_URL_MUSIC': ['discord', 'webhooks', 'music', 'url'],
+
+            # Server configuration overrides
+            'LOG_LEVEL': ['server', 'log_level'],
+            'HOST': ['server', 'host'],
+            'PORT': ['server', 'port'],
+
+            # Database configuration overrides
+            'DATABASE_PATH': ['database', 'path'],
+            'DATABASE_WAL_MODE': ['database', 'wal_mode'],
+
+            # Rating services overrides
+            'OMDB_API_KEY': ['rating_services', 'omdb', 'api_key'],
+            'TMDB_API_KEY': ['rating_services', 'tmdb', 'api_key'],
+            'TVDB_API_KEY': ['rating_services', 'tvdb', 'api_key'],
+            'TVDB_SUBSCRIBER_PIN': ['rating_services', 'tvdb', 'subscriber_pin'],
         }
 
         for env_var, path in env_mappings.items():
@@ -1173,6 +1194,17 @@ class ConfigurationValidator:
                     if key not in current:
                         current[key] = {}
                     current = current[key]
+
+                # Handle type conversions for specific environment variables
+                if env_var == 'PORT':
+                    try:
+                        value = int(value)
+                    except ValueError:
+                        self.logger.warning(f"Invalid PORT value '{value}', skipping override")
+                        continue
+                elif env_var == 'DATABASE_WAL_MODE':
+                    # Convert string to boolean for WAL mode
+                    value = value.lower() in ('true', '1', 'yes', 'on')
 
                 # Set the value
                 current[path[-1]] = value

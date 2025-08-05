@@ -172,7 +172,7 @@ class DatabaseManager:
         - Audio specifications: Complete audio stream metadata (codec, channels, etc.)
         - Subtitle information: Complete subtitle/caption metadata
         - TV series hierarchy: Series, season, episode organization with padded numbers
-        - Provider IDs: External database identifiers (IMDb, TMDb, TVDb)
+        - Provider IDs: External database identifiers (IMDb, TMDb, TVDb, TVDb slug)
         - Runtime information: Duration in various formats
         - Metadata: Ratings, genres, studios, tags, descriptions
         - Music fields: Album, artist, music-specific metadata
@@ -235,54 +235,48 @@ class DatabaseManager:
 
                         -- ==================== SERVER INFORMATION ====================
                         -- Server context from webhook (ServerId, ServerName, etc.)
-                        server_id                 TEXT,              -- Jellyfin server identifier
+                        server_id                 TEXT,              -- Jellyfin server unique identifier  
                         server_name               TEXT,              -- Human-readable server name
-                        server_version            TEXT,              -- Server version (e.g., "10.10.7")
-                        server_url                TEXT,              -- Server base URL
+                        server_version            TEXT,              -- Jellyfin server version string
+                        server_url                TEXT,              -- Public URL of the Jellyfin server
+                        notification_type         TEXT,              -- Type of notification event (ItemAdded, etc.)
 
                         -- ==================== VIDEO TECHNICAL SPECIFICATIONS ====================
-                        -- Core video stream properties for quality detection and templates
-                        video_height              INTEGER,           -- Video height in pixels (1080, 2160, etc.)
-                        video_width               INTEGER,           -- Video width in pixels (1920, 3840, etc.)
-                        video_codec               TEXT,              -- Video codec (h264, hevc, av1, etc.)
-                        video_profile             TEXT,              -- Codec profile (Main, High, etc.)
-                        video_range               TEXT,              -- Video range (SDR, HDR10, Dolby Vision, etc.)
-                        video_framerate           REAL,              -- Frame rate (23.976, 29.97, 60, etc.)
-                        aspect_ratio              TEXT,              -- Display aspect ratio (16:9, 21:9, etc.)
-
-                        -- Extended video properties for comprehensive webhook compatibility
-                        video_title               TEXT,              -- Video stream display title
-                        video_type                TEXT,              -- Stream type identifier ("Video")
-                        video_language            TEXT,              -- Video language code (eng, jpn, etc.)
-                        video_level               TEXT,              -- Codec level (4.0, 5.1, etc.)
-                        video_interlaced          BOOLEAN,           -- Interlaced video flag
+                        -- Complete video stream metadata for quality analysis and display
+                        video_height              INTEGER,           -- Video resolution height (1080, 720, 2160, etc.)
+                        video_width               INTEGER,           -- Video resolution width (1920, 1280, 3840, etc.)
+                        video_codec               TEXT,              -- Video codec (h264, hevc, av1, vp9, etc.)
                         video_bitrate             INTEGER,           -- Video bitrate in bits per second
-                        video_bitdepth            INTEGER,           -- Bit depth (8, 10, 12 bits)
+                        video_framerate           REAL,              -- Frames per second (23.976, 29.970, 60.000, etc.)
+                        video_language            TEXT,              -- Video language code (eng, spa, fra, etc.)
+                        video_title               TEXT,              -- Video stream title/name from container
+                        video_type                TEXT,              -- Stream type identifier
+                        video_profile             TEXT,              -- Codec profile (High, Main, Baseline, etc.)
+                        video_level               TEXT,              -- Codec level (4.1, 5.1, etc.)
+                        video_pixelaspect         TEXT,              -- Pixel aspect ratio (1:1, etc.)
                         video_colorspace          TEXT,              -- Color space (bt709, bt2020, etc.)
-                        video_colortransfer       TEXT,              -- Color transfer characteristics
-                        video_colorprimaries      TEXT,              -- Color primaries specification
+                        video_colortransfer       TEXT,              -- Color transfer characteristics (bt709, smpte2084, etc.)
+                        video_colorprimaries      TEXT,              -- Color primaries specification (bt709, bt2020, etc.)
                         video_pixelformat         TEXT,              -- Pixel format (yuv420p, yuv420p10le, etc.)
-                        video_refframes           INTEGER,           -- Reference frames count
+                        video_refframes           INTEGER,           -- Number of reference frames used by codec
 
                         -- ==================== AUDIO TECHNICAL SPECIFICATIONS ====================
-                        -- Core audio stream properties for quality detection and templates
-                        audio_codec               TEXT,              -- Audio codec (aac, ac3, dts, etc.)
-                        audio_channels            INTEGER,           -- Number of audio channels (2, 6, 8, etc.)
+                        -- Complete audio stream metadata for quality detection and display
+                        audio_codec               TEXT,              -- Audio codec (aac, ac3, dts, flac, mp3, etc.)
+                        audio_channels            INTEGER,           -- Number of audio channels (2, 6, 8 for stereo, 5.1, 7.1)
+                        audio_language            TEXT,              -- Audio language code (eng, spa, fra, etc.)
                         audio_bitrate             INTEGER,           -- Audio bitrate in bits per second
-                        audio_samplerate          INTEGER,           -- Sample rate in Hz (48000, 96000, etc.)
+                        audio_title               TEXT,              -- Audio stream title/name from container
+                        audio_type                TEXT,              -- Stream type identifier
+                        audio_samplerate          INTEGER,           -- Sample rate in Hz (48000, 44100, 96000, etc.)
+                        audio_default             BOOLEAN,           -- Whether this is the default audio track
 
-                        -- Extended audio properties for comprehensive webhook compatibility
-                        audio_title               TEXT,              -- Audio stream display title
-                        audio_type                TEXT,              -- Stream type identifier ("Audio")
-                        audio_language            TEXT,              -- Audio language code (eng, fra, etc.)
-                        audio_default             BOOLEAN,           -- Default audio track flag
-
-                        -- ==================== SUBTITLE TECHNICAL SPECIFICATIONS ====================
-                        -- Subtitle/caption stream properties for webhook compatibility
-                        subtitle_title            TEXT,              -- Subtitle stream display title
-                        subtitle_type             TEXT,              -- Stream type identifier ("Subtitle")
-                        subtitle_language         TEXT,              -- Subtitle language code
-                        subtitle_codec            TEXT,              -- Subtitle format (subrip, ass, pgs, etc.)
+                        -- ==================== SUBTITLE INFORMATION ====================
+                        -- Subtitle/caption tracks available for the content
+                        subtitle_title            TEXT,              -- Subtitle stream title/name
+                        subtitle_type             TEXT,              -- Subtitle stream type identifier
+                        subtitle_language         TEXT,              -- Subtitle language code (eng, spa, fra, etc.)
+                        subtitle_codec            TEXT,              -- Subtitle format (srt, ass, pgs, vtt, etc.)
                         subtitle_default          BOOLEAN,           -- Default subtitle track flag
                         subtitle_forced           BOOLEAN,           -- Forced subtitle display flag
                         subtitle_external         BOOLEAN,           -- External subtitle file flag
@@ -292,6 +286,7 @@ class DatabaseManager:
                         imdb_id                   TEXT,              -- Internet Movie Database ID (tt1234567)
                         tmdb_id                   TEXT,              -- The Movie Database ID
                         tvdb_id                   TEXT,              -- The TV Database ID
+                        tvdb_slug                 TEXT,              -- TVDB URL slug identifier [FIXED: Previously missing]
 
                         -- ==================== TV SERIES HIERARCHY ====================
                         -- TV series organization and hierarchy for episodes and seasons
@@ -305,32 +300,23 @@ class DatabaseManager:
                         air_time                  TEXT,              -- Original broadcast time (21:30, etc.)
 
                         -- ==================== RUNTIME INFORMATION ====================
-                        -- Duration and runtime data in multiple formats
-                        runtime_ticks             INTEGER,           -- Duration in .NET ticks (10,000 ticks = 1ms)
-                        runtime_formatted         TEXT,              -- Human-readable duration (01:42:33)
-
-                        -- ==================== FILE SYSTEM INFORMATION ====================
-                        -- File system and storage related metadata
-                        file_path                 TEXT,              -- Full file path on server
-                        file_size                 INTEGER,           -- File size in bytes
-                        library_name              TEXT,              -- Jellyfin library name
+                        -- Duration and timing information in multiple formats
+                        runtime_ticks             INTEGER,           -- Jellyfin duration in ticks (10,000 ticks = 1ms)
+                        runtime_formatted         TEXT,              -- Human-readable runtime (1h 30m)
 
                         -- ==================== TIMESTAMPS ====================
-                        -- Timestamp information for tracking and webhook compatibility
-                        timestamp                 TEXT DEFAULT CURRENT_TIMESTAMP,  -- Database insert/update time
-                        utc_timestamp             TEXT,              -- UTC timestamp from webhook
-                        premiere_date             TEXT,              -- Original air/release date
-                        date_created              TEXT,              -- When item was added to Jellyfin
-                        date_modified             TEXT,              -- When item was last modified
-                        timestamp_created         TEXT,              -- When MediaItem object was created
+                        -- Creation, modification, and processing timestamps
+                        date_created              TEXT,              -- When item was added to Jellyfin (ISO format)
+                        date_modified             TEXT,              -- When item was last modified (ISO format)
+                        timestamp                 TEXT DEFAULT CURRENT_TIMESTAMP, -- Service processing timestamp
 
-                        -- ==================== EXTENDED METADATA ====================
-                        -- Additional metadata for rich template customization
-                        official_rating           TEXT,              -- MPAA rating (G, PG, R), TV rating (TV-MA), etc.
+                        -- ==================== CONTENT METADATA ====================
+                        -- Descriptive metadata and categorization
                         tagline                   TEXT,              -- Marketing tagline or promotional text
                         genres                    TEXT,              -- JSON array of genre names
                         studios                   TEXT,              -- JSON array of production companies/studios
                         tags                      TEXT,              -- JSON array of user-defined or imported tags
+                        official_rating           TEXT,              -- MPAA rating (G, PG, R), TV rating (TV-MA), etc.
 
                         -- ==================== MUSIC-SPECIFIC METADATA ====================
                         -- Fields specific to audio content (songs, albums, artists)
@@ -343,9 +329,11 @@ class DatabaseManager:
                         width                     INTEGER,           -- Image width in pixels
                         height                    INTEGER,           -- Image height in pixels
 
-                        -- ==================== HIERARCHY AND RELATIONSHIPS ====================
-                        -- Item hierarchy and parent-child relationships
-                        parent_id                 TEXT,              -- Parent item ID for hierarchy navigation
+                        -- ==================== FILE SYSTEM INFORMATION ====================
+                        -- File location and metadata from the storage system
+                        file_path                 TEXT,              -- Full file path on server
+                        file_size                 INTEGER,           -- File size in bytes
+                        library_name              TEXT,              -- Jellyfin library name
 
                         -- ==================== INTERNAL TRACKING ====================
                         -- Fields used for service operations and change detection
@@ -364,6 +352,7 @@ class DatabaseManager:
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_video_height ON media_items(video_height)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_video_codec ON media_items(video_codec)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_audio_codec ON media_items(audio_codec)")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_tvdb_slug ON media_items(tvdb_slug)")
 
                 # Create sync status tracking table for monitoring library synchronization
                 await db.execute("""
@@ -889,9 +878,8 @@ class DatabaseManager:
         """
         Clean shutdown of database manager.
 
-        This method performs any necessary cleanup operations before the
-        database manager is destroyed. Currently serves as a placeholder
-        for future cleanup needs.
+        This method performs any necessary cleanup operations when the
+        application is shutting down.
 
         Example:
             ```python
@@ -899,6 +887,9 @@ class DatabaseManager:
             await db_manager.close()
             ```
         """
-        self.logger.debug("Database manager shutdown completed")
-        # aiosqlite connections are automatically closed by context managers
-        # No explicit cleanup needed currently
+        self.logger.info(f"Database manager shutdown. Final connection count: {self._connection_count}")
+        if self._connection_count > 0:
+            self.logger.warning(f"Shutdown with {self._connection_count} active connections")
+
+        # WAL mode connections will be automatically closed by SQLite
+        # No explicit cleanup needed for aiosqlite connections

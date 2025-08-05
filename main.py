@@ -89,6 +89,7 @@ import uvicorn
 # Import our custom modules
 from webhook_models import WebhookPayload
 from webhook_service import WebhookService
+from config_models import ConfigurationValidator
 from utils import setup_logging, get_logger
 
 # Global service instance - shared across the FastAPI application
@@ -140,11 +141,31 @@ async def lifespan(app: FastAPI):
     try:
         # Initialize logging first so we can log any errors during startup
         # The setup_logging function creates both console and file handlers
+
+        # This ensures environment variables can override config file settings
+        config_validator = ConfigurationValidator()
+        config = None
+        log_level = "INFO"  # Default fallback
+
+        try:
+            # Try to load full configuration
+            config = config_validator.load_and_validate_config()
+            log_level = config.server.log_level
+        except Exception as config_error:
+            # If config loading fails, fall back to environment variable or default
+            log_level = os.getenv("LOG_LEVEL", "INFO")
+            # Use print since logging isn't set up yet
+            print(f"Warning: Could not load config for log level, using {log_level}: {config_error}")
+
+        # Initialize logging with the determined log level
+        # The setup_logging function creates both console and file handlers
         logger = setup_logging(
-            log_level=os.getenv("LOG_LEVEL", "INFO"),
+            log_level=log_level,
             log_dir=os.getenv("LOG_DIR", "/app/logs")
         )
         logger.info("Starting Jellynouncer service initialization...")
+        # Log which source provided the log level for debugging
+        logger.debug(f"Log level '{log_level}' determined from configuration system")
 
         # Create and initialize the main webhook service
         # This handles all the complex business logic and integrations
@@ -584,11 +605,29 @@ if __name__ == "__main__":
     # Set up signal handlers for graceful shutdown
     setup_signal_handlers()
 
-    # Get configuration from environment variables with sensible defaults
-    host = os.getenv("HOST", "0.0.0.0")  # Listen on all interfaces
-    port = int(os.getenv("PORT", 8080))  # Standard webhook port
-    workers = int(os.getenv("WORKERS", 1))  # Single worker for SQLite compatibility
-    log_level = os.getenv("LOG_LEVEL", "info").lower()
+    # This allows config file settings to be used with environment variable overrides
+    config = None
+    try:
+        config_validator = ConfigurationValidator()
+        config = config_validator.load_and_validate_config()
+        print(f"Configuration loaded successfully from config file")
+    except Exception as e:
+        print(f"Warning: Could not load configuration file, using environment variables and defaults: {e}")
+
+    # Get configuration from config file with environment variable overrides
+    if config:
+        # Use config values with environment variable overrides (environment takes priority)
+        host = os.getenv("HOST", config.server.host)
+        port = int(os.getenv("PORT", str(config.server.port)))
+        # Convert log_level to lowercase for uvicorn
+        log_level = os.getenv("LOG_LEVEL", config.server.log_level).lower()
+        print(f"Using server config: {host}:{port}, log_level={log_level}")
+    else:
+        # Fallback to environment variables with hardcoded defaults
+        host = os.getenv("HOST", "0.0.0.0")  # Listen on all interfaces
+        port = int(os.getenv("PORT", 8080))  # Standard webhook port
+        log_level = os.getenv("LOG_LEVEL", "info").lower()
+        print(f"Using fallback config: {host}:{port}, log_level={log_level}")
 
     # Start the Uvicorn ASGI server
     # Uvicorn is a lightning-fast ASGI server implementation for Python
