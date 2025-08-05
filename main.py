@@ -74,11 +74,12 @@ License: MIT
 import os
 import asyncio
 import time
+import json
 import signal
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Dict, Any, Optional
 
 # Third-party imports for async web framework and HTTP operations
 from fastapi import FastAPI, HTTPException, Request
@@ -280,6 +281,136 @@ async def receive_webhook(payload: WebhookPayload):
             detail="Internal error processing webhook"
         )
 
+@app.post("/webhook/debug")
+async def webhook_debug_endpoint(request: Request) -> Dict[str, Any]:
+    """
+    Enhanced debug webhook endpoint for troubleshooting webhook configuration issues.
+
+    This endpoint accepts any JSON payload and provides comprehensive analysis
+    of the request, including headers, body content, validation results, and
+    field-by-field analysis with detailed logging.
+
+    Args:
+        request: FastAPI request object containing raw webhook data
+
+    Returns:
+        Dictionary with comprehensive debug information including validation results
+    """
+    logger = app.state.logger
+    client_info = getattr(request, "client", None)
+    client_host = getattr(client_info, "host", "unknown") if client_info else "unknown"
+    client_port = getattr(client_info, "port", "unknown") if client_info else "unknown"
+
+    try:
+        # ==================== REQUEST ANALYSIS ====================
+
+        # Get raw request data for analysis
+        raw_body = await request.body()
+        content_type = request.headers.get("content-type", "")
+        user_agent = request.headers.get("user-agent", "")
+
+        # Log comprehensive request details
+        logger.info("=" * 80)
+        logger.info("🔍 ENHANCED DEBUG WEBHOOK REQUEST RECEIVED")
+        logger.info("=" * 80)
+        logger.info(f"📡 Client: {client_host}:{client_port}")
+        logger.info(f"🌐 Method: {request.method}")
+        logger.info(f"📍 URL: {request.url}")
+        logger.info(f"📋 Content-Type: {content_type}")
+        logger.info(f"🤖 User-Agent: {user_agent}")
+        logger.info(f"📏 Body Length: {len(raw_body)} bytes")
+
+        # Log all headers
+        logger.info("📨 REQUEST HEADERS:")
+        for header_name, header_value in request.headers.items():
+            # Mask potential sensitive headers
+            if header_name.lower() in ['authorization', 'x-api-key', 'x-jellyfin-token']:
+                masked_value = header_value[:8] + "***" if len(header_value) > 8 else "***"
+                logger.info(f"    {header_name}: {masked_value}")
+            else:
+                logger.info(f"    {header_name}: {header_value}")
+
+        # Log query parameters if any
+        if request.query_params:
+            logger.info("🔗 QUERY PARAMETERS:")
+            for param_name, param_value in request.query_params.items():
+                logger.info(f"    {param_name}: {param_value}")
+
+        # Log raw body content (first 1000 chars for safety)
+        logger.info("📦 RAW BODY CONTENT:")
+        try:
+            body_text = raw_body.decode('utf-8', errors='replace')
+            if len(body_text) > 1000:
+                logger.info(f"    {body_text[:1000]}... (truncated, total length: {len(body_text)})")
+            else:
+                logger.info(f"    {body_text}")
+        except Exception as decode_error:
+            logger.error(f"    Failed to decode body as UTF-8: {decode_error}")
+            logger.info(f"    Raw bytes (first 200): {raw_body[:200]}")
+
+        # ==================== JSON PARSING ====================
+
+        json_data = None
+        json_parse_error = None
+
+        # Attempt to parse JSON
+        try:
+            json_data = json.loads(raw_body)
+            logger.info("✅ JSON PARSING SUCCESSFUL")
+            logger.info(f"📊 JSON Structure:")
+            logger.info(
+                f"    Top-level keys: {list(json_data.keys()) if isinstance(json_data, dict) else 'Not a dictionary'}")
+            logger.info(f"    Total keys: {len(json_data) if isinstance(json_data, dict) else 'N/A'}")
+
+            # Log each field in detail
+            if isinstance(json_data, dict):
+                logger.info("🔍 DETAILED FIELD ANALYSIS:")
+                for key, value in json_data.items():
+                    value_type = type(value).__name__
+                    if value is None:
+                        value_str = "null"
+                    elif isinstance(value, str):
+                        value_str = f'"{value}"' if len(str(value)) <= 100 else f'"{str(value)[:100]}..." (truncated)'
+                    else:
+                        value_str = str(value) if len(str(value)) <= 100 else f"{str(value)[:100]}... (truncated)"
+
+                    logger.info(f"    {key} ({value_type}): {value_str}")
+
+        except json.JSONDecodeError as e:
+            json_parse_error = e
+            logger.error("❌ JSON PARSING FAILED")
+            logger.error(f"    Error: {e}")
+            logger.error(f"    Error position: line {e.lineno}, column {e.colno}")
+            logger.error(f"    Error message: {e.msg}")
+
+            return {
+                "status": "json_parse_error",
+                "request_details": {
+                    "client": f"{client_host}:{client_port}",
+                    "method": request.method,
+                    "url": str(request.url),
+                    "content_type": content_type,
+                    "user_agent": user_agent,
+                    "body_length": len(raw_body),
+                    "headers": dict(request.headers)
+                },
+                "error": "Invalid JSON",
+                "json_error": {
+                    "message": str(e),
+                    "line": e.lineno,
+                    "column": e.colno,
+                    "error_type": e.msg
+                },
+                "raw_body_preview": raw_body.decode('utf-8', errors='replace')[:500]
+            }
+
+    except Exception as e:
+        # Log the error but don't expose internal details to the client
+        webhook_service.logger.error(f"Webhook processing failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error processing webhook"
+        )
 
 @app.get("/health")
 async def health_check():
