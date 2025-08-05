@@ -815,13 +815,14 @@ class WebhookService:
         Synchronize entire Jellyfin library to local database.
 
         This method performs a complete sync of the Jellyfin library, processing
-        all items in batches for efficiency. It's used for initial setup and
-        periodic maintenance to ensure our database matches Jellyfin's library.
+        all items in configurable batches for optimal efficiency. It now uses the
+        configured batch size and batch database operations for maximum performance.
 
-        **Understanding Batch Processing:**
-            Instead of processing items one by one, we process them in batches
-            (groups). This is much more efficient for large libraries because
-            it reduces the number of database transactions and API calls.
+        **Enhanced Batch Processing:**
+            - Uses config.sync.sync_batch_size for both API retrieval and database operations
+            - Batch database saves using save_items_batch() for significant performance improvement
+            - Individual item error handling within batches maintains data integrity
+            - Configurable batch sizes up to 1000 items for high-performance scenarios
 
         **Background vs Foreground Sync:**
             - Background: Doesn't block webhook processing (for periodic syncs)
@@ -847,104 +848,177 @@ class WebhookService:
             ```
 
         Note:
-            Large libraries may take significant time to sync. Progress is
-            logged periodically to provide feedback during long operations.
+            Large libraries now process much faster due to batch operations.
+            Progress is logged periodically to provide feedback during operations.
         """
+        # Prevent multiple syncs from running simultaneously
         if self.sync_in_progress:
-            self.logger.warning("Library sync requested but sync already in progress")
+            self.logger.warning("Library sync already in progress - skipping")
             return {
-                "status": "warning",
+                "status": "skipped",
                 "message": "Sync already in progress",
-                "sync_in_progress": True
+                "items_processed": 0,
+                "total_items": 0,
+                "errors": 0,
+                "processing_time": 0
             }
 
         try:
-            # Set sync flags to prevent concurrent syncs
+            # Set sync state flags
             self.sync_in_progress = True
             self.is_background_sync = background
             sync_start_time = time.time()
 
-            sync_type = "background" if background else "foreground"
-            self.logger.info(f"Starting {sync_type} library sync with Jellyfin")
+            if background:
+                self.logger.info("Starting background library sync...")
+            else:
+                self.logger.info("Starting foreground library sync...")
 
-            # Get all items from Jellyfin library
-            try:
-                all_items = await self.jellyfin.get_all_items()
-                if not all_items:
-                    self.logger.warning("No items retrieved from Jellyfin library")
-                    return {
-                        "status": "warning",
-                        "message": "No items found in Jellyfin library",
-                        "items_processed": 0
-                    }
-
-                self.logger.info(f"Retrieved {len(all_items)} items from Jellyfin library")
-
-            except Exception as e:
-                self.logger.error(f"Failed to retrieve items from Jellyfin: {e}")
+            # Check Jellyfin connectivity before starting
+            if not await self.jellyfin.is_connected():
+                self.logger.error("Cannot sync: Jellyfin server is not accessible")
                 return {
                     "status": "error",
-                    "message": f"Failed to retrieve library: {str(e)}",
-                    "items_processed": 0
+                    "message": "Jellyfin server not accessible",
+                    "items_processed": 0,
+                    "total_items": 0,
+                    "errors": 0,
+                    "processing_time": round(time.time() - sync_start_time, 2)
                 }
 
-            # Process items in batches for efficiency
-            batch_size = 50
-            items_processed = 0
-            errors = 0
+            # Get configured batch size from sync configuration
+            api_batch_size = self.config.sync.sync_batch_size
+            self.logger.info(f"Using configured batch size: {api_batch_size}")
 
-            for i in range(0, len(all_items), batch_size):
-                batch = all_items[i:i + batch_size]
+            # Retrieve all items from Jellyfin API using configured batch size
+            self.logger.info("Retrieving all items from Jellyfin...")
+            all_items = await self.jellyfin.get_all_items(batch_size=api_batch_size)
+
+            if not all_items:
+                self.logger.warning("No items retrieved from Jellyfin library")
+                return {
+                    "status": "warning",
+                    "message": "No items found in library",
+                    "items_processed": 0,
+                    "total_items": 0,
+                    "errors": 0,
+                    "processing_time": round(time.time() - sync_start_time, 2)
+                }
+
+            self.logger.info(f"Retrieved {len(all_items)} items from Jellyfin - starting processing...")
+
+            # Process items using the same batch size for database operations
+            db_batch_size = api_batch_size  # Use same size for consistency
+            items_processed = 0
+            batch_errors = 0
+            total_individual_errors = 0
+
+            for i in range(0, len(all_items), db_batch_size):
+                batch = all_items[i:i + db_batch_size]
+                batch_start_time = time.time()
 
                 try:
-                    # Process each item in the batch
+                    # Convert API data to MediaItem objects for this batch
+                    media_items = []
+                    conversion_errors = 0
+
                     for item_data in batch:
                         try:
                             # Convert Jellyfin API data to MediaItem
                             media_item = await self.jellyfin.convert_to_media_item(item_data)
-
-                            # Save to database
-                            await self.db.save_item(media_item)
-                            items_processed += 1
-
+                            media_items.append(media_item)
                         except Exception as e:
-                            self.logger.warning(f"Error processing item {item_data.get('Id', 'unknown')}: {e}")
-                            errors += 1
+                            self.logger.warning(
+                                f"Error converting item {item_data.get('Id', 'unknown')}: {e}"
+                            )
+                            conversion_errors += 1
+                            total_individual_errors += 1
 
-                    # Log progress periodically
-                    if i % (batch_size * 10) == 0:  # Every 10 batches
+                    # Save batch to database using efficient batch operation
+                    if media_items:
+                        batch_results = await self.db.save_items_batch(media_items)
+
+                        # Update counters based on batch results
+                        items_processed += batch_results['successful']
+                        total_individual_errors += batch_results['failed']
+
+                        batch_time = time.time() - batch_start_time
+                        self.logger.debug(
+                            f"Batch {i // db_batch_size + 1}: "
+                            f"{batch_results['successful']}/{len(media_items)} saved, "
+                            f"{batch_results['failed']} failed, "
+                            f"{conversion_errors} conversion errors "
+                            f"({batch_time:.2f}s)"
+                        )
+                    else:
+                        # All items in this batch failed conversion
+                        self.logger.warning(f"Batch {i // db_batch_size + 1}: All items failed conversion")
+
+                    # Log progress periodically (every 10 batches)
+                    if (i // db_batch_size) % 10 == 0:
                         progress_pct = round((i / len(all_items)) * 100, 1)
+                        elapsed_time = time.time() - sync_start_time
+                        estimated_total = elapsed_time / (i + db_batch_size) * len(all_items) if i > 0 else 0
+                        remaining_time = max(0, estimated_total - elapsed_time)
+
                         self.logger.info(
-                            f"Sync progress: {items_processed}/{len(all_items)} items processed ({progress_pct}%)")
+                            f"Sync progress: {items_processed}/{len(all_items)} items processed "
+                            f"({progress_pct}%) - "
+                            f"Elapsed: {elapsed_time:.1f}s, "
+                            f"ETA: {remaining_time:.1f}s"
+                        )
 
                 except Exception as e:
+                    # Handle batch-level errors
                     self.logger.error(f"Error processing batch starting at index {i}: {e}")
-                    errors += len(batch)
+                    batch_errors += 1
+                    total_individual_errors += len(batch)
+
+                # Add small delay between batches to prevent overwhelming the system
+                if i + db_batch_size < len(all_items):  # Don't delay after the last batch
+                    await asyncio.sleep(self.config.sync.api_request_delay)
 
             # Update last sync time in database
-            await self.db.update_last_sync_time()
+            try:
+                await self.db.update_last_sync_time()
+            except Exception as e:
+                self.logger.warning(f"Could not update last sync time: {e}")
 
             processing_time = time.time() - sync_start_time
 
-            # Determine final status
-            if errors == 0:
+            # Determine final status based on error thresholds
+            total_items = len(all_items)
+            success_rate = (items_processed / total_items) * 100 if total_items > 0 else 0
+
+            if total_individual_errors == 0:
                 status = "success"
-            elif errors < len(all_items) / 2:  # Less than half failed
+            elif success_rate >= 50:  # More than half succeeded
                 status = "partial"
             else:
                 status = "error"
 
-            self.logger.info(
-                f"Library sync completed: {items_processed} items processed, "
-                f"{errors} errors in {processing_time:.2f}s"
-            )
+            # Log comprehensive completion summary
+            self.logger.info("=" * 80)
+            self.logger.info(f"Library sync completed with status: {status.upper()}")
+            self.logger.info(f"  Items processed: {items_processed:,}/{total_items:,}")
+            self.logger.info(f"  Success rate: {success_rate:.1f}%")
+            self.logger.info(f"  Individual errors: {total_individual_errors:,}")
+            self.logger.info(f"  Batch errors: {batch_errors:,}")
+            self.logger.info(f"  Processing time: {processing_time:.2f}s")
+            self.logger.info(f"  Throughput: {items_processed / processing_time:.1f} items/sec")
+            self.logger.info(f"  Batch size used: {db_batch_size:,}")
+            self.logger.info("=" * 80)
 
             return {
                 "status": status,
                 "items_processed": items_processed,
-                "total_items": len(all_items),
-                "errors": errors,
-                "processing_time": round(processing_time, 2)
+                "total_items": total_items,
+                "errors": total_individual_errors,
+                "batch_errors": batch_errors,
+                "success_rate": round(success_rate, 1),
+                "processing_time": round(processing_time, 2),
+                "throughput": round(items_processed / processing_time, 1) if processing_time > 0 else 0,
+                "batch_size_used": db_batch_size
             }
 
         except Exception as e:
@@ -953,6 +1027,9 @@ class WebhookService:
             return {
                 "status": "error",
                 "message": str(e),
+                "items_processed": 0,
+                "total_items": 0,
+                "errors": 0,
                 "processing_time": round(processing_time, 2)
             }
 
