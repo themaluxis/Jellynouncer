@@ -282,7 +282,7 @@ class WebhookPayload(BaseModel):
     Video_0_Language: Optional[str] = Field(default=None, description="Video language")
     Video_0_Codec: Optional[str] = Field(default=None, description="Video codec (h264, hevc, av1)")
     Video_0_Profile: Optional[str] = Field(default=None, description="Video codec profile")
-    Video_0_Level: Optional[str] = Field(default=None, description="Video codec level")
+    Video_0_Level: Optional[int] = Field(default=None, description="Video codec level")
     Video_0_Height: Optional[int] = Field(default=None, description="Video resolution height in pixels")
     Video_0_Width: Optional[int] = Field(default=None, description="Video resolution width in pixels")
     Video_0_AspectRatio: Optional[str] = Field(default=None, description="Display aspect ratio")
