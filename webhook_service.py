@@ -24,14 +24,13 @@ import time
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 import aiohttp
-from fastapi import HTTPException
+import aiosqlite
 
 from config_models import AppConfig, ConfigurationValidator
 from webhook_models import WebhookPayload
-from media_models import MediaItem
 from database_manager import DatabaseManager
 from jellyfin_api import JellyfinAPI
 from discord_services import DiscordNotifier
@@ -82,13 +81,13 @@ class WebhookService:
         discord (DiscordNotifier): Discord notification manager for sending messages
         rating_service (RatingService): Service for fetching external rating information
 
-        Service State Tracking:
-            last_vacuum (float): Timestamp of last database maintenance operation
-            server_was_offline (bool): Whether Jellyfin server was previously offline
-            sync_in_progress (bool): Whether library sync is currently running
-            is_background_sync (bool): Whether current sync is running in background
-            initial_sync_complete (bool): Whether initial startup sync finished
-            shutdown_event (asyncio.Event): Coordination signal for graceful shutdown
+    Service State Tracking:
+        last_vacuum (float): Timestamp of last database maintenance operation
+        server_was_offline (bool): Whether Jellyfin server was previously offline
+        sync_in_progress (bool): Whether library sync is currently running
+        is_background_sync (bool): Whether current sync is running in background
+        initial_sync_complete (bool): Whether initial startup sync finished
+        shutdown_event (asyncio.Event): Coordination signal for graceful shutdown
 
     Example:
         Basic service lifecycle:
@@ -153,16 +152,16 @@ class WebhookService:
 
         # Initialize service state tracking attributes
         # These keep track of what the service is currently doing
-        self.last_vacuum = 0  # When we last cleaned up the database
+        self.last_vacuum: float = 0.0  # When we last cleaned up the database
         self.server_was_offline = False  # Was Jellyfin offline last time we checked?
         self.sync_in_progress = False  # Are we currently syncing the library?
         self.is_background_sync = False  # Is the sync running in the background?
         self.initial_sync_complete = False  # Have we done our first sync?
         self.shutdown_event = asyncio.Event()  # Graceful shutdown coordination
-        self._last_sync_time = None
 
         # Record service startup time for uptime tracking
-        self._start_time = time.time()
+        self._start_time: float = time.time()
+        self._last_sync_time: float = 0.0  # Initialize sync time
 
         self.logger.info("WebhookService created - ready for initialization")
 
@@ -226,6 +225,10 @@ class WebhookService:
                 self.db = DatabaseManager(self.config.database)
                 await self.db.initialize()
                 self.logger.info("Database manager initialized successfully")
+
+                # Load service state after database initialization
+                await self._load_service_state()
+
             except Exception as e:
                 self.logger.error(f"Database initialization failed: {e}")
                 raise SystemExit(f"Cannot start without database: {e}")
@@ -292,6 +295,64 @@ class WebhookService:
         except Exception as e:
             self.logger.error(f"Unexpected error during initialization: {e}", exc_info=True)
             raise SystemExit(f"Service initialization failed: {e}")
+
+    async def _load_service_state(self) -> None:
+        """
+        Load service state from database.
+
+        This method loads persistent service state like last vacuum time
+        and last sync time from the database to prevent NoneType errors
+        in background tasks.
+        """
+        try:
+            if not self.db:
+                self.logger.warning("Database not initialized, using default state values")
+                return
+
+            # Load last vacuum time from database
+            vacuum_time = await self.db.get_vacuum_timestamp()
+            if vacuum_time is not None:
+                self.last_vacuum = vacuum_time
+                self.logger.debug(f"Loaded last vacuum time: {vacuum_time}")
+            else:
+                # Set to current time to prevent immediate vacuum on startup
+                self.last_vacuum = time.time()
+                self.logger.debug("No vacuum history found, using current time")
+
+            # Load last sync time from database
+            sync_time = await self._get_last_sync_time()
+            if sync_time is not None:
+                self._last_sync_time = sync_time
+                self.logger.debug(f"Loaded last sync time: {sync_time}")
+
+        except Exception as e:
+            self.logger.warning(f"Failed to load service state: {e}")
+            # Ensure we have safe defaults even if loading fails
+            self.last_vacuum = time.time()
+            self._last_sync_time = 0.0
+
+    async def _get_last_sync_time(self) -> Optional[float]:
+        """
+        Get the last sync time from database.
+
+        Returns:
+            Optional[float]: Unix timestamp of last sync, or None if not found
+        """
+        try:
+            async with aiosqlite.connect(self.db.db_path) as db:
+                cursor = await db.execute("""
+                                          SELECT strftime('%s', last_sync_time)
+                                          FROM sync_status
+                                          WHERE id = 1
+                                            AND sync_type = 'library_sync'
+                                          """)
+                row = await cursor.fetchone()
+                if row and row[0]:
+                    return float(row[0])
+                return None
+        except Exception as e:
+            self.logger.debug(f"Could not retrieve last sync time: {e}")
+            return None
 
     async def process_webhook(self, payload: WebhookPayload) -> Dict[str, Any]:
         """
@@ -735,7 +796,7 @@ class WebhookService:
 
     async def background_tasks(self) -> None:
         """
-        Run continuous background maintenance tasks for service health.
+        Run background maintenance tasks.
 
         This method runs indefinitely and performs periodic maintenance
         tasks to keep the service healthy and performant. It's designed
@@ -765,33 +826,38 @@ class WebhookService:
                 if not self.sync_in_progress and self.initial_sync_complete:
                     sync_interval = 6 * 3600  # 6 hours in seconds
 
-                    # Get the last sync time, defaulting to service start time if not set
-                    # This prevents immediate background sync after initial sync
-                    last_sync_timestamp = getattr(self, '_last_sync_time', self._start_time)
-                    time_since_last_sync = time.time() - last_sync_timestamp
+                    # Ensure _last_sync_time is always a float
+                    last_sync = getattr(self, '_last_sync_time', 0.0)
+                    if not isinstance(last_sync, (int, float)):
+                        last_sync = 0.0
+                        self._last_sync_time = 0.0
+
+                    time_since_last_sync = time.time() - last_sync
 
                     if time_since_last_sync > sync_interval:
-                        self.logger.info(
-                            f"Starting scheduled background library sync (last sync: {time_since_last_sync / 3600:.1f} hours ago)")
+                        self.logger.info("Starting scheduled background library sync")
                         try:
                             result = await self.sync_jellyfin_library(background=True)
                             self.logger.info(f"Background sync completed: {result.get('status', 'unknown')}")
                             self._last_sync_time = time.time()
                         except Exception as e:
                             self.logger.error(f"Background sync failed: {e}")
-                    else:
-                        # Log why we're not syncing (useful for debugging)
-                        hours_remaining = (sync_interval - time_since_last_sync) / 3600
-                        self.logger.debug(f"Background sync not due yet ({hours_remaining:.1f} hours remaining)")
 
-                # Task 2: Database maintenance (weekly)
+                # Task 2: Database maintenance (weekly) - WITH TYPE SAFETY
                 vacuum_interval = 7 * 24 * 3600  # 1 week in seconds
+
+                # Ensure last_vacuum is always a float
+                if not isinstance(self.last_vacuum, (int, float)) or self.last_vacuum is None:
+                    self.logger.warning("last_vacuum was None or invalid, resetting to current time")
+                    self.last_vacuum = time.time()
+
                 time_since_vacuum = time.time() - self.last_vacuum
 
                 if time_since_vacuum > vacuum_interval:
                     self.logger.info("Starting scheduled database maintenance")
                     try:
                         if await self.db.vacuum_database():
+                            await self.db.update_vacuum_timestamp()  # Update in database too
                             self.last_vacuum = time.time()
                             self.logger.info("Database maintenance completed successfully")
                         else:

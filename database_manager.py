@@ -22,6 +22,7 @@ License: MIT
 import os
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from dataclasses import asdict
 from typing import Dict, Any, Optional, List
@@ -426,6 +427,40 @@ class DatabaseManager:
                                      CURRENT_TIMESTAMP
                                  )
                                  """)
+
+                # Create service state table for tracking maintenance operations
+                await db.execute("""
+                                 CREATE TABLE IF NOT EXISTS service_state
+                                 (
+                                     id
+                                     INTEGER
+                                     PRIMARY
+                                     KEY
+                                     DEFAULT
+                                     1,
+                                     vacuum_timestamp
+                                     REAL, -- Unix timestamp of last VACUUM
+                                     maintenance_timestamp
+                                     REAL, -- Unix timestamp of last maintenance
+                                     startup_timestamp
+                                     REAL, -- Unix timestamp of last service startup
+                                     created_at
+                                     TEXT
+                                     DEFAULT
+                                     CURRENT_TIMESTAMP,
+                                     updated_at
+                                     TEXT
+                                     DEFAULT
+                                     CURRENT_TIMESTAMP
+                                 )
+                                 """)
+
+                # Initialize with default values if empty
+                await db.execute("""
+                                 INSERT
+                                 OR IGNORE INTO service_state (id, vacuum_timestamp, startup_timestamp) 
+                    VALUES (1, ?, ?)
+                                 """, (0.0, time.time()))
 
                 await db.commit()
                 self._connection_count -= 1
@@ -924,6 +959,52 @@ class DatabaseManager:
 
         except Exception as e:
             self.logger.error(f"Database VACUUM failed: {e}")
+            return False
+
+    async def get_vacuum_timestamp(self) -> Optional[float]:
+        """
+        Get the last vacuum timestamp from the service state.
+
+        Returns:
+            Optional[float]: Unix timestamp of last vacuum, or None if not found
+        """
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute("""
+                                          SELECT vacuum_timestamp
+                                          FROM service_state
+                                          WHERE id = 1
+                                          """)
+                row = await cursor.fetchone()
+                if row and row[0] is not None:
+                    return float(row[0])
+                return None
+
+        except Exception as e:
+            self.logger.debug(f"Could not retrieve vacuum timestamp: {e}")
+            return None
+
+    async def update_vacuum_timestamp(self) -> bool:
+        """
+        Update the last vacuum timestamp in the service state.
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            current_time = time.time()
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    INSERT OR REPLACE INTO service_state (id, vacuum_timestamp, updated_at)
+                    VALUES (1, ?, CURRENT_TIMESTAMP)
+                """, (current_time,))
+                await db.commit()
+
+                self.logger.debug(f"Updated vacuum timestamp: {current_time}")
+                return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to update vacuum timestamp: {e}")
             return False
 
     async def close(self) -> None:
