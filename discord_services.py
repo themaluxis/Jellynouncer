@@ -29,7 +29,7 @@ import json
 import time
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import asdict
 
 import aiohttp
@@ -446,7 +446,7 @@ class DiscordNotifier:
         self.logger.warning(f"No webhook configured for media type: {media_type}")
         return None
 
-    async def send_notification(self, item: MediaItem, action: str) -> Dict[str, Any]:
+    async def send_notification(self, item: MediaItem, action: str, changes: Optional[List] = None) -> Dict[str, Any]:
         """
         Send Discord notification for a media item.
 
@@ -510,7 +510,7 @@ class DiscordNotifier:
             )
 
             # Render Discord embed using templates
-            embed_data = await self.render_embed(item, action, thumbnail_url)
+            embed_data = await self.render_embed(item, action, thumbnail_url, changes)
 
             # Check rate limits before sending
             if await self.is_rate_limited(webhook_url):
@@ -551,7 +551,7 @@ class DiscordNotifier:
                 "webhook_url": webhook_url
             }
 
-    async def render_embed(self, item: MediaItem, action: str, thumbnail_url: Optional[str]) -> Dict[str, Any]:
+    async def render_embed(self, item: MediaItem, action: str, thumbnail_url: Optional[str], changes: Optional[List] = None) -> Dict[str, Any]:
         """
         Render Discord embed using Jinja2 templates.
 
@@ -585,6 +585,7 @@ class DiscordNotifier:
             "item": asdict(item),
             "action": action,
             "thumbnail_url": thumbnail_url,
+            "changes": changes,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "server_url": self.thumbnail_manager.base_url,
             "jellyfin_url": self.thumbnail_manager.base_url,  # Keep both for backward compatibility

@@ -460,7 +460,7 @@ class WebhookService:
                     await self.db.save_item(media_item)
 
                     # Send upgrade notification
-                    await self.discord.send_notification(media_item, "upgrade")
+                    await self.discord.send_notification(media_item, "upgrade", changes)
 
                     processing_time = time.time() - start_time
                     return {
