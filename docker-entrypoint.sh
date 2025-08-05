@@ -14,7 +14,6 @@
 # - Efficient file operations using Bash 5.2 features
 # - Advanced permission management
 # - Performance monitoring and diagnostics
-#
 
 #=============================================================================
 # USER MANAGEMENT FUNCTIONS
@@ -485,151 +484,6 @@ create_required_directories() {
 # CONFIGURATION MANAGEMENT FUNCTIONS
 #=============================================================================
 
-# Advanced JSON configuration update using jq with comprehensive error handling
-# This function uses Bash 5.2's enhanced command substitution for better performance
-update_config_json() {
-    local config_file="$1"
-    local component="CONFIG"
-
-    log_info "Updating configuration file with environment variables" "${component}"
-
-    # Debug: Print environment variables
-    log_debug "Environment variables being used:" "${component}"
-    log_debug "  JELLYFIN_SERVER_URL='${JELLYFIN_SERVER_URL:-<unset>}'" "${component}"
-    log_debug "  JELLYFIN_API_KEY='${JELLYFIN_API_KEY:-<unset>}'" "${component}"
-    log_debug "  JELLYFIN_USER_ID='${JELLYFIN_USER_ID:-<unset>}'" "${component}"
-    log_debug "  DISCORD_WEBHOOK_URL='${DISCORD_WEBHOOK_URL:-<unset>}'" "${component}"
-    log_debug "  DISCORD_WEBHOOK_URL_MOVIES='${DISCORD_WEBHOOK_URL_MOVIES:-<unset>}'" "${component}"
-    log_debug "  DISCORD_WEBHOOK_URL_TV='${DISCORD_WEBHOOK_URL_TV:-<unset>}'" "${component}"
-    log_debug "  DISCORD_WEBHOOK_URL_MUSIC='${DISCORD_WEBHOOK_URL_MUSIC:-<unset>}'" "${component}"
-
-    # Validate input file
-    if ! validate_json_file "${config_file}" "${component}"; then
-        log_error "Configuration file validation failed" "${component}"
-        return 1
-    fi
-
-    # Debug: Show original config before modification
-    log_debug "Original config file content:" "${component}"
-    jq . "${config_file}" 2>/dev/null | head -20 | while IFS= read -r line; do
-        log_debug "  ${line}" "${component}"
-    done
-
-    # Create secure temporary file for atomic updates
-    local temp_config
-    temp_config=$(create_temp_file "config")
-
-    # Prepare environment variables with null fallbacks for jq
-    local env_vars=(
-        "jellyfin_url:${JELLYFIN_SERVER_URL:-null}"
-        "api_key:${JELLYFIN_API_KEY:-null}"
-        "user_id:${JELLYFIN_USER_ID:-null}"
-        "webhook_url:${DISCORD_WEBHOOK_URL:-null}"
-        "movies_url:${DISCORD_WEBHOOK_URL_MOVIES:-null}"
-        "tv_url:${DISCORD_WEBHOOK_URL_TV:-null}"
-        "music_url:${DISCORD_WEBHOOK_URL_MUSIC:-null}"
-        "omdb_key:${OMDB_API_KEY:-null}"
-        "tmdb_key:${TMDB_API_KEY:-null}"
-        "tvdb_key:${TVDB_API_KEY:-null}"
-    )
-
-    # Build jq arguments array for better maintainability
-    local jq_args=()
-    for env_var in "${env_vars[@]}"; do
-        local var_name="${env_var%%:*}"
-        local var_value="${env_var#*:}"
-        jq_args+=(--arg "${var_name}" "${var_value}")
-    done
-
-    # Execute jq transformation with comprehensive error handling
-    # Using Bash 5.2's improved process substitution
-    if jq "${jq_args[@]}" '
-        # Update Jellyfin configuration
-        .jellyfin.server_url = (if $jellyfin_url != "null" then $jellyfin_url else .jellyfin.server_url end) |
-        .jellyfin.api_key = (if $api_key != "null" then $api_key else .jellyfin.api_key end) |
-        .jellyfin.user_id = (if $user_id != "null" then $user_id else .jellyfin.user_id end) |
-
-        # Update Discord webhook URLs and enable them if URLs are provided
-        .discord.webhooks.default.url = (if $webhook_url != "null" then $webhook_url else .discord.webhooks.default.url end) |
-        .discord.webhooks.default.enabled = (if $webhook_url != "null" then true else .discord.webhooks.default.enabled end) |
-
-        .discord.webhooks.movies.url = (if $movies_url != "null" then $movies_url else .discord.webhooks.movies.url end) |
-        .discord.webhooks.movies.enabled = (if $movies_url != "null" then true else .discord.webhooks.movies.enabled end) |
-
-        .discord.webhooks.tv.url = (if $tv_url != "null" then $tv_url else .discord.webhooks.tv.url end) |
-        .discord.webhooks.tv.enabled = (if $tv_url != "null" then true else .discord.webhooks.tv.enabled end) |
-
-        .discord.webhooks.music.url = (if $music_url != "null" then $music_url else .discord.webhooks.music.url end) |
-        .discord.webhooks.music.enabled = (if $music_url != "null" then true else .discord.webhooks.music.enabled end) |
-
-        # Enable routing if any specific webhooks are configured
-        .discord.routing.enabled = (if ($movies_url != "null" or $tv_url != "null" or $music_url != "null") then true else .discord.routing.enabled end) |
-
-        # Update rating service API keys and auto-enable only if previously null
-        .rating_services.omdb.api_key = (if $omdb_key != "null" then $omdb_key else .rating_services.omdb.api_key end) |
-        .rating_services.omdb.enabled = (if ($omdb_key != "null" and (.rating_services.omdb.api_key == null or .rating_services.omdb.api_key == "")) then true else .rating_services.omdb.enabled end) |
-
-        .rating_services.tmdb.api_key = (if $tmdb_key != "null" then $tmdb_key else .rating_services.tmdb.api_key end) |
-        .rating_services.tmdb.enabled = (if ($tmdb_key != "null" and (.rating_services.tmdb.api_key == null or .rating_services.tmdb.api_key == "")) then true else .rating_services.tmdb.enabled end) |
-
-        .rating_services.tvdb.api_key = (if $tvdb_key != "null" then $tvdb_key else .rating_services.tvdb.api_key end) |
-        .rating_services.tvdb.enabled = (if ($tvdb_key != "null" and (.rating_services.tvdb.api_key == null or .rating_services.tvdb.api_key == "")) then true else .rating_services.tvdb.enabled end)
-    ' "${config_file}" > "${temp_config}" 2>/dev/null; then
-
-        # Validate the generated JSON
-        if validate_json_file "${temp_config}" "${component}"; then
-            # Debug: Show what changes were made
-            log_debug "Configuration changes made:" "${component}"
-            if command -v diff >/dev/null 2>&1; then
-                diff -u "${config_file}" "${temp_config}" | head -20 | while IFS= read -r line; do
-                    log_debug "  ${line}" "${component}"
-                done
-            fi
-
-            # Atomic update using mv for consistency
-            if mv "${temp_config}" "${config_file}"; then
-                log_success "Configuration updated successfully using jq" "${component}"
-
-                # Set proper ownership and permissions on the updated config file
-                if [[ -n "${PUID:-}" && -n "${PGID:-}" ]]; then
-                    safe_chown "${config_file}" "${PUID}:${PGID}" "${component}"
-                fi
-                safe_chmod "${config_file}" "644" "${component}"
-
-                # Debug: Show final config
-                log_debug "Final config file content:" "${component}"
-                jq . "${config_file}" 2>/dev/null | head -20 | while IFS= read -r line; do
-                    log_debug "  ${line}" "${component}"
-                done
-
-                # Debug: Force sync to ensure file is written
-                sync 2>/dev/null || true
-
-                # Debug: Verify file was actually written
-                sleep 0.1  # Brief pause to ensure filesystem sync
-                if [[ -f "${config_file}" ]]; then
-                    local file_size
-                    file_size=$(stat -c%s "${config_file}" 2>/dev/null || echo "0")
-                    log_debug "File verification after write: ${file_size} bytes" "${component}"
-                else
-                    log_error "Configuration file disappeared after write!" "${component}"
-                fi
-
-                return 0
-            else
-                log_error "Failed to replace configuration file" "${component}"
-                return 1
-            fi
-        else
-            log_error "Generated configuration is invalid JSON" "${component}"
-            return 1
-        fi
-    else
-        log_error "jq transformation failed" "${component}"
-        return 1
-    fi
-}
-
 # Setup initial configuration with fallback and validation
 setup_configuration() {
     local component="CONFIG"
@@ -661,7 +515,7 @@ setup_configuration() {
             return 1
         fi
 
-        # Copy default configuration
+        # Copy default configuration (no environment variable modifications)
         if cp "${DEFAULT_CONFIG_FILE}" "${CONFIG_FILE}"; then
             log_success "Default configuration copied successfully" "${component}"
 
@@ -676,42 +530,19 @@ setup_configuration() {
             return 1
         fi
     else
-        log_info "Configuration file exists, will update with environment variables" "${component}"
+        log_info "Configuration file exists, using existing file" "${component}"
+        log_info "Environment variables will override config.json values at runtime" "${component}"
     fi
 
-    # Update configuration with environment variables
-    if measure_execution_time update_config_json "${CONFIG_FILE}"; then
-        log_success "Configuration setup completed successfully" "${component}"
-
-        # Debug: Verify the final configuration file
-        log_debug "Final verification of configuration file:" "${component}"
-        log_debug "  File exists: $([[ -f "${CONFIG_FILE}" ]] && echo "YES" || echo "NO")" "${component}"
-        log_debug "  File size: $(stat -c%s "${CONFIG_FILE}" 2>/dev/null || echo "unknown") bytes" "${component}"
-        log_debug "  File permissions: $(stat -c%a "${CONFIG_FILE}" 2>/dev/null || echo "unknown")" "${component}"
-        log_debug "  File owner: $(stat -c%U:%G "${CONFIG_FILE}" 2>/dev/null || echo "unknown")" "${component}"
-
-        # Debug: Show specific fields that should have been modified
-        if command -v jq >/dev/null 2>&1; then
-            log_debug "Key configuration values after modification:" "${component}"
-            log_debug "  jellyfin.server_url: $(jq -r '.jellyfin.server_url' "${CONFIG_FILE}" 2>/dev/null || echo "error")" "${component}"
-            log_debug "  jellyfin.api_key: $(jq -r '.jellyfin.api_key' "${CONFIG_FILE}" 2>/dev/null || echo "error")" "${component}"
-            log_debug "  discord.webhooks.default.url: $(jq -r '.discord.webhooks.default.url' "${CONFIG_FILE}" 2>/dev/null || echo "error")" "${component}"
-            log_debug "  discord.webhooks.default.enabled: $(jq -r '.discord.webhooks.default.enabled' "${CONFIG_FILE}" 2>/dev/null || echo "error")" "${component}"
-        fi
-
-        # Debug: Check if this is really the mounted file
-        log_debug "Mount point verification:" "${component}"
-        if command -v findmnt >/dev/null 2>&1; then
-            findmnt /app/config 2>/dev/null | while IFS= read -r line; do
-                log_debug "  ${line}" "${component}"
-            done
-        fi
-
-        return 0
+    # Validate the final configuration file
+    if validate_json_file "${CONFIG_FILE}" "${component}"; then
+        log_success "Configuration file is valid JSON" "${component}"
     else
-        log_error "Configuration setup failed" "${component}"
+        log_error "Configuration file validation failed" "${component}"
         return 1
     fi
+
+    return 0
 }
 
 #=============================================================================
