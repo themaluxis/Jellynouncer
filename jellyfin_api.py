@@ -21,7 +21,9 @@ License: MIT
 
 import asyncio
 import time
+from datetime import datetime, timezone
 import logging
+import json
 from typing import Dict, Any, Optional, List, Callable
 
 from jellyfin_apiclient_python import JellyfinClient
@@ -391,13 +393,19 @@ class JellyfinAPI:
         Large libraries can contain thousands of items. Batch processing
         prevents memory exhaustion and provides better progress feedback.
 
+        **Optimized Field Selection:**
+        This method now requests only the specific fields that correspond to
+        webhook payload data, improving API performance and reducing bandwidth.
+        Fields are mapped directly to webhook field equivalents for complete
+        synchronization coverage.
+
         Args:
             batch_size (int): Number of items to fetch per API call (default: 100)
             progress_callback (Optional[Callable[[int, int], None]]): Optional callback
                 function called with (current_count, total_count) for progress updates
 
         Returns:
-            List[Dict[str, Any]]: List of all library items with full metadata
+            List[Dict[str, Any]]: List of all library items with webhook-equivalent metadata
 
         Example:
             ```python
@@ -434,14 +442,65 @@ class JellyfinAPI:
 
             while True:
                 try:
-                    # Request batch of items with comprehensive metadata
+                    # Request batch of items with webhook-specific fields only
+                    # This field list maps directly to webhook payload fields for complete sync
+                    webhook_fields = ",".join([
+                        # Core item metadata (maps to webhook base fields)
+                        "Overview",  # → Overview
+                        "ProductionYear",  # → Year
+                        "RunTimeTicks",  # → RunTimeTicks
+                        "OfficialRating",  # → N/A (not in webhook but useful)
+                        "Tagline",  # → N/A (not in webhook but useful)
+                        "PremiereDate",  # → PremiereDate
+                        "DateCreated",  # → N/A (internal tracking)
+                        "DateModified",  # → N/A (internal tracking)
+
+                        # Media stream information (maps to Video_0_*, Audio_0_*, Subtitle_0_*)
+                        "MediaStreams",  # → All Video_0_*, Audio_0_*, Subtitle_0_* fields
+                        "MediaSources",  # → Container for MediaStreams + file info
+
+                        # Provider IDs (maps to Provider_* fields)
+                        "ProviderIds",  # → Provider_tvdb, Provider_imdb, Provider_tvrage
+
+                        # File system information
+                        "Path",  # → File path information
+
+                        # TV Series hierarchy (maps to Series*, Season*, Episode* fields)
+                        "IndexNumber",  # → EpisodeNumber, SeasonNumber (depending on type)
+                        "ParentIndexNumber",  # → SeasonNumber (for episodes)
+                        "SeriesName",  # → SeriesName
+                        "SeriesId",  # → SeriesId
+                        "SeasonId",  # → SeasonId
+                        "ParentId",  # → For hierarchy navigation
+                        "AirTime",  # → AirTime
+
+                        # Content metadata (maps to genres, studios, tags arrays)
+                        "Genres",  # → Not direct webhook field but needed for templates
+                        "Studios",  # → Not direct webhook field but needed for templates
+                        "Tags",  # → Not direct webhook field but needed for templates
+
+                        # Music-specific fields
+                        "Album",  # → Music metadata
+                        "Artists",  # → Artists array
+                        "AlbumArtist",  # → Album artist
+                        "ArtistItems",  # → Detailed artist information
+
+                        # Photo/image specific fields
+                        "Width",  # → Image width
+                        "Height",  # → Image height
+
+                        # Additional useful fields for templates
+                        "AspectRatio",  # → Video aspect ratio
+                        "CommunityRating"  # → Ratings for templates
+                    ])
+
                     response = self.client.jellyfin.user_items(
                         params={
                             'StartIndex': start_index,
                             'Limit': batch_size,
                             'Recursive': True,
-                            'Fields': "Overview,MediaStreams,ProviderIds,Path,MediaSources,DateCreated,DateModified,ProductionYear,RunTimeTicks,OfficialRating,Genres,Studios,Tags,IndexNumber,ParentIndexNumber,Album,Artists,AlbumArtist,Width,Height,Budget,Revenue,Chapters,People,Taglines,TrailerUrls,HomePageUrl,SortName,PrimaryImageAspectRatio,ParentId,ExternalUrls,CommunityRating,DateLastMediaAdded,DateLastRefreshed,DateLastSaved,PremiereDate,ChildCount,CumulativeRunTimeTicks,ImageTags,BackdropImageTags,ScreenshotImageTags,SeriesPrimaryImageTag,LocalTrailerCount,ThemeSongIds,ThemeVideoIds,SpecialFeatureCount,EnableMediaSourceDisplay,MediaSourceCount,InheritedParentalRatingValue,RemoteTrailers",
-                            'IncludeItemTypes': 'Movie,Series,Season,Episode,MusicVideo,Audio,Video,MusicAlbum,MusicArtist,Book,Photo,BoxSet'
+                            'Fields': webhook_fields,
+                            'IncludeItemTypes': 'Movie,Series,Season,Episode,Audio,MusicAlbum,MusicArtist,MusicVideo,Video'
                         }
                     )
 
@@ -504,6 +563,12 @@ class JellyfinAPI:
         video and audio tracks. This method extracts the primary streams and
         their technical specifications.
 
+        **Enhanced Field Mapping:**
+        This method now maps ALL webhook fields to ensure complete database
+        synchronization and template compatibility. It includes server information,
+        comprehensive media stream data, TV series hierarchy, timestamps, and
+        all technical specifications that appear in webhook payloads.
+
         Args:
             item_data (Dict[str, Any]): Raw item data from Jellyfin API
 
@@ -528,105 +593,408 @@ class JellyfinAPI:
             succeeds even with incomplete Jellyfin data.
         """
         try:
-            # Extract basic item information
+            # ==================== CORE IDENTIFICATION ====================
+            # Extract basic item information (always required)
             item_id = item_data.get('Id', '')
             name = item_data.get('Name', 'Unknown')
             item_type = item_data.get('Type', 'Unknown')
             year = item_data.get('ProductionYear')
             overview = item_data.get('Overview', '')
 
-            # Extract provider IDs
+            # ==================== SERVER INFORMATION ====================
+            # Server info for webhook compatibility (fetch if needed)
+            server_id = None
+            server_name = None
+            server_version = None
+            server_url = self.config.server_url
+
+            # Try to get server info if not already fetched
+            try:
+                if not hasattr(self, '_cached_server_info'):
+                    self._cached_server_info = await self.get_system_info()
+
+                if self._cached_server_info:
+                    server_id = self._cached_server_info.get('Id')
+                    server_name = self._cached_server_info.get('ServerName')
+                    server_version = self._cached_server_info.get('Version')
+            except Exception as e:
+                self.logger.debug(f"Could not fetch server info: {e}")
+
+            # ==================== PROVIDER IDS ====================
+            # Extract external provider IDs (IMDb, TMDb, TVDb, etc.)
             provider_ids = item_data.get('ProviderIds', {})
             imdb_id = provider_ids.get('Imdb')
             tmdb_id = provider_ids.get('Tmdb')
             tvdb_id = provider_ids.get('Tvdb')
 
-            # Extract TV series information
+            # ==================== TV SERIES HIERARCHY ====================
+            # Extract TV series information for episodes and seasons
             parent_id = item_data.get('ParentId')
             series_name = item_data.get('SeriesName')
-            season_number = item_data.get('ParentIndexNumber')
-            episode_number = item_data.get('IndexNumber')
+            series_id = item_data.get('SeriesId')
+            series_premiere_date = None
+            season_id = item_data.get('SeasonId')
+            season_number = item_data.get('ParentIndexNumber')  # Season number for episodes
+            episode_number = item_data.get('IndexNumber')  # Episode number for episodes
+            air_time = item_data.get('AirTime')
 
-            # Extract media stream information
+            # For seasons, IndexNumber is the season number
+            if item_type == 'Season':
+                season_number = item_data.get('IndexNumber')
+
+            # Generate padded season/episode numbers (webhook SeasonNumber00, etc.)
+            season_number_padded = None
+            season_number_padded_3 = None
+            episode_number_padded = None
+            episode_number_padded_3 = None
+
+            if season_number is not None:
+                season_number_padded = f"{season_number:02d}"
+                season_number_padded_3 = f"{season_number:03d}"
+
+            if episode_number is not None:
+                episode_number_padded = f"{episode_number:02d}"
+                episode_number_padded_3 = f"{episode_number:03d}"
+
+            # ==================== RUNTIME INFORMATION ====================
+            # Extract runtime and convert to different formats
+            runtime_ticks = item_data.get('RunTimeTicks')
+            runtime_formatted = None
+
+            if runtime_ticks:
+                # Convert ticks to HH:MM:SS format (10,000 ticks = 1ms)
+                total_seconds = runtime_ticks // 10000000
+                hours = total_seconds // 3600
+                minutes = (total_seconds % 3600) // 60
+                seconds = total_seconds % 60
+                runtime_formatted = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+            # ==================== MEDIA STREAM PROCESSING ====================
+            # Extract comprehensive media stream information
             video_height = None
+            video_width = None
             video_codec = None
+            video_profile = None
+            video_level = None
+            video_framerate = None
+            video_range = None
+            video_interlaced = None
+            video_bitrate = None
+            video_bitdepth = None
+            video_colorspace = None
+            video_colortransfer = None
+            video_colorprimaries = None
+            video_pixelformat = None
+            video_refframes = None
+            aspect_ratio = None
+
+            # Video stream properties for webhook compatibility
+            video_title = None
+            video_type = None
+            video_language = None
+
+            # Audio stream properties
             audio_codec = None
             audio_channels = None
-            video_range = None
+            audio_bitrate = None
+            audio_samplerate = None
+            audio_title = None
+            audio_type = None
+            audio_language = None
+            audio_default = None
 
-            media_streams = item_data.get('MediaSources', [{}])[0].get('MediaStreams', [])
+            # Subtitle stream properties
+            subtitle_title = None
+            subtitle_type = None
+            subtitle_language = None
+            subtitle_codec = None
+            subtitle_default = None
+            subtitle_forced = None
+            subtitle_external = None
 
-            # Process video streams
-            for stream in media_streams:
-                if stream.get('Type') == 'Video':
-                    video_height = stream.get('Height')
-                    video_codec = stream.get('Codec', '').lower()
-                    video_range = stream.get('VideoRange', 'SDR')
-                    break
+            # Get media streams from different possible locations
+            media_streams = []
 
-            # Process audio streams
-            for stream in media_streams:
-                if stream.get('Type') == 'Audio':
-                    audio_codec = stream.get('Codec', '').lower()
-                    audio_channels = stream.get('Channels')
-                    break
-
-            # Extract file information
-            file_path = None
-            file_size = None
+            # Try MediaSources first (most common)
             if item_data.get('MediaSources'):
-                file_path = item_data['MediaSources'][0].get('Path')
-                file_size = item_data['MediaSources'][0].get('Size')
+                for source in item_data['MediaSources']:
+                    if 'MediaStreams' in source:
+                        media_streams.extend(source['MediaStreams'])
+            # Fallback to direct MediaStreams
+            elif 'MediaStreams' in item_data:
+                media_streams = item_data['MediaStreams']
 
-            # Extract collection information
-            genres = [genre.get('Name', '') for genre in item_data.get('Genres', [])]
-            studios = [studio.get('Name', '') for studio in item_data.get('Studios', [])]
+            # Process video streams (map to Video_0_* webhook fields)
+            video_streams = [s for s in media_streams if s.get('Type') == 'Video']
+            if video_streams:
+                video_stream = video_streams[0]  # Primary video stream
+
+                # Core video properties
+                video_height = video_stream.get('Height')
+                video_width = video_stream.get('Width')
+                video_codec = video_stream.get('Codec', '').lower()
+                video_profile = video_stream.get('Profile')
+                video_level = video_stream.get('Level')
+                video_framerate = video_stream.get('RealFrameRate')
+                video_range = video_stream.get('VideoRange', 'SDR')
+                video_interlaced = video_stream.get('IsInterlaced')
+                video_bitrate = video_stream.get('BitRate')
+                aspect_ratio = video_stream.get('AspectRatio')
+
+                # Extended video properties for webhook compatibility
+                video_title = video_stream.get('DisplayTitle')
+                video_type = 'Video'
+                video_language = video_stream.get('Language')
+                video_bitdepth = video_stream.get('BitDepth')
+                video_colorspace = video_stream.get('ColorSpace')
+                video_colortransfer = video_stream.get('ColorTransfer')
+                video_colorprimaries = video_stream.get('ColorPrimaries')
+                video_pixelformat = video_stream.get('PixelFormat')
+                video_refframes = video_stream.get('RefFrames')
+
+            # Process audio streams (map to Audio_0_* webhook fields)
+            audio_streams = [s for s in media_streams if s.get('Type') == 'Audio']
+            if audio_streams:
+                audio_stream = audio_streams[0]  # Primary audio stream
+
+                # Core audio properties
+                audio_codec = audio_stream.get('Codec', '').lower()
+                audio_channels = audio_stream.get('Channels')
+                audio_bitrate = audio_stream.get('BitRate')
+                audio_samplerate = audio_stream.get('SampleRate')
+
+                # Extended audio properties for webhook compatibility
+                audio_title = audio_stream.get('DisplayTitle')
+                audio_type = 'Audio'
+                audio_language = audio_stream.get('Language')
+                audio_default = audio_stream.get('IsDefault')
+
+            # Process subtitle streams (map to Subtitle_0_* webhook fields)
+            subtitle_streams = [s for s in media_streams if s.get('Type') == 'Subtitle']
+            if subtitle_streams:
+                subtitle_stream = subtitle_streams[0]  # Primary subtitle stream
+
+                # Subtitle properties for webhook compatibility
+                subtitle_title = subtitle_stream.get('DisplayTitle')
+                subtitle_type = 'Subtitle'
+                subtitle_language = subtitle_stream.get('Language')
+                subtitle_codec = subtitle_stream.get('Codec')
+                subtitle_default = subtitle_stream.get('IsDefault')
+                subtitle_forced = subtitle_stream.get('IsForced')
+                subtitle_external = subtitle_stream.get('IsExternal')
+
+            # ==================== FILE INFORMATION ====================
+            # Extract file system information
+            file_path = item_data.get('Path')
+            file_size = None
+            library_name = None
+
+            # Try to get file size from MediaSources
+            if item_data.get('MediaSources'):
+                for source in item_data['MediaSources']:
+                    if 'Size' in source:
+                        file_size = source['Size']
+                        break
+
+            # Try to extract library name from path or other sources
+            # This may require additional API calls in some cases
+            if 'ParentId' in item_data:
+                # For episodes/seasons, the library info might be in parent data
+                pass  # Could enhance this with additional API calls if needed
+
+            # ==================== METADATA COLLECTIONS ====================
+            # Extract collection information (genres, studios, tags)
+            genres = []
+            if 'Genres' in item_data:
+                genres = [genre.get('Name', '') if isinstance(genre, dict) else str(genre)
+                          for genre in item_data['Genres']]
+
+            studios = []
+            if 'Studios' in item_data:
+                studios = [studio.get('Name', '') if isinstance(studio, dict) else str(studio)
+                           for studio in item_data['Studios']]
+
             tags = item_data.get('Tags', [])
 
-            # Handle music-specific fields
+            # ==================== MUSIC-SPECIFIC FIELDS ====================
+            # Handle music-specific metadata
+            album = item_data.get('Album')
+            album_artist = item_data.get('AlbumArtist')
             artists = []
-            if item_type in ['Audio', 'MusicVideo']:
-                artists = [artist.get('Name', '') for artist in item_data.get('ArtistItems', [])]
 
-            # Extract timestamp information
+            if item_type in ['Audio', 'MusicVideo', 'MusicAlbum']:
+                # Extract artists from ArtistItems or Artists field
+                if 'ArtistItems' in item_data:
+                    artists = [artist.get('Name', '') for artist in item_data['ArtistItems']]
+                elif 'Artists' in item_data:
+                    artists = item_data['Artists']
+
+            # ==================== TIMESTAMP INFORMATION ====================
+            # Extract and format timestamp information
+            current_time = datetime.now(timezone.utc)
+
+            # Use current time for webhook-style timestamps
+            timestamp = current_time.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + current_time.strftime('%z')
+            if not timestamp.endswith('Z') and not timestamp[-6] in ['+', '-']:
+                # Ensure proper timezone format
+                utc_timestamp = current_time.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+            else:
+                utc_timestamp = current_time.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+
+            # Extract creation and modification dates
             date_created = item_data.get('DateCreated')
             date_modified = item_data.get('DateLastMediaAdded') or item_data.get('DateModified')
+            premiere_date = item_data.get('PremiereDate', '')
 
-            # Generate content hash for change detection
-            hash_data = f"{item_id}_{video_height}_{video_codec}_{audio_codec}_{audio_channels}_{video_range}_{file_size}"
-            content_hash = str(hash(hash_data))
+            # ==================== ADDITIONAL METADATA ====================
+            # Extract additional metadata fields
+            official_rating = item_data.get('OfficialRating')
+            tagline = item_data.get('Tagline', '')
 
-            # Create and return MediaItem
+            # ==================== PHOTO-SPECIFIC METADATA ====================
+            # For image/photo content
+            width = None
+            height = None
+            if item_type in ['Photo', 'Image']:
+                width = item_data.get('Width')
+                height = item_data.get('Height')
+
+            # ==================== CONTENT HASH GENERATION ====================
+            # Generate enhanced content hash for change detection
+            # Include all technical specifications that matter for upgrades
+            hash_data = {
+                "item_id": item_id,
+                "name": name,
+                "item_type": item_type,
+                # Video specifications
+                "video_height": video_height,
+                "video_width": video_width,
+                "video_codec": video_codec,
+                "video_profile": video_profile,
+                "video_range": video_range,
+                "video_framerate": video_framerate,
+                "video_bitrate": video_bitrate,
+                "video_bitdepth": video_bitdepth,
+                # Audio specifications
+                "audio_codec": audio_codec,
+                "audio_channels": audio_channels,
+                "audio_bitrate": audio_bitrate,
+                "audio_samplerate": audio_samplerate,
+                # File information
+                "file_path": file_path,
+                "file_size": file_size,
+            }
+
+            # Create hash from JSON representation
+            hash_string = json.dumps(hash_data, sort_keys=True, default=str)
+            content_hash = str(hash(hash_string))
+
+            # ==================== CREATE COMPREHENSIVE MEDIAITEM ====================
+            # Create MediaItem with ALL webhook fields mapped
             media_item = MediaItem(
+                # Core identification (required fields)
                 item_id=item_id,
                 name=name,
                 item_type=item_type,
+
+                # Content metadata
                 year=year,
-                overview=overview,
-                video_height=video_height,
-                video_codec=video_codec,
-                audio_codec=audio_codec,
-                audio_channels=audio_channels,
-                video_range=video_range,
-                imdb_id=imdb_id,
-                tmdb_id=tmdb_id,
-                tvdb_id=tvdb_id,
-                parent_id=parent_id,
                 series_name=series_name,
                 season_number=season_number,
                 episode_number=episode_number,
-                content_hash=content_hash,
+                overview=overview,
+
+                # Video technical specifications
+                video_height=video_height,
+                video_width=video_width,
+                video_codec=video_codec,
+                video_profile=video_profile,
+                video_range=video_range,
+                video_framerate=video_framerate,
+                aspect_ratio=aspect_ratio,
+
+                # Additional video properties for webhook compatibility
+                video_title=video_title,
+                video_type=video_type,
+                video_language=video_language,
+                video_level=video_level,
+                video_interlaced=video_interlaced,
+                video_bitrate=video_bitrate,
+                video_bitdepth=video_bitdepth,
+                video_colorspace=video_colorspace,
+                video_colortransfer=video_colortransfer,
+                video_colorprimaries=video_colorprimaries,
+                video_pixelformat=video_pixelformat,
+                video_refframes=video_refframes,
+
+                # Audio technical specifications
+                audio_codec=audio_codec,
+                audio_channels=audio_channels,
+                audio_bitrate=audio_bitrate,
+                audio_samplerate=audio_samplerate,
+
+                # Additional audio properties for webhook compatibility
+                audio_title=audio_title,
+                audio_type=audio_type,
+                audio_language=audio_language,
+                audio_default=audio_default,
+
+                # Subtitle information for webhook compatibility
+                subtitle_title=subtitle_title,
+                subtitle_type=subtitle_type,
+                subtitle_language=subtitle_language,
+                subtitle_codec=subtitle_codec,
+
+                # External provider IDs
+                imdb_id=imdb_id,
+                tmdb_id=tmdb_id,
+                tvdb_id=tvdb_id,
+
+                # TV series hierarchy fields
+                series_id=series_id,
+                series_premiere_date=series_premiere_date,
+                season_id=season_id,
+                season_number_padded=season_number_padded,
+                season_number_padded_3=season_number_padded_3,
+                episode_number_padded=episode_number_padded,
+                episode_number_padded_3=episode_number_padded_3,
+                air_time=air_time,
+
+                # File system information
                 file_path=file_path,
-                file_size=file_size,
+                library_name=library_name,
+
+                # Timestamp information
+                timestamp=timestamp,
+                utc_timestamp=utc_timestamp,
+                premiere_date=premiere_date,
+
+                # Extended metadata from API
                 date_created=date_created,
                 date_modified=date_modified,
+                runtime_ticks=runtime_ticks,
+                runtime_formatted=runtime_formatted,
+                official_rating=official_rating,
+                tagline=tagline,
                 genres=genres,
                 studios=studios,
                 tags=tags,
-                artists=artists
+
+                # Music-specific metadata
+                album=album,
+                artists=artists,
+                album_artist=album_artist,
+
+                # Photo-specific metadata
+                width=width,
+                height=height,
+
+                # Internal tracking
+                content_hash=content_hash,
+                file_size=file_size
             )
 
-            self.logger.debug(f"Converted Jellyfin item to MediaItem: {name}")
+            self.logger.debug(f"Converted Jellyfin item to comprehensive MediaItem: {name}")
             return media_item
 
         except Exception as e:

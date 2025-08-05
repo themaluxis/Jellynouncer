@@ -160,12 +160,34 @@ class DatabaseManager:
         block the program. Using async/await allows other webhook requests to
         be processed while waiting for database operations to complete.
 
+        **Complete Schema Design:**
+        The media_items table now includes ALL fields from the MediaItem dataclass
+        to ensure complete webhook field synchronization. This prevents data loss
+        and ensures all webhook template variables are available.
+
+        **Schema Categories:**
+        - Core identification: item_id, name, item_type, year, overview
+        - Server information: server_id, server_name, server_version, server_url
+        - Video specifications: Complete video stream metadata (codec, resolution, etc.)
+        - Audio specifications: Complete audio stream metadata (codec, channels, etc.)
+        - Subtitle information: Complete subtitle/caption metadata
+        - TV series hierarchy: Series, season, episode organization with padded numbers
+        - Provider IDs: External database identifiers (IMDb, TMDb, TVDb)
+        - Runtime information: Duration in various formats
+        - Metadata: Ratings, genres, studios, tags, descriptions
+        - Music fields: Album, artist, music-specific metadata
+        - Photo fields: Image dimensions and metadata
+        - File system: Paths, sizes, library information
+        - Timestamps: Creation, modification, and tracking timestamps
+        - Internal tracking: Content hashes, change detection
+
         **Configuration Steps:**
         1. Enable WAL mode for concurrent access
         2. Set performance optimization PRAGMAs
-        3. Create the media_items table if it doesn't exist
+        3. Create the complete media_items table with ALL MediaItem fields
         4. Create indexes for query performance
-        5. Log initialization status
+        5. Create sync tracking table
+        6. Log initialization status
 
         Raises:
             Exception: If database initialization fails
@@ -175,7 +197,7 @@ class DatabaseManager:
             Multiple calls are safe but unnecessary.
         """
         try:
-            self.logger.info("Initializing database manager...")
+            self.logger.info("Initializing database manager with complete webhook field schema...")
 
             async with aiosqlite.connect(self.db_path) as db:
                 self._connection_count += 1
@@ -186,87 +208,164 @@ class DatabaseManager:
                     self.logger.debug("WAL mode enabled for concurrent access")
 
                 # Set performance optimization PRAGMAs
-                await db.execute("PRAGMA synchronous=NORMAL")  # Balance safety and speed
-                await db.execute("PRAGMA cache_size=10000")  # 10MB cache
-                await db.execute("PRAGMA temp_store=memory")  # Store temp data in RAM
-                await db.execute("PRAGMA mmap_size=268435456")  # 256MB memory mapping
+                await db.execute("PRAGMA synchronous=NORMAL")
+                await db.execute("PRAGMA temp_store=memory")
+                await db.execute("PRAGMA mmap_size=268435456")
+                await db.execute("PRAGMA cache_size=-32000")
+                await db.execute("PRAGMA busy_timeout=30000")
 
-                # Create the media_items table if it doesn't exist
+                # Create the complete media_items table with ALL MediaItem fields
+                # This ensures complete webhook field synchronization and prevents data loss
                 await db.execute("""
-                                 CREATE TABLE IF NOT EXISTS media_items
-                                 (
-                                     item_id
-                                     TEXT
-                                     PRIMARY
-                                     KEY,
-                                     name
-                                     TEXT
-                                     NOT
-                                     NULL,
-                                     item_type
-                                     TEXT
-                                     NOT
-                                     NULL,
-                                     year
-                                     INTEGER,
-                                     overview
-                                     TEXT,
-                                     video_height
-                                     INTEGER,
-                                     video_codec
-                                     TEXT,
-                                     audio_codec
-                                     TEXT,
-                                     audio_channels
-                                     INTEGER,
-                                     video_range
-                                     TEXT,
-                                     imdb_id
-                                     TEXT,
-                                     tmdb_id
-                                     TEXT,
-                                     tvdb_id
-                                     TEXT,
-                                     parent_id
-                                     TEXT,
-                                     series_name
-                                     TEXT,
-                                     season_number
-                                     INTEGER,
-                                     episode_number
-                                     INTEGER,
-                                     content_hash
-                                     TEXT,
-                                     file_path
-                                     TEXT,
-                                     file_size
-                                     INTEGER,
-                                     date_created
-                                     TEXT,
-                                     date_modified
-                                     TEXT,
-                                     timestamp
-                                     TEXT
-                                     DEFAULT
-                                     CURRENT_TIMESTAMP,
-                                     genres
-                                     TEXT, -- JSON array
-                                     studios
-                                     TEXT, -- JSON array
-                                     tags
-                                     TEXT, -- JSON array
-                                     artists
-                                     TEXT  -- JSON array for music
-                                 )
-                                 """)
+                    CREATE TABLE IF NOT EXISTS media_items
+                    (
+                        -- ==================== CORE IDENTIFICATION ====================
+                        -- Required fields for all items (primary key and basic info)
+                        item_id                   TEXT PRIMARY KEY,  -- Unique Jellyfin identifier
+                        name                      TEXT NOT NULL,     -- Display name of the item
+                        item_type                 TEXT NOT NULL,     -- Media type (Movie, Episode, etc.)
 
-                # Create indexes for common queries
+                        -- ==================== CONTENT METADATA ====================
+                        -- Basic metadata common across media types
+                        year                      INTEGER,           -- Production/release year
+                        series_name               TEXT,              -- TV series name (for episodes/seasons)
+                        season_number             INTEGER,           -- Season number
+                        episode_number            INTEGER,           -- Episode number
+                        overview                  TEXT,              -- Description/synopsis
+
+                        -- ==================== SERVER INFORMATION ====================
+                        -- Server context from webhook (ServerId, ServerName, etc.)
+                        server_id                 TEXT,              -- Jellyfin server identifier
+                        server_name               TEXT,              -- Human-readable server name
+                        server_version            TEXT,              -- Server version (e.g., "10.10.7")
+                        server_url                TEXT,              -- Server base URL
+
+                        -- ==================== VIDEO TECHNICAL SPECIFICATIONS ====================
+                        -- Core video stream properties for quality detection and templates
+                        video_height              INTEGER,           -- Video height in pixels (1080, 2160, etc.)
+                        video_width               INTEGER,           -- Video width in pixels (1920, 3840, etc.)
+                        video_codec               TEXT,              -- Video codec (h264, hevc, av1, etc.)
+                        video_profile             TEXT,              -- Codec profile (Main, High, etc.)
+                        video_range               TEXT,              -- Video range (SDR, HDR10, Dolby Vision, etc.)
+                        video_framerate           REAL,              -- Frame rate (23.976, 29.97, 60, etc.)
+                        aspect_ratio              TEXT,              -- Display aspect ratio (16:9, 21:9, etc.)
+
+                        -- Extended video properties for comprehensive webhook compatibility
+                        video_title               TEXT,              -- Video stream display title
+                        video_type                TEXT,              -- Stream type identifier ("Video")
+                        video_language            TEXT,              -- Video language code (eng, jpn, etc.)
+                        video_level               TEXT,              -- Codec level (4.0, 5.1, etc.)
+                        video_interlaced          BOOLEAN,           -- Interlaced video flag
+                        video_bitrate             INTEGER,           -- Video bitrate in bits per second
+                        video_bitdepth            INTEGER,           -- Bit depth (8, 10, 12 bits)
+                        video_colorspace          TEXT,              -- Color space (bt709, bt2020, etc.)
+                        video_colortransfer       TEXT,              -- Color transfer characteristics
+                        video_colorprimaries      TEXT,              -- Color primaries specification
+                        video_pixelformat         TEXT,              -- Pixel format (yuv420p, yuv420p10le, etc.)
+                        video_refframes           INTEGER,           -- Reference frames count
+
+                        -- ==================== AUDIO TECHNICAL SPECIFICATIONS ====================
+                        -- Core audio stream properties for quality detection and templates
+                        audio_codec               TEXT,              -- Audio codec (aac, ac3, dts, etc.)
+                        audio_channels            INTEGER,           -- Number of audio channels (2, 6, 8, etc.)
+                        audio_bitrate             INTEGER,           -- Audio bitrate in bits per second
+                        audio_samplerate          INTEGER,           -- Sample rate in Hz (48000, 96000, etc.)
+
+                        -- Extended audio properties for comprehensive webhook compatibility
+                        audio_title               TEXT,              -- Audio stream display title
+                        audio_type                TEXT,              -- Stream type identifier ("Audio")
+                        audio_language            TEXT,              -- Audio language code (eng, fra, etc.)
+                        audio_default             BOOLEAN,           -- Default audio track flag
+
+                        -- ==================== SUBTITLE TECHNICAL SPECIFICATIONS ====================
+                        -- Subtitle/caption stream properties for webhook compatibility
+                        subtitle_title            TEXT,              -- Subtitle stream display title
+                        subtitle_type             TEXT,              -- Stream type identifier ("Subtitle")
+                        subtitle_language         TEXT,              -- Subtitle language code
+                        subtitle_codec            TEXT,              -- Subtitle format (subrip, ass, pgs, etc.)
+                        subtitle_default          BOOLEAN,           -- Default subtitle track flag
+                        subtitle_forced           BOOLEAN,           -- Forced subtitle display flag
+                        subtitle_external         BOOLEAN,           -- External subtitle file flag
+
+                        -- ==================== EXTERNAL PROVIDER IDS ====================
+                        -- Links to external movie/TV databases for metadata enrichment
+                        imdb_id                   TEXT,              -- Internet Movie Database ID (tt1234567)
+                        tmdb_id                   TEXT,              -- The Movie Database ID
+                        tvdb_id                   TEXT,              -- The TV Database ID
+
+                        -- ==================== TV SERIES HIERARCHY ====================
+                        -- TV series organization and hierarchy for episodes and seasons
+                        series_id                 TEXT,              -- Parent series unique identifier
+                        series_premiere_date      TEXT,              -- Series original premiere date
+                        season_id                 TEXT,              -- Season unique identifier
+                        season_number_padded      TEXT,              -- Zero-padded season number (02, 03, etc.)
+                        season_number_padded_3    TEXT,              -- Zero-padded season number (002, 003, etc.)
+                        episode_number_padded     TEXT,              -- Zero-padded episode number (04, 05, etc.)
+                        episode_number_padded_3   TEXT,              -- Zero-padded episode number (004, 005, etc.)
+                        air_time                  TEXT,              -- Original broadcast time (21:30, etc.)
+
+                        -- ==================== RUNTIME INFORMATION ====================
+                        -- Duration and runtime data in multiple formats
+                        runtime_ticks             INTEGER,           -- Duration in .NET ticks (10,000 ticks = 1ms)
+                        runtime_formatted         TEXT,              -- Human-readable duration (01:42:33)
+
+                        -- ==================== FILE SYSTEM INFORMATION ====================
+                        -- File system and storage related metadata
+                        file_path                 TEXT,              -- Full file path on server
+                        file_size                 INTEGER,           -- File size in bytes
+                        library_name              TEXT,              -- Jellyfin library name
+
+                        -- ==================== TIMESTAMPS ====================
+                        -- Timestamp information for tracking and webhook compatibility
+                        timestamp                 TEXT DEFAULT CURRENT_TIMESTAMP,  -- Database insert/update time
+                        utc_timestamp             TEXT,              -- UTC timestamp from webhook
+                        premiere_date             TEXT,              -- Original air/release date
+                        date_created              TEXT,              -- When item was added to Jellyfin
+                        date_modified             TEXT,              -- When item was last modified
+                        timestamp_created         TEXT,              -- When MediaItem object was created
+
+                        -- ==================== EXTENDED METADATA ====================
+                        -- Additional metadata for rich template customization
+                        official_rating           TEXT,              -- MPAA rating (G, PG, R), TV rating (TV-MA), etc.
+                        tagline                   TEXT,              -- Marketing tagline or promotional text
+                        genres                    TEXT,              -- JSON array of genre names
+                        studios                   TEXT,              -- JSON array of production companies/studios
+                        tags                      TEXT,              -- JSON array of user-defined or imported tags
+
+                        -- ==================== MUSIC-SPECIFIC METADATA ====================
+                        -- Fields specific to audio content (songs, albums, artists)
+                        album                     TEXT,              -- Album name (for music tracks)
+                        artists                   TEXT,              -- JSON array of artist names
+                        album_artist              TEXT,              -- Primary album artist
+
+                        -- ==================== PHOTO-SPECIFIC METADATA ====================
+                        -- Fields specific to image content
+                        width                     INTEGER,           -- Image width in pixels
+                        height                    INTEGER,           -- Image height in pixels
+
+                        -- ==================== HIERARCHY AND RELATIONSHIPS ====================
+                        -- Item hierarchy and parent-child relationships
+                        parent_id                 TEXT,              -- Parent item ID for hierarchy navigation
+
+                        -- ==================== INTERNAL TRACKING ====================
+                        -- Fields used for service operations and change detection
+                        content_hash              TEXT               -- MD5 hash for change detection
+                    )
+                """)
+
+                # Create indexes for optimal query performance
+                # These indexes support common query patterns used by the service
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_item_type ON media_items(item_type)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_series_name ON media_items(series_name)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON media_items(timestamp)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_content_hash ON media_items(content_hash)")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_series_id ON media_items(series_id)")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_season_id ON media_items(season_id)")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_video_height ON media_items(video_height)")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_video_codec ON media_items(video_codec)")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_audio_codec ON media_items(audio_codec)")
 
-                # Create last_sync tracking table
+                # Create sync status tracking table for monitoring library synchronization
                 await db.execute("""
                                  CREATE TABLE IF NOT EXISTS sync_status
                                  (
@@ -275,11 +374,11 @@ class DatabaseManager:
                                      PRIMARY
                                      KEY,
                                      last_sync_time
-                                     TEXT,
+                                     TEXT,    -- Last successful sync timestamp
                                      sync_type
-                                     TEXT,
+                                     TEXT,    -- Type of sync (initial, background, manual)
                                      items_processed
-                                     INTEGER,
+                                     INTEGER, -- Number of items processed in sync
                                      timestamp
                                      TEXT
                                      DEFAULT
@@ -290,7 +389,8 @@ class DatabaseManager:
                 await db.commit()
                 self._connection_count -= 1
 
-            self.logger.info("Database initialization completed successfully")
+            self.logger.info("Database initialization completed successfully with complete webhook field schema")
+            self.logger.debug("Schema includes all MediaItem fields for comprehensive webhook synchronization")
 
         except Exception as e:
             self.logger.error(f"Database initialization failed: {e}")
