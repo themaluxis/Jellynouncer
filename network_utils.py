@@ -553,7 +553,11 @@ class NetworkDetector:
             self.logger.debug(f"Detected {len(interfaces)} interfaces via 'ip' command")
             return interfaces
 
-        except (subprocess.SubprocessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
+        except FileNotFoundError:
+            # Don't log anything when 'ip' command is not available (common in containers)
+            return []
+
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
             self.logger.debug(f"'ip' command detection failed: {e}")
             return []
 
@@ -778,9 +782,9 @@ class NetworkDetector:
         if not isinstance(port, int) or port <= 0:
             raise ValueError(f"Port must be a positive integer, got: {port}")
 
-        # Check for manual override first
+            # Check for manual override first
         manual_host = os.getenv("HOST")
-        if manual_host:
+        if manual_host and manual_host != "0.0.0.0":
             self.logger.debug(f"Using manual host override: {manual_host}")
             return f"http://{manual_host}:{port}"
 

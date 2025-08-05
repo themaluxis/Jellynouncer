@@ -21,6 +21,7 @@ License: MIT
 
 import asyncio
 import time
+import ssl
 from datetime import datetime, timezone
 import logging
 import json
@@ -189,6 +190,14 @@ class JellyfinAPI:
                 self.client = JellyfinClient()
                 self.client.config.app("Jellynouncer", "2.0.0", "jellynouncer", "1.0.0")
 
+                # Auto-enable SSL verification for HTTPS URLs
+                if self.config.server_url.lower().startswith('https://'):
+                    self.client.config.data["auth.ssl"] = True
+                    self.logger.debug("SSL verification enabled for HTTPS connection")
+                else:
+                    self.client.config.data["auth.ssl"] = False
+                    self.logger.debug("SSL verification disabled for HTTP connection")
+
                 # Set server and authentication
                 self.client.config.data['auth.server'] = self.config.server_url
                 self.client.config.data['auth.server-name'] = "Jellyfin Server"
@@ -206,6 +215,13 @@ class JellyfinAPI:
                     return True
                 else:
                     raise Exception("Failed to retrieve system information")
+
+            except ssl.SSLError as e:
+                self.logger.error(f"SSL certificate verification failed: {e}")
+                self.logger.error("Please ensure your Jellyfin server has a valid SSL certificate")
+
+                if attempt == self.max_retries:
+                    raise ConnectionError(f"SSL verification failed: {e}")
 
             except Exception as e:
                 self.logger.warning(f"Connection attempt {attempt} failed: {e}")
