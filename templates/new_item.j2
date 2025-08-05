@@ -7,7 +7,7 @@
       {% if item.item_type == 'Episode' and item.series_id %}
       "author": {
         "name": "{{ item.series_name }}",
-        "icon_url": "{{ jellyfin_url }}/Items/{{ item.series_id }}/Images/Logo?maxHeight=64&maxWidth=200",
+        "icon_url": "{{ jellyfin_url }}/Items/{{ item.series_id }}/Images/Logo?api_key={{ api_key }}&maxHeight=64&maxWidth=200",
         "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.series_id }}"
       },
       {% endif %}

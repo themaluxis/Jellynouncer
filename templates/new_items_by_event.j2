@@ -21,13 +21,13 @@
         {% endif %}
       ]{% set first_movie = items|selectattr('item.item_type', 'equalto', 'Movie')|first %}{% set first_series = items|selectattr('item.item_type', 'equalto', 'Series')|first %}{% set first_episode = items|selectattr('item.item_type', 'equalto', 'Episode')|first %}{% if first_movie or first_series or first_episode %},
       "thumbnail": {
-        "url": "{% if first_movie %}{{ jellyfin_url }}/Items/{{ first_movie.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300{% elif first_series %}{{ jellyfin_url }}/Items/{{ first_series.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300{% elif first_episode and first_episode.item.series_id %}{{ jellyfin_url }}/Items/{{ first_episode.item.series_id }}/Images/Primary?maxHeight=400&maxWidth=300{% else %}{{ jellyfin_url }}/web/assets/img/banner-light.png{% endif %}"
+        "url": "{% if first_movie %}{{ jellyfin_url }}/Items/{{ first_movie.item.item_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=400&maxWidth=300{% elif first_series %}{{ jellyfin_url }}/Items/{{ first_series.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300{% elif first_episode and first_episode.item.series_id %}{{ jellyfin_url }}/Items/{{ first_episode.item.series_id }}/Images/Primary?maxHeight=400&maxWidth=300{% else %}{{ jellyfin_url }}/web/assets/img/banner-light.png{% endif %}"
       }{% endif %}{% if first_movie %},
       "image": {
-        "url": "{{ jellyfin_url }}/Items/{{ first_movie.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
+        "url": "{{ jellyfin_url }}/Items/{{ first_movie.item.item_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=400&maxWidth=300"
       }{% elif first_series %},
       "image": {
-        "url": "{{ jellyfin_url }}/Items/{{ first_series.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
+        "url": "{{ jellyfin_url }}/Items/{{ first_series.item.item_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=400&maxWidth=300"
       }{% endif %},
       "footer": {
         "text": "Added to Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC{% if tvdb_attribution_needed %}\nMetadata provided by TheTVDB{% endif %}",

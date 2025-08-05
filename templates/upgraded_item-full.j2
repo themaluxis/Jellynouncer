@@ -7,7 +7,7 @@
       {% if item.item_type == 'Episode' and item.series_id %}
       "author": {
         "name": "{{ item.series_name }}{% if item.series_premiere_date %} ({{ item.series_premiere_date[:4] }}){% endif %}",
-        "icon_url": "{{ jellyfin_url }}/Items/{{ item.series_id }}/Images/Logo?maxHeight=64&maxWidth=200",
+        "icon_url": "{{ jellyfin_url }}/Items/{{ item.series_id }}/Images/Logo?api_key={{ api_key }}&maxHeight=64&maxWidth=200",
         "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.series_id }}"
       },
       {% endif %}
@@ -156,7 +156,7 @@
         {% endif %}
       ],
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?maxHeight=300&maxWidth=200"
+        "url": "{{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=300&maxWidth=200"
       },
       "footer": {
         "text": "Upgraded on {% if item.server_name %}{{ item.server_name }}{% else %}Jellyfin{% endif %}{% if item.library_name %} • {{ item.library_name }}{% endif %}",

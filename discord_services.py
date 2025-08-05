@@ -151,6 +151,11 @@ class ThumbnailManager:
         3. Logo image - shows branding, better than no image
         4. Generic fallback - based on media type
 
+        **Standardized Parameters:**
+        - quality=90 (high quality for Discord)
+        - maxWidth=500 (optimal for Discord embeds)
+        - maxHeight=400 (prevents oversized images)
+
         Args:
             item_id (str): Jellyfin item ID
             media_type (str): Type of media (Movie, Series, Episode, Audio, etc.)
@@ -186,22 +191,25 @@ class ThumbnailManager:
             self.logger.debug(f"Using cached thumbnail for item {item_id}")
             return self.cache[cache_key]
 
+        # Standardized image parameters for consistency with templates
+        image_params = "api_key={}&quality=90&maxWidth=500&maxHeight=400".format(self.api_key)
+
         # Try thumbnail sources in order of preference
         thumbnail_candidates = []
 
         # Primary image (poster/cover) - highest priority
         if primary_image_tag:
-            primary_url = f"{self.base_url}/Items/{item_id}/Images/Primary?api_key={self.api_key}&tag={primary_image_tag}&quality=90&maxWidth=500"
+            primary_url = f"{self.base_url}/Items/{item_id}/Images/Primary?{image_params}&tag={primary_image_tag}"
             thumbnail_candidates.append(("Primary", primary_url))
 
         # Backdrop image - good fallback for movies/shows
         if backdrop_image_tag:
-            backdrop_url = f"{self.base_url}/Items/{item_id}/Images/Backdrop?api_key={self.api_key}&tag={backdrop_image_tag}&quality=90&maxWidth=500"
+            backdrop_url = f"{self.base_url}/Items/{item_id}/Images/Backdrop?{image_params}&tag={backdrop_image_tag}"
             thumbnail_candidates.append(("Backdrop", backdrop_url))
 
         # Logo image - branding fallback
         if logo_image_tag:
-            logo_url = f"{self.base_url}/Items/{item_id}/Images/Logo?api_key={self.api_key}&tag={logo_image_tag}&quality=90&maxWidth=500"
+            logo_url = f"{self.base_url}/Items/{item_id}/Images/Logo?{image_params}&tag={logo_image_tag}"
             thumbnail_candidates.append(("Logo", logo_url))
 
         self.logger.debug(f"Checking {len(thumbnail_candidates)} thumbnail candidates for item {item_id}")
@@ -564,13 +572,21 @@ class DiscordNotifier:
             # Returns Discord embed structure ready for webhook
             ```
         """
-        # Prepare template variables
+        # Prepare template variables with standardized image parameters
         template_vars = {
             "item": asdict(item),
             "action": action,
             "thumbnail_url": thumbnail_url,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "server_url": self.thumbnail_manager.base_url
+            "server_url": self.thumbnail_manager.base_url,
+            "jellyfin_url": self.thumbnail_manager.base_url,  # Keep both for backward compatibility
+            "api_key": self.thumbnail_manager.api_key,
+            # Standardized image parameters
+            "image_quality": 90,
+            "image_max_width": 500,
+            "image_max_height": 400,
+            # Additional useful template variables
+            "tvdb_attribution_needed": False  # Set based on your rating services config if needed
         }
 
         # Try to find and render appropriate template
