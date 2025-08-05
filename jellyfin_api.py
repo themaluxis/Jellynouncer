@@ -1062,9 +1062,8 @@ class JellyfinAPI:
 
             # Test item retrieval capability (try to get first item)
             try:
-                response = self.client.jellyfin.get_items(
+                response = self.client.jellyfin.user_items(
                     params={
-                        'UserId': self.config.user_id,
                         'Limit': 1
                     }
                 )
