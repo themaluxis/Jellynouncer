@@ -296,7 +296,6 @@ async def webhook_debug_endpoint(request: Request) -> Dict[str, Any]:
     Returns:
         Dictionary with comprehensive debug information including validation results
     """
-    logger = app.state.logger
     client_info = getattr(request, "client", None)
     client_host = getattr(client_info, "host", "unknown") if client_info else "unknown"
     client_port = getattr(client_info, "port", "unknown") if client_info else "unknown"
@@ -310,43 +309,43 @@ async def webhook_debug_endpoint(request: Request) -> Dict[str, Any]:
         user_agent = request.headers.get("user-agent", "")
 
         # Log comprehensive request details
-        logger.info("=" * 80)
-        logger.info("🔍 ENHANCED DEBUG WEBHOOK REQUEST RECEIVED")
-        logger.info("=" * 80)
-        logger.info(f"📡 Client: {client_host}:{client_port}")
-        logger.info(f"🌐 Method: {request.method}")
-        logger.info(f"📍 URL: {request.url}")
-        logger.info(f"📋 Content-Type: {content_type}")
-        logger.info(f"🤖 User-Agent: {user_agent}")
-        logger.info(f"📏 Body Length: {len(raw_body)} bytes")
+        webhook_service.logger.info("=" * 80)
+        webhook_service.logger.info("🔍 ENHANCED DEBUG WEBHOOK REQUEST RECEIVED")
+        webhook_service.logger.info("=" * 80)
+        webhook_service.logger.info(f"📡 Client: {client_host}:{client_port}")
+        webhook_service.logger.info(f"🌐 Method: {request.method}")
+        webhook_service.logger.info(f"📍 URL: {request.url}")
+        webhook_service.logger.info(f"📋 Content-Type: {content_type}")
+        webhook_service.logger.info(f"🤖 User-Agent: {user_agent}")
+        webhook_service.logger.info(f"📏 Body Length: {len(raw_body)} bytes")
 
         # Log all headers
-        logger.info("📨 REQUEST HEADERS:")
+        webhook_service.logger.info("📨 REQUEST HEADERS:")
         for header_name, header_value in request.headers.items():
             # Mask potential sensitive headers
             if header_name.lower() in ['authorization', 'x-api-key', 'x-jellyfin-token']:
                 masked_value = header_value[:8] + "***" if len(header_value) > 8 else "***"
-                logger.info(f"    {header_name}: {masked_value}")
+                webhook_service.logger.info(f"    {header_name}: {masked_value}")
             else:
-                logger.info(f"    {header_name}: {header_value}")
+                webhook_service.logger.info(f"    {header_name}: {header_value}")
 
         # Log query parameters if any
         if request.query_params:
-            logger.info("🔗 QUERY PARAMETERS:")
+            webhook_service.logger.info("🔗 QUERY PARAMETERS:")
             for param_name, param_value in request.query_params.items():
-                logger.info(f"    {param_name}: {param_value}")
+                webhook_service.logger.info(f"    {param_name}: {param_value}")
 
         # Log raw body content (first 1000 chars for safety)
-        logger.info("📦 RAW BODY CONTENT:")
+        webhook_service.logger.info("📦 RAW BODY CONTENT:")
         try:
             body_text = raw_body.decode('utf-8', errors='replace')
             if len(body_text) > 1000:
-                logger.info(f"    {body_text[:1000]}... (truncated, total length: {len(body_text)})")
+                webhook_service.logger.info(f"    {body_text[:1000]}... (truncated, total length: {len(body_text)})")
             else:
-                logger.info(f"    {body_text}")
+                webhook_service.logger.info(f"    {body_text}")
         except Exception as decode_error:
-            logger.error(f"    Failed to decode body as UTF-8: {decode_error}")
-            logger.info(f"    Raw bytes (first 200): {raw_body[:200]}")
+            webhook_service.logger.error(f"    Failed to decode body as UTF-8: {decode_error}")
+            webhook_service.logger.info(f"    Raw bytes (first 200): {raw_body[:200]}")
 
         # ==================== JSON PARSING ====================
 
@@ -356,15 +355,15 @@ async def webhook_debug_endpoint(request: Request) -> Dict[str, Any]:
         # Attempt to parse JSON
         try:
             json_data = json.loads(raw_body)
-            logger.info("✅ JSON PARSING SUCCESSFUL")
-            logger.info(f"📊 JSON Structure:")
-            logger.info(
+            webhook_service.logger.info("✅ JSON PARSING SUCCESSFUL")
+            webhook_service.logger.info(f"📊 JSON Structure:")
+            webhook_service.logger.info(
                 f"    Top-level keys: {list(json_data.keys()) if isinstance(json_data, dict) else 'Not a dictionary'}")
-            logger.info(f"    Total keys: {len(json_data) if isinstance(json_data, dict) else 'N/A'}")
+            webhook_service.logger.info(f"    Total keys: {len(json_data) if isinstance(json_data, dict) else 'N/A'}")
 
             # Log each field in detail
             if isinstance(json_data, dict):
-                logger.info("🔍 DETAILED FIELD ANALYSIS:")
+                webhook_service.logger.info("🔍 DETAILED FIELD ANALYSIS:")
                 for key, value in json_data.items():
                     value_type = type(value).__name__
                     if value is None:
@@ -374,14 +373,14 @@ async def webhook_debug_endpoint(request: Request) -> Dict[str, Any]:
                     else:
                         value_str = str(value) if len(str(value)) <= 100 else f"{str(value)[:100]}... (truncated)"
 
-                    logger.info(f"    {key} ({value_type}): {value_str}")
+                    webhook_service.logger.info(f"    {key} ({value_type}): {value_str}")
 
         except json.JSONDecodeError as e:
             json_parse_error = e
-            logger.error("❌ JSON PARSING FAILED")
-            logger.error(f"    Error: {e}")
-            logger.error(f"    Error position: line {e.lineno}, column {e.colno}")
-            logger.error(f"    Error message: {e.msg}")
+            webhook_service.logger.error("❌ JSON PARSING FAILED")
+            webhook_service.logger.error(f"    Error: {e}")
+            webhook_service.logger.error(f"    Error position: line {e.lineno}, column {e.colno}")
+            webhook_service.logger.error(f"    Error message: {e.msg}")
 
             return {
                 "status": "json_parse_error",
