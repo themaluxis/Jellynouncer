@@ -1,9 +1,13 @@
 services:
   jellyfin-discord-webhook:
-    build: .
+    build:
+      context: .
+      args:
+        - PORT=${PORT:-8080}
     container_name: jellyfin-discord-webhook
+    restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${PORT:-8080}:${PORT:-8080}"
     volumes:
       # Mount host directories to container, with fallback to container defaults
       - ./config:/app/config:rw
@@ -11,19 +15,33 @@ services:
       - ./data:/app/data:rw
       - ./logs:/app/logs:rw
     environment:
+      # Required Configuration
       - JELLYFIN_SERVER_URL=${JELLYFIN_SERVER_URL}
       - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
       - JELLYFIN_USER_ID=${JELLYFIN_USER_ID}
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+
+      # Optional: Separate webhooks for different content types
       - DISCORD_WEBHOOK_URL_MOVIES=${DISCORD_WEBHOOK_URL_MOVIES:-}
       - DISCORD_WEBHOOK_URL_TV=${DISCORD_WEBHOOK_URL_TV:-}
       - DISCORD_WEBHOOK_URL_MUSIC=${DISCORD_WEBHOOK_URL_MUSIC:-}
+
+      # Optional: External rating services
+      - OMDB_API_KEY=${OMDB_API_KEY:-}
+      - TMDB_API_KEY=${TMDB_API_KEY:-}
+      - TVDB_API_KEY=${TVDB_API_KEY:-}
+
+      # Server Configuration (NEW)
+      - HOST=${HOST:-0.0.0.0}
+      - PORT=${PORT:-8080}
+
+      # System Configuration
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - TZ=${TZ:-UTC}
-    restart: unless-stopped
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-8080}/health"]
       interval: 30s
       timeout: 10s
       retries: 3

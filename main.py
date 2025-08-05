@@ -91,6 +91,7 @@ from webhook_models import WebhookPayload
 from webhook_service import WebhookService
 from config_models import ConfigurationValidator
 from utils import setup_logging, get_logger
+from network_utils import log_jellynouncer_startup
 
 # Global service instance - shared across the FastAPI application
 # This pattern allows us to initialize the service once during startup
@@ -176,12 +177,13 @@ async def lifespan(app: FastAPI):
         # These tasks run continuously to sync with Jellyfin and maintain the database
         background_task = asyncio.create_task(webhook_service.background_tasks())
 
-        logger.info("Jellynouncer service started successfully")
-        logger.info("=" * 60)
-        logger.info("🎬 Jellynouncer is ready to receive webhooks!")
-        logger.info("Send webhooks to: http://your-server:8080/webhook")
-        logger.info("Health check: http://your-server:8080/health")
-        logger.info("=" * 60)
+        # Get port from same config system used by uvicorn
+        if config:
+            port = int(os.getenv("PORT", str(config.server.port)))
+        else:
+            port = int(os.getenv("PORT", 8080))
+
+        log_jellynouncer_startup(port=port, logger=logger)
 
         # Yield control back to FastAPI to start serving requests
         # Everything after this yield runs during shutdown
@@ -244,7 +246,10 @@ async def receive_webhook(payload: WebhookPayload):
 
     Example:
         Jellyfin webhook plugin should be configured to send POST requests to:
-        `http://your-jellynouncer-server:8080/webhook`
+        `http://your-jellynouncer-server:PORT/webhook`
+
+        Default port is 8080, but can be configured via PORT environment variable
+        or config file server.port setting.
 
         Example webhook payload:
         ```json
@@ -290,9 +295,11 @@ async def health_check():
 
     Example:
         ```bash
-        curl http://jellynouncer:8080/health
+        curl http://jellynouncer:PORT/health
         # Returns: {"status": "healthy", "timestamp": "2024-01-01T12:00:00Z"}
         ```
+
+        Replace PORT with your configured port (default: 8080).
 
     Note:
         This endpoint is lightweight and designed for frequent polling.

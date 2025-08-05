@@ -38,15 +38,20 @@ RUN mkdir -p /app/data /app/logs /app/config /app/templates /app/scripts && \
     chmod +x /app/defaults/scripts/*.py 2>/dev/null || true && \
     chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Expose port
-EXPOSE 8080
+# Set default environment variables
+ENV HOST=0.0.0.0
+ENV PORT=8080
+
+# Expose port (configurable via build arg or environment)
+ARG PORT=8080
+EXPOSE ${PORT}
 
 # Set entrypoint to our script
 ENTRYPOINT ["docker-entrypoint.sh"]
 
-# Health check
+# Health check using environment variable for port
 HEALTHCHECK --interval=300s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8080/health || exit 1
+  CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
 
 # Run the application directly
 CMD ["python", "main.py"]
