@@ -23,7 +23,8 @@
     "tvdb": {
       "enabled": false,
       "api_key": null,
-      "base_url": "https://api4.thetvdb.com/v4/"
+      "base_url": "https://api4.thetvdb.com/v4/",
+      "subscriber_pin": null
     },
     "cache_duration_hours": 168,
     "request_timeout_seconds": 10,
