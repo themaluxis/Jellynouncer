@@ -190,7 +190,7 @@ class ChangeDetector:
             ```
         """
         self.config = config
-        self.logger = get_logger("detector")
+        self.logger = get_logger("jellynouncer.detector")
         self.watch_changes = config.watch_changes
 
         # Log initialization with monitoring configuration

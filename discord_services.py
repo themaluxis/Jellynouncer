@@ -99,7 +99,7 @@ class ThumbnailManager:
         self.api_key = api_key
         self.session: Optional[aiohttp.ClientSession] = None
         self.cache: Dict[str, str] = {}
-        self.logger = get_logger("discord.thumbnails")
+        self.logger = get_logger("jellynouncer.discord.thumbnails")
         self._owns_session = False
 
     async def initialize(self) -> None:
@@ -347,7 +347,7 @@ class DiscordNotifier:
         # This will need to be set during initialize() when full config is available
         self.thumbnail_manager = None
 
-        self.logger = get_logger("discord")
+        self.logger = get_logger("jellynouncer.discord")
 
     async def initialize(self, session: aiohttp.ClientSession, jellyfin_config, templates_config) -> None:
         """Initialize Discord notifier with shared session and configuration dependencies."""

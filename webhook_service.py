@@ -140,7 +140,7 @@ class WebhookService:
             SystemExit: If configuration loading or validation fails critically
         """
         # Set up component-specific logger
-        self.logger = get_logger("webhook")
+        self.logger = get_logger("jellynouncer.webhook")
 
         # Initialize component references to None
         # We'll populate these with actual objects later

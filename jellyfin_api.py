@@ -135,7 +135,7 @@ class JellyfinAPI:
             ```
         """
         self.config = config
-        self.logger = get_logger("jellyfin")
+        self.logger = get_logger("jellynouncer.jellyfin")
         self.client = None
 
         # Connection management

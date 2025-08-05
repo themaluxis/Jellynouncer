@@ -136,7 +136,7 @@ class DatabaseManager:
             async initialize() method.
         """
         self.config = config
-        self.logger = get_logger("database")
+        self.logger = get_logger("jellynouncer.database")
         self.db_path = config.path
         self.wal_mode = config.wal_mode
         self._connection_count = 0

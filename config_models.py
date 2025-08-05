@@ -1019,7 +1019,7 @@ class ConfigurationValidator:
         """
         Initialize validator with logger and empty error/warning lists.
         """
-        self.logger = get_logger("config")
+        self.logger = get_logger("jellynouncer.config")
         self.errors: List[str] = []
         self.warnings: List[str] = []
 

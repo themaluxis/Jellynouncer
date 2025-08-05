@@ -360,7 +360,7 @@ class RatingService:
             ```
         """
         self.config = config
-        self.logger = get_logger("ratings")
+        self.logger = get_logger("jellynouncer.ratings")
         self.session = None  # Set during initialize()
         self.db_manager = None  # Set during initialize()
 
