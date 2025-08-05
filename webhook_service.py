@@ -159,6 +159,7 @@ class WebhookService:
         self.is_background_sync = False  # Is the sync running in the background?
         self.initial_sync_complete = False  # Have we done our first sync?
         self.shutdown_event = asyncio.Event()  # Graceful shutdown coordination
+        self._last_sync_time = None
 
         # Record service startup time for uptime tracking
         self._start_time = time.time()
@@ -763,16 +764,25 @@ class WebhookService:
                 # Task 1: Periodic library sync (every 6 hours)
                 if not self.sync_in_progress and self.initial_sync_complete:
                     sync_interval = 6 * 3600  # 6 hours in seconds
-                    time_since_last_sync = time.time() - getattr(self, '_last_sync_time', 0)
+
+                    # Get the last sync time, defaulting to service start time if not set
+                    # This prevents immediate background sync after initial sync
+                    last_sync_timestamp = getattr(self, '_last_sync_time', self._start_time)
+                    time_since_last_sync = time.time() - last_sync_timestamp
 
                     if time_since_last_sync > sync_interval:
-                        self.logger.info("Starting scheduled background library sync")
+                        self.logger.info(
+                            f"Starting scheduled background library sync (last sync: {time_since_last_sync / 3600:.1f} hours ago)")
                         try:
                             result = await self.sync_jellyfin_library(background=True)
                             self.logger.info(f"Background sync completed: {result.get('status', 'unknown')}")
                             self._last_sync_time = time.time()
                         except Exception as e:
                             self.logger.error(f"Background sync failed: {e}")
+                    else:
+                        # Log why we're not syncing (useful for debugging)
+                        hours_remaining = (sync_interval - time_since_last_sync) / 3600
+                        self.logger.debug(f"Background sync not due yet ({hours_remaining:.1f} hours remaining)")
 
                 # Task 2: Database maintenance (weekly)
                 vacuum_interval = 7 * 24 * 3600  # 1 week in seconds
@@ -1102,6 +1112,9 @@ class WebhookService:
                     init_complete_path.touch(exist_ok=True)
                     self.logger.info("Initial sync completed successfully - created completion marker")
                     self.initial_sync_complete = True
+                    self._last_sync_time = time.time()
+                    self.logger.debug(f"Set initial sync timestamp: {self._last_sync_time}")
+
                 except Exception as e:
                     self.logger.warning(f"Could not create completion marker: {e}")
             else:
