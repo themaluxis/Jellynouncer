@@ -138,6 +138,9 @@ async def lifespan(app: FastAPI):
     """
     global webhook_service
 
+    # Initialize logger early so it's available in exception handlers
+    logger = None
+
     # === STARTUP PHASE ===
     # This code runs when the FastAPI application starts
 
@@ -192,14 +195,23 @@ async def lifespan(app: FastAPI):
         yield
 
     except Exception as e:
-        logger.error(f"Failed to start Jellynouncer: {e}", exc_info=True)
+        # Use logger if available, otherwise fall back to print
+        if logger:
+            logger.error(f"Failed to start Jellynouncer: {e}", exc_info=True)
+        else:
+            print(f"Failed to start Jellynouncer (logging not initialized): {e}")
+            import traceback
+            traceback.print_exc()
         raise SystemExit(f"Service startup failed: {e}")
 
     # === SHUTDOWN PHASE ===
     # This code runs when the FastAPI application stops
 
     try:
-        logger.info("Starting graceful shutdown...")
+        if logger:
+            logger.info("Starting graceful shutdown...")
+        else:
+            print("Starting graceful shutdown...")
 
         if webhook_service:
             # Cancel background tasks
@@ -213,10 +225,18 @@ async def lifespan(app: FastAPI):
             # Clean up service resources
             await webhook_service.cleanup()
 
-        logger.info("Jellynouncer shutdown completed successfully")
+        if logger:
+            logger.info("Jellynouncer shutdown completed successfully")
+        else:
+            print("Jellynouncer shutdown completed successfully")
 
     except Exception as e:
-        logger.error(f"Error during shutdown: {e}", exc_info=True)
+        if logger:
+            logger.error(f"Error during shutdown: {e}", exc_info=True)
+        else:
+            print(f"Error during shutdown: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 # Create FastAPI application with lifespan management
@@ -466,7 +486,6 @@ async def webhook_debug_endpoint(request: Request) -> Dict[str, Any]:
 
             # Try to validate against WebhookPayload model
             try:
-                from webhook_models import WebhookPayload
                 webhook_payload = WebhookPayload(**json_data)
                 validation_results["webhook_model_validation"] = {
                     "success": True,
@@ -543,6 +562,68 @@ async def webhook_debug_endpoint(request: Request) -> Dict[str, Any]:
         debug_response["validation_results"] = validation_results
         debug_response["recommendations"] = validation_results["recommendations"]
 
+        # ==================== DISCORD NOTIFICATION TEST ====================
+
+        notification_result = None
+
+        # Only attempt Discord notification if webhook payload validation was successful
+        if (json_data and isinstance(json_data, dict) and
+                validation_results["webhook_model_validation"].get("success", False)):
+
+            try:
+                webhook_service.logger.info("🚀 ATTEMPTING DISCORD NOTIFICATION TEST...")
+
+                # Create WebhookPayload from validated JSON data
+                webhook_payload = WebhookPayload(**json_data)
+
+                # Process through the same pipeline as main webhook endpoint
+                notification_result = await webhook_service.process_webhook(webhook_payload)
+
+                webhook_service.logger.info(
+                    f"✅ DISCORD NOTIFICATION RESULT: {notification_result.get('status', 'unknown')}")
+
+                debug_response["discord_notification"] = {
+                    "attempted": True,
+                    "success": notification_result.get("status") == "success",
+                    "result": notification_result
+                }
+
+                if notification_result.get("status") == "success":
+                    webhook_service.logger.info(f"🎉 DISCORD NOTIFICATION SENT SUCCESSFULLY!")
+                    webhook_service.logger.info(f"    Action: {notification_result.get('action', 'unknown')}")
+                    webhook_service.logger.info(f"    Item: {notification_result.get('item_name', 'unknown')}")
+                else:
+                    webhook_service.logger.warning(
+                        f"⚠️  DISCORD NOTIFICATION FAILED: {notification_result.get('message', 'unknown error')}")
+
+            except ValidationError as ve:
+                # This shouldn't happen since we already validated, but just in case
+                webhook_service.logger.error("❌ DISCORD NOTIFICATION VALIDATION ERROR (unexpected)")
+                debug_response["discord_notification"] = {
+                    "attempted": True,
+                    "success": False,
+                    "error": "Webhook payload validation failed during notification attempt",
+                    "validation_errors": [{"field": " → ".join(str(loc) for loc in error["loc"]),
+                                           "message": error["msg"]} for error in ve.errors()]
+                }
+
+            except Exception as notification_error:
+                webhook_service.logger.error(f"❌ DISCORD NOTIFICATION ERROR: {notification_error}", exc_info=True)
+                debug_response["discord_notification"] = {
+                    "attempted": True,
+                    "success": False,
+                    "error": str(notification_error),
+                    "error_type": type(notification_error).__name__
+                }
+        else:
+            # Skip notification if validation failed
+            webhook_service.logger.info("⏭️  SKIPPING DISCORD NOTIFICATION (validation failed)")
+            debug_response["discord_notification"] = {
+                "attempted": False,
+                "skipped_reason": "Webhook payload validation failed",
+                "success": False
+            }
+
         # ==================== FINAL LOGGING ====================
 
         webhook_service.logger.info("=" * 80)
@@ -555,6 +636,14 @@ async def webhook_debug_endpoint(request: Request) -> Dict[str, Any]:
                 webhook_service.logger.info(f"    {i}. {recommendation}")
         else:
             webhook_service.logger.info("✅ NO ISSUES DETECTED - WEBHOOK LOOKS GOOD!")
+
+        # Add Discord notification summary to recommendations
+        if debug_response["discord_notification"]["attempted"]:
+            if debug_response["discord_notification"]["success"]:
+                debug_response["recommendations"].append("✅ Discord notification sent successfully!")
+            else:
+                error_msg = debug_response["discord_notification"].get("error", "Unknown error")
+                debug_response["recommendations"].append(f"❌ Discord notification failed: {error_msg}")
 
         return debug_response
 
