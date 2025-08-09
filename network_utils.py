@@ -782,7 +782,7 @@ class NetworkDetector:
         if not isinstance(port, int) or port <= 0:
             raise ValueError(f"Port must be a positive integer, got: {port}")
 
-            # Check for manual override first
+        # Check for manual override first
         manual_host = os.getenv("HOST")
         if manual_host and manual_host != "0.0.0.0":
             self.logger.debug(f"Using manual host override: {manual_host}")
@@ -820,7 +820,12 @@ class NetworkDetector:
                 print("Using automatic interface detection")
             ```
         """
-        return bool(os.getenv("HOST"))
+        # Check for manual override first
+        manual_host = os.getenv("HOST")
+        if manual_host and manual_host != "0.0.0.0":
+            return True
+        else:
+            return False
 
 
 def log_jellynouncer_startup(

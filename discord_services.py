@@ -581,32 +581,50 @@ class DiscordNotifier:
                 "webhook_url": webhook_url
             }
 
-    async def render_embed(self, item: MediaItem, action: str, thumbnail_url: Optional[str], changes: Optional[List] = None) -> Dict[str, Any]:
+    async def render_embed(self, item: MediaItem, action: str, thumbnail_url: Optional[str],
+                           changes: Optional[List] = None) -> Dict[str, Any]:
         """
         Render Discord embed using Jinja2 templates.
 
         This method takes a media item and renders it into a rich Discord embed
-        using the configured Jinja2 templates. It handles template selection,
-        variable preparation, and error recovery.
+        using the configured Jinja2 templates. It handles template selection based
+        on the configured templates and grouping modes, variable preparation, and
+        error recovery.
 
-        **Template Selection:**
-        Templates are selected based on media type and action:
-        1. Specific template: f"{media_type.lower()}_{action}.json"
-        2. Media type template: f"{media_type.lower()}.json"
-        3. Action template: f"{action}.json"
-        4. Default template: "default.json"
+        **Template Selection Logic:**
+        Templates are selected based on action type and grouping configuration:
+        1. Check if grouping is enabled in webhook configuration
+        2. Select appropriate template from TemplatesConfig based on:
+           - Action type (new_item vs upgraded_item)
+           - Grouping mode (individual, by_event, by_type, or grouped)
+        3. Fall back to individual templates if grouping templates fail
+        4. Use basic embed as final fallback
+
+        **Supported Actions:**
+        - "new_item": Uses new_item_template or grouped variants
+        - "upgraded_item": Uses upgraded_item_template or grouped variants
+
+        **Grouping Mode Support:**
+        - Individual: Uses new_item_template or upgraded_item_template
+        - by_event: Uses new_items_by_event_template or upgraded_items_by_event_template
+        - by_type: Uses new_items_by_type_template or upgraded_items_by_type_template
+        - grouped: Uses new_items_grouped_template or upgraded_items_grouped_template
 
         Args:
             item (MediaItem): Media item to render
-            action (str): Action that triggered the notification
+            action (str): Action that triggered the notification ("new_item" or "upgraded_item")
             thumbnail_url (Optional[str]): Thumbnail URL for the embed image
+            changes (Optional[List]): List of changes for upgraded items
 
         Returns:
             Dict[str, Any]: Discord embed data structure
 
+        Raises:
+            None: All exceptions are caught and logged, with fallback to basic embed
+
         Example:
             ```python
-            embed = await notifier.render_embed(movie_item, "added", thumbnail_url)
+            embed = await notifier.render_embed(movie_item, "new_item", thumbnail_url)
             # Returns Discord embed structure ready for webhook
             ```
         """
@@ -615,7 +633,7 @@ class DiscordNotifier:
             "item": asdict(item),
             "action": action,
             "thumbnail_url": thumbnail_url,
-            "changes": changes,
+            "changes": changes or [],
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "server_url": self.thumbnail_manager.base_url,
             "jellyfin_url": self.thumbnail_manager.base_url,  # Keep both for backward compatibility
@@ -628,21 +646,102 @@ class DiscordNotifier:
             "tvdb_attribution_needed": False  # Set based on your rating services config if needed
         }
 
-        # Try to find and render appropriate template
-        template_names = [
-            f"{item.item_type.lower()}_{action}.json",
-            f"{item.item_type.lower()}.json",
-            f"{action}.json",
-            "default.json"
-        ]
+        def _get_webhook_grouping_config() -> Dict[str, Any]:
+            """
+            Get grouping configuration for the appropriate webhook.
 
-        for template_name in template_names:
+            Returns:
+                Dict[str, Any]: Grouping configuration from webhook config
+            """
+            # Determine which webhook would be used for this item
+            webhook_key = None
+            if item.item_type in ["Movie"]:
+                webhook_key = "movies"
+            elif item.item_type in ["Series", "Season", "Episode"]:
+                webhook_key = "tv"
+            elif item.item_type in ["Audio", "MusicAlbum", "MusicArtist"]:
+                webhook_key = "music"
+            else:
+                webhook_key = "default"
+
+            # Get the webhook configuration
+            webhook_config = self.config.webhooks.get(webhook_key)
+            if webhook_config and hasattr(webhook_config, 'grouping'):
+                return webhook_config.grouping
+
+            # Fall back to default webhook if specific one not found
+            default_config = self.config.webhooks.get("default")
+            if default_config and hasattr(default_config, 'grouping'):
+                return default_config.grouping
+
+            # Return empty config if no grouping found
+            return {}
+
+        def _get_template_for_action_and_grouping(action: str, grouping_config: Dict[str, Any]) -> List[str]:
+            """
+            Get template filename(s) to try based on action and grouping configuration.
+
+            Args:
+                action (str): Action type ("new_item" or "upgraded_item")
+                grouping_config (Dict[str, Any]): Grouping configuration from webhook
+
+            Returns:
+                List[str]: List of template filenames to try in order of preference
+            """
+            # Get grouping mode from config
+            grouping_mode = grouping_config.get("mode", "none")
+
+            # Import templates_config from the webhook service
+            # Note: This would need to be passed to the Discord service during initialization
+            # For now, we'll use the default template configuration
+
+            template_candidates = []
+
+            if action == "new_item":
+                if grouping_mode == "event_type" or grouping_mode == "by_event":
+                    template_candidates.append("new_items_by_event.j2")
+                elif grouping_mode == "content_type" or grouping_mode == "by_type":
+                    template_candidates.append("new_items_by_type.j2")
+                elif grouping_mode == "grouped" or grouping_mode == "both":
+                    template_candidates.append("new_items_grouped.j2")
+
+                # Always fall back to individual template
+                template_candidates.append("new_item.j2")
+
+            elif action == "upgraded_item":
+                if grouping_mode == "event_type" or grouping_mode == "by_event":
+                    template_candidates.append("upgraded_items_by_event.j2")
+                elif grouping_mode == "content_type" or grouping_mode == "by_type":
+                    template_candidates.append("upgraded_items_by_type.j2")
+                elif grouping_mode == "grouped" or grouping_mode == "both":
+                    template_candidates.append("upgraded_items_grouped.j2")
+
+                # Always fall back to individual template
+                template_candidates.append("upgraded_item.j2")
+
+            else:
+                # Unknown action, fall back to basic templates
+                self.logger.warning(f"Unknown action type: {action}, falling back to new_item template")
+                template_candidates.extend(["new_item.j2", "upgraded_item.j2"])
+
+            return template_candidates
+
+        # Get grouping configuration for this webhook
+        grouping_config = _get_webhook_grouping_config()
+        self.logger.debug(f"Grouping config for {item.item_type}: {grouping_config}")
+
+        # Get template candidates based on action and grouping
+        template_candidates = _get_template_for_action_and_grouping(action, grouping_config)
+        self.logger.debug(f"Template candidates for {action}: {template_candidates}")
+
+        # Try to find and render appropriate template
+        for template_name in template_candidates:
             try:
                 template = self.jinja_env.get_template(template_name)
                 rendered = template.render(**template_vars)
                 embed_data = json.loads(rendered)
 
-                self.logger.debug(f"Using template {template_name} for {item.name}")
+                self.logger.debug(f"Successfully using template {template_name} for {item.name}")
                 return embed_data
 
             except TemplateNotFound:
@@ -657,12 +756,54 @@ class DiscordNotifier:
 
         # Fallback to basic embed if all templates fail
         self.logger.warning(f"All templates failed, using basic embed for {item.name}")
+
+        # Create appropriate title based on action and item type
+        if action == "upgraded_item":
+            title_prefix = "📈 Upgraded"
+        else:
+            title_prefix = "✨ New"
+
+        # Add emoji based on item type
+        if item.item_type == "Episode":
+            emoji = "📺"
+            if hasattr(item, 'series_name') and item.series_name:
+                title = f"{emoji} {title_prefix} Episode: {item.series_name}"
+                description = f"S{getattr(item, 'season_number', 0):02d}E{getattr(item, 'episode_number', 0):02d} • {item.name}"
+            else:
+                title = f"{emoji} {title_prefix} Episode"
+                description = item.name
+        elif item.item_type == "Movie":
+            emoji = "🎬"
+            title = f"{emoji} {title_prefix} Movie"
+            description = item.name
+            if hasattr(item, 'year') and item.year:
+                description += f" ({item.year})"
+        elif item.item_type in ["Audio", "MusicAlbum"]:
+            emoji = "🎵"
+            title = f"{emoji} {title_prefix} Music"
+            description = item.name
+            if hasattr(item, 'album_artist') and item.album_artist:
+                description += f" by {item.album_artist}"
+        else:
+            emoji = "📁"
+            title = f"{emoji} {title_prefix} {item.item_type}"
+            description = item.name
+
+        # Determine embed color based on action
+        if action == "upgraded_item":
+            embed_color = 16766720  # Orange for upgrades
+        else:
+            embed_color = 65280  # Green for new items
+
         return {
-            "title": f"{action.title()}: {item.name}",
-            "description": f"New {item.item_type.lower()} available",
-            "color": 5814783,  # Discord blue
+            "title": title,
+            "description": description,
+            "color": embed_color,
             "image": {"url": thumbnail_url} if thumbnail_url else {},
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "footer": {
+                "text": f"{item.server_name or 'Jellyfin'} • {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+            }
         }
 
     async def is_rate_limited(self, webhook_url: str) -> bool:
