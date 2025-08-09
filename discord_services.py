@@ -355,10 +355,10 @@ class DiscordNotifier:
 
         self.logger = get_logger("jellynouncer.discord")
 
-    async def initialize(self, session: aiohttp.ClientSession, jellyfin_config, templates_config) -> None:
+    async def initialize(self, session: aiohttp.ClientSession, jellyfin_config, templates_config, notifications_config=None) -> None:
         """Initialize Discord notifier with shared session and configuration dependencies."""
         self.session = session
-        self.notifications_config = NotificationsConfig.notifications_config
+        self.notifications_config = notifications_config
 
         # Create thumbnail manager that will share the same session
         self.thumbnail_manager = ThumbnailManager(
@@ -674,6 +674,7 @@ class DiscordNotifier:
             "server_url": self.thumbnail_manager.base_url,
             "jellyfin_url": self.thumbnail_manager.base_url,  # Keep both for backward compatibility
             "api_key": self.thumbnail_manager.api_key,
+            "color": self._get_notification_color(action, changes),
             # Standardized image parameters
             "image_quality": 90,
             "image_max_width": 500,
