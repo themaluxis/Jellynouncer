@@ -402,6 +402,15 @@ class DiscordNotifier:
         2. Fall back to general webhook if specific webhook not configured
         3. Return None if no applicable webhook is configured
 
+        **Webhook Configuration Structure:**
+        The method accesses webhooks through the nested configuration structure:
+        - config.webhooks["movies"] for movie content
+        - config.webhooks["tv"] for TV shows and episodes
+        - config.webhooks["music"] for audio content
+        - config.webhooks["default"] for fallback/general content
+
+        Only enabled webhooks with valid URLs are considered for routing.
+
         Args:
             media_type (str): Type of media content (Movie, Series, Episode, Audio, etc.)
 
@@ -420,27 +429,48 @@ class DiscordNotifier:
             webhook_url = notifier.get_webhook_url("Audio")
             ```
         """
-        # Map media types to webhook configuration
-        webhook_mapping = {
-            "Movie": self.config.webhook_url_movies,
-            "Series": self.config.webhook_url_tv,
-            "Season": self.config.webhook_url_tv,
-            "Episode": self.config.webhook_url_tv,
-            "Audio": self.config.webhook_url_music,
-            "MusicAlbum": self.config.webhook_url_music,
-            "MusicArtist": self.config.webhook_url_music
+
+        def _get_webhook_url_if_enabled(self, webhook_key: str) -> Optional[str]:
+            """
+            Helper method to safely get webhook URL if webhook exists, is enabled, and has URL.
+
+            Args:
+                webhook_key (str): Key name in the webhooks dictionary
+
+            Returns:
+                Optional[str]: Webhook URL if available and enabled, None otherwise
+            """
+            webhook_config = self.config.webhooks.get(webhook_key)
+            if (webhook_config and
+                    webhook_config.enabled and
+                    webhook_config.url):
+                return webhook_config.url
+            return None
+
+        # Map media types to webhook configuration keys
+        webhook_type_mapping = {
+            "Movie": "movies",
+            "Series": "tv",
+            "Season": "tv",
+            "Episode": "tv",
+            "Audio": "music",
+            "MusicAlbum": "music",
+            "MusicArtist": "music"
         }
 
         # Try to get specific webhook for this media type
-        specific_webhook = webhook_mapping.get(media_type)
-        if specific_webhook:
-            self.logger.debug(f"Using specific webhook for {media_type}")
-            return specific_webhook
+        webhook_key = webhook_type_mapping.get(media_type)
+        if webhook_key:
+            specific_webhook_url = _get_webhook_url_if_enabled(webhook_key)
+            if specific_webhook_url:
+                self.logger.debug(f"Using specific {webhook_key} webhook for {media_type}")
+                return specific_webhook_url
 
-        # Fall back to general webhook
-        if self.config.webhook_url:
-            self.logger.debug(f"Using general webhook for {media_type}")
-            return self.config.webhook_url
+        # Fall back to general/default webhook
+        default_webhook_url = _get_webhook_url_if_enabled("default")
+        if default_webhook_url:
+            self.logger.debug(f"Using default webhook for {media_type}")
+            return default_webhook_url
 
         # No webhook configured
         self.logger.warning(f"No webhook configured for media type: {media_type}")
@@ -756,41 +786,55 @@ class DiscordNotifier:
 
     def get_webhook_status(self) -> Dict[str, Any]:
         """
-        Get current status of webhook configuration and rate limiting.
+        Get current status of Discord webhook configuration and rate limiting.
 
         This method provides diagnostic information about the Discord notifier's
         current state, including configured webhooks and rate limiting status.
 
+        **Status Information Provided:**
+        - Total number of enabled webhooks with valid URLs
+        - Breakdown by webhook type (default, movies, tv, music)
+        - Current rate limiting state for active webhooks
+        - Service initialization status
+
         Returns:
             Dict[str, Any]: Status information including:
-                - configured_webhooks: Count of configured webhook URLs
-                - rate_limits: Current rate limiting state
-                - session_status: HTTP session status
+                - configured_webhooks: Count of enabled webhooks with URLs
+                - webhook_types: Dictionary showing which webhook types are configured
+                - rate_limits: Current rate limiting state count
+                - session_initialized: Whether HTTP session is ready
+                - templates_initialized: Whether Jinja2 templates are loaded
 
         Example:
             ```python
             status = notifier.get_webhook_status()
             logger.info(f"Configured webhooks: {status['configured_webhooks']}")
+            logger.info(f"Available webhook types: {list(status['webhook_types'].keys())}")
             ```
         """
         configured_webhooks = 0
         webhook_info = {}
 
-        if self.config.webhook_url:
-            configured_webhooks += 1
-            webhook_info["general"] = True
+        # Check each webhook type in the configuration
+        webhook_types = ["default", "movies", "tv", "music"]
 
-        if self.config.webhook_url_movies:
-            configured_webhooks += 1
-            webhook_info["movies"] = True
-
-        if self.config.webhook_url_tv:
-            configured_webhooks += 1
-            webhook_info["tv"] = True
-
-        if self.config.webhook_url_music:
-            configured_webhooks += 1
-            webhook_info["music"] = True
+        for webhook_type in webhook_types:
+            webhook_config = self.config.webhooks.get(webhook_type)
+            if (webhook_config and
+                    webhook_config.enabled and
+                    webhook_config.url):
+                configured_webhooks += 1
+                webhook_info[webhook_type] = {
+                    "enabled": True,
+                    "name": webhook_config.name,
+                    "has_url": bool(webhook_config.url)
+                }
+            else:
+                webhook_info[webhook_type] = {
+                    "enabled": False,
+                    "name": webhook_config.name if webhook_config else f"{webhook_type.title()} Webhook",
+                    "has_url": False
+                }
 
         return {
             "configured_webhooks": configured_webhooks,
