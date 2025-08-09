@@ -2,104 +2,134 @@
   "embeds": [
     {
       "title": "{% if item.item_type == 'Episode' %}📺 New Episode Added{% elif item.item_type == 'Series' %}📺 New Series Added{% elif item.item_type == 'Movie' %}🎬 New Movie Added{% elif item.item_type == 'Season' %}📺 New Season Added{% else %}📁 New {{ item.item_type }} Added{% endif %}",
-      "description": "{% if item.item_type == 'Episode' %}**{{ item.series_name }}** S{{ '%02d'|format(item.season_number or 0) }}E{{ '%02d'|format(item.episode_number or 0) }}\n{{ item.name }}{% elif item.item_type == 'Series' %}**{{ item.name }}**{% if item.year %} ({{ item.year }}){% endif %}{% else %}**{{ item.name }}**{% if item.year %} ({{ item.year }}){% endif %}{% endif %}",
-      "color": {{ color }},
-      {% if item.item_type == 'Episode' and item.series_id %}
+      "description": "{% if item.item_type == 'Episode' %}**{{ item.series_name | default('Unknown Series') }}** S{{ '%02d' | format(item.season_number | default(0)) }}E{{ '%02d' | format(item.episode_number | default(0)) }}\n{{ item.name | default('Unknown Episode') }}{% elif item.item_type == 'Series' %}**{{ item.name | default('Unknown Series') }}**{% if item.year %} ({{ item.year }}){% endif %}{% else %}**{{ item.name | default('Unknown Title') }}**{% if item.year %} ({{ item.year }}){% endif %}{% endif %}",
+      "color": {{ color | default(65280) }}{% if item.item_type == 'Episode' and item.series_id is defined and item.series_id %},
       "author": {
-        "name": "{{ item.series_name }}",
+        "name": "{{ item.series_name | default('Unknown Series') }}",
         "icon_url": "{{ jellyfin_url }}/Items/{{ item.series_id }}/Images/Logo?api_key={{ api_key }}&maxHeight=64&maxWidth=200",
         "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.series_id }}"
-      },
-      {% endif %}
+      }{% endif %},
       "fields": [
-        {% set field_count = 0 %}
+        {%- set field_count = 0 -%}
+        {%- set has_fields = false -%}
+
         {# Technical specifications row (inline) #}
-        {% if item.video_height %}
+        {%- if item.video_height is defined and item.video_height -%}
+          {%- if has_fields %},{% endif -%}
+          {%- set has_fields = true -%}
         {
           "name": "📐 Quality",
-          "value": "{{ item.video_height }}p{% if item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}",
+          "value": "{{ item.video_height }}p{% if item.video_range is defined and item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}",
           "inline": true
-        }{% set field_count = field_count + 1 %}{% if field_count < 9 %},{% endif %}
-        {% endif %}
-        {% if item.video_codec and field_count < 9 %}
+        }
+        {%- set field_count = field_count + 1 -%}
+        {%- endif -%}
+
+        {%- if item.video_codec is defined and item.video_codec and field_count < 9 -%}
+          {%- if has_fields %},{% endif -%}
+          {%- set has_fields = true -%}
         {
           "name": "🎞️ Video",
-          "value": "{{ item.video_codec.upper() }}{% if item.video_profile %} {{ item.video_profile }}{% endif %}",
+          "value": "{{ item.video_codec | upper }}{% if item.video_profile is defined and item.video_profile %} {{ item.video_profile }}{% endif %}",
           "inline": true
-        }{% set field_count = field_count + 1 %}{% if field_count < 9 %},{% endif %}
-        {% endif %}
-        {% if item.audio_codec and field_count < 9 %}
+        }
+        {%- set field_count = field_count + 1 -%}
+        {%- endif -%}
+
+        {%- if item.audio_codec is defined and item.audio_codec and field_count < 9 -%}
+          {%- if has_fields %},{% endif -%}
+          {%- set has_fields = true -%}
         {
           "name": "🔊 Audio",
-          "value": "{{ item.audio_codec.upper() }}{% if item.audio_channels %} {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}",
+          "value": "{{ item.audio_codec | upper }}{% if item.audio_channels is defined and item.audio_channels %} {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}",
           "inline": true
-        }{% set field_count = field_count + 1 %}{% if field_count < 9 %},{% endif %}
-        {% endif %}
+        }
+        {%- set field_count = field_count + 1 -%}
+        {%- endif -%}
 
         {# Metadata row (inline) #}
-        {% if item.runtime_ticks and field_count < 9 %}
+        {%- if item.runtime_ticks is defined and item.runtime_ticks and field_count < 9 -%}
+          {%- if has_fields %},{% endif -%}
+          {%- set has_fields = true -%}
         {
           "name": "⏱️ Runtime",
           "value": "{{ (item.runtime_ticks // 600000000) }}m",
           "inline": true
-        }{% set field_count = field_count + 1 %}{% if field_count < 9 %},{% endif %}
-        {% endif %}
-        {% if item.official_rating and field_count < 9 %}
+        }
+        {%- set field_count = field_count + 1 -%}
+        {%- endif -%}
+
+        {%- if item.official_rating is defined and item.official_rating and field_count < 9 -%}
+          {%- if has_fields %},{% endif -%}
+          {%- set has_fields = true -%}
         {
           "name": "🏷️ Rating",
           "value": "{{ item.official_rating }}",
           "inline": true
-        }{% set field_count = field_count + 1 %}{% if field_count < 9 %},{% endif %}
-        {% endif %}
-        {% if item.premiere_date and field_count < 9 %}
+        }
+        {%- set field_count = field_count + 1 -%}
+        {%- endif -%}
+
+        {%- if item.premiere_date is defined and item.premiere_date and field_count < 9 -%}
+          {%- if has_fields %},{% endif -%}
+          {%- set has_fields = true -%}
         {
           "name": "📅 {% if item.item_type == 'Episode' %}Air Date{% else %}Release{% endif %}",
           "value": "{{ item.premiere_date[:10] }}",
           "inline": true
-        }{% set field_count = field_count + 1 %}{% if field_count < 9 %},{% endif %}
-        {% endif %}
+        }
+        {%- set field_count = field_count + 1 -%}
+        {%- endif -%}
 
         {# External ratings (non-inline for better mobile display) #}
-        {% if ratings and ratings|length > 0 %}
+        {%- if ratings is defined and ratings and ratings | length > 0 -%}
+          {%- if has_fields %},{% endif -%}
+          {%- set has_fields = true -%}
         {
           "name": "⭐ Ratings",
-          "value": "{% for rating_key, rating_data in ratings.items() %}{% if rating_key == 'imdb' %}**IMDb:** {{ rating_data.value }}/{{ rating_data.scale }}{% elif rating_key == 'rotten_tomatoes' %}**RT:** {{ rating_data.value }}%{% elif rating_key == 'metacritic' %}**MC:** {{ rating_data.value }}/{{ rating_data.scale }}{% elif rating_key == 'tmdb' %}**TMDb:** {{ rating_data.value }}/{{ rating_data.scale }}{% if rating_data.vote_count %} ({{ rating_data.vote_count }} votes){% endif %}{% elif rating_key == 'tvdb' %}**TVDb:** {{ rating_data.value }}/{{ rating_data.scale }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}",
-          "inline": false
-        }{% if item.genres or item.overview or (item.imdb_id or item.tmdb_id or item.tvdb_id) %},{% endif %}
-        {% endif %}
-
-        {# Genre information (non-inline) #}
-        {% if item.genres and item.genres|length > 0 %}
-        {
-          "name": "🎭 Genres",
-          "value": "{{ item.genres[:3]|join(', ') }}{% if item.genres|length > 3 %} +{{ item.genres|length - 3 }} more{% endif %}",
-          "inline": false
-        }{% if item.overview or (item.imdb_id or item.tmdb_id or item.tvdb_id) %},{% endif %}
-        {% endif %}
-
-        {# Overview/Plot (non-inline, mobile-friendly) #}
-        {% if item.overview and item.overview|length > 0 %}
-        {
-          "name": "📖 {% if item.item_type == 'Episode' %}Episode Summary{% else %}Overview{% endif %}",
-          "value": "{{ (item.overview[:350] + '...') if item.overview|length > 350 else item.overview }}",
-          "inline": false
-        }{% if item.imdb_id or item.tmdb_id or item.tvdb_id %},{% endif %}
-        {% endif %}
-
-        {# External links (non-inline) #}
-        {% if item.imdb_id or item.tmdb_id or item.tvdb_id %}
-        {
-          "name": "🔗 External Links",
-          "value": "{% if item.imdb_id %}[IMDb](https://www.imdb.com/title/{{ item.imdb_id }}/){% endif %}{% if item.tmdb_id %}{% if item.imdb_id %} • {% endif %}[TMDb](https://www.themoviedb.org/{% if item.item_type == 'Movie' %}movie{% elif item.item_type == 'Series' %}tv{% else %}tv{% endif %}/{{ item.tmdb_id }}){% endif %}{% if item.tvdb_id %}{% if item.imdb_id or item.tmdb_id %} • {% endif %}{% if ratings.tvdb and ratings.tvdb.proper_url %}[TVDb]({{ ratings.tvdb.proper_url }}){% elif item.item_type == 'Episode' %}[TVDb](https://thetvdb.com/episodes/{{ item.tvdb_id }}){% elif item.item_type == 'Series' %}[TVDb](https://thetvdb.com/series/{{ item.tvdb_id }}){% else %}[TVDb](https://thetvdb.com/dereferrer/series/{{ item.tvdb_id }}){% endif %}{% endif %}",
+          "value": "{% for rating_key, rating_data in ratings.items() %}{% if rating_key == 'imdb' and rating_data.value is defined %}**IMDb:** {{ rating_data.value }}/{{ rating_data.scale | default(10) }}{% elif rating_key == 'rotten_tomatoes' and rating_data.value is defined %}**RT:** {{ rating_data.value }}%{% elif rating_key == 'metacritic' and rating_data.value is defined %}**MC:** {{ rating_data.value }}/{{ rating_data.scale | default(100) }}{% elif rating_key == 'tmdb' and rating_data.value is defined %}**TMDb:** {{ rating_data.value }}/{{ rating_data.scale | default(10) }}{% if rating_data.vote_count is defined and rating_data.vote_count %} ({{ rating_data.vote_count }} votes){% endif %}{% elif rating_key == 'tvdb' and rating_data.value is defined %}**TVDb:** {{ rating_data.value }}/{{ rating_data.scale | default(10) }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}",
           "inline": false
         }
-        {% endif %}
-      ]{% if has_thumbnail %},
+        {%- endif -%}
+
+        {# Genre information (non-inline) #}
+        {%- if item.genres is defined and item.genres and item.genres | length > 0 -%}
+          {%- if has_fields %},{% endif -%}
+          {%- set has_fields = true -%}
+        {
+          "name": "🎭 Genres",
+          "value": "{{ item.genres[:3] | join(', ') }}{% if item.genres | length > 3 %} +{{ item.genres | length - 3 }} more{% endif %}",
+          "inline": false
+        }
+        {%- endif -%}
+
+        {# Overview/Plot (non-inline, mobile-friendly) #}
+        {%- if item.overview is defined and item.overview and item.overview | length > 0 -%}
+          {%- if has_fields %},{% endif -%}
+          {%- set has_fields = true -%}
+        {
+          "name": "📖 {% if item.item_type == 'Episode' %}Episode Summary{% else %}Overview{% endif %}",
+          "value": "{{ (item.overview[:350] + '...') if item.overview | length > 350 else item.overview }}",
+          "inline": false
+        }
+        {%- endif -%}
+
+        {# External links (non-inline) #}
+        {%- if (item.imdb_id is defined and item.imdb_id) or (item.tmdb_id is defined and item.tmdb_id) or (item.tvdb_id is defined and item.tvdb_id) -%}
+          {%- if has_fields %},{% endif -%}
+          {%- set has_fields = true -%}
+        {
+          "name": "🔗 External Links",
+          "value": "{% if item.imdb_id is defined and item.imdb_id %}[IMDb](https://www.imdb.com/title/{{ item.imdb_id }}/){% endif %}{% if item.tmdb_id is defined and item.tmdb_id %}{% if item.imdb_id is defined and item.imdb_id %} • {% endif %}[TMDb](https://www.themoviedb.org/{% if item.item_type == 'Movie' %}movie{% elif item.item_type == 'Series' %}tv{% else %}tv{% endif %}/{{ item.tmdb_id }}){% endif %}{% if item.tvdb_id is defined and item.tvdb_id %}{% if (item.imdb_id is defined and item.imdb_id) or (item.tmdb_id is defined and item.tmdb_id) %} • {% endif %}{% if ratings is defined and ratings.tvdb is defined and ratings.tvdb.proper_url is defined and ratings.tvdb.proper_url %}[TVDb]({{ ratings.tvdb.proper_url }}){% elif item.item_type == 'Episode' %}[TVDb](https://thetvdb.com/episodes/{{ item.tvdb_id }}){% elif item.item_type == 'Series' %}[TVDb](https://thetvdb.com/series/{{ item.tvdb_id }}){% else %}[TVDb](https://thetvdb.com/dereferrer/series/{{ item.tvdb_id }}){% endif %}{% endif %}",
+          "inline": false
+        }
+        {%- endif -%}
+      ]{% if has_thumbnail is defined and has_thumbnail and verified_thumbnail_url is defined and verified_thumbnail_url %},
       "thumbnail": {
         "url": "{{ verified_thumbnail_url }}"
       }{% endif %},
       "footer": {
-        "text": "Added to Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC{% if tvdb_attribution_needed %}\nMetadata provided by TheTVDB{% endif %}",
+        "text": "Added to Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC{% if tvdb_attribution_needed is defined and tvdb_attribution_needed %}\nMetadata provided by TheTVDB{% endif %}",
         "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
       },
       "timestamp": "{{ timestamp }}"

@@ -617,6 +617,51 @@ class DiscordNotifier:
         # Default fallback
         return 65280  # Green
 
+    def _log_template_rendering_debug(self, template_name: str,
+                                      template_vars: Dict[str, Any], rendered_output: str) -> None:
+        """
+        Debug logging for template rendering process.
+        """
+        self.logger.debug("=" * 60)
+        self.logger.debug(f"🎨 TEMPLATE RENDERING DEBUG - {template_name}")
+        self.logger.debug("=" * 60)
+
+        # Log template variables (excluding sensitive data)
+        self.logger.debug("📋 TEMPLATE VARIABLES:")
+        for key, value in template_vars.items():
+            if key in ['api_key']:  # Mask sensitive values
+                self.logger.debug(f"  {key}: ***MASKED***")
+            else:
+                value_str = repr(value)
+                if len(value_str) > 200:
+                    value_str = value_str[:200] + "...TRUNCATED"
+                self.logger.debug(f"  {key}: {value_str}")
+
+        # Log rendered output
+        self.logger.debug("\n📄 RENDERED TEMPLATE OUTPUT:")
+        self.logger.debug(rendered_output)
+
+        # Validate JSON structure
+        self.logger.debug("\n✅ JSON VALIDATION:")
+        try:
+            parsed = json.loads(rendered_output)
+            self.logger.debug("✅ Template output is valid JSON")
+            self.logger.debug(f"  - Type: {type(parsed).__name__}")
+            if isinstance(parsed, dict):
+                self.logger.debug(f"  - Keys: {list(parsed.keys())}")
+        except json.JSONDecodeError as e:
+            self.logger.error(f"❌ Template output is invalid JSON: {e}")
+            self.logger.error(f"  - Error at position: {e.pos}")
+
+            # Show context around the error
+            if hasattr(e, 'pos') and e.pos:
+                start = max(0, e.pos - 50)
+                end = min(len(rendered_output), e.pos + 50)
+                context = rendered_output[start:end]
+                self.logger.error(f"  - Context: ...{context}...")
+
+        self.logger.debug("=" * 60)
+
     async def render_embed(self, item: MediaItem, action: str, thumbnail_url: Optional[str],
                            changes: Optional[List] = None) -> Dict[str, Any]:
         """
@@ -776,6 +821,10 @@ class DiscordNotifier:
             try:
                 template = self.jinja_env.get_template(template_name)
                 rendered = template.render(**template_vars)
+
+                # ADD: Template debugging
+                self._log_template_rendering_debug(template_name, template_vars, rendered)
+
                 embed_data = json.loads(rendered)
 
                 self.logger.debug(f"Successfully using template {template_name} for {item.name}")
@@ -843,6 +892,156 @@ class DiscordNotifier:
             }
         }
 
+    def _log_discord_payload_debug(self, webhook_url: str, payload: Dict[str, Any],
+                                   item_name: str = "Unknown") -> None:
+        """
+        Comprehensive debug logging for Discord webhook payloads.
+
+        This function logs the complete webhook payload structure to help debug
+        Discord API 400 errors by showing exactly what data is being sent.
+
+        Args:
+            webhook_url: Discord webhook URL (will be masked for security)
+            payload: Complete webhook payload being sent to Discord
+            item_name: Name of the media item for context
+        """
+        self.logger.debug("=" * 80)
+        self.logger.debug(f"🚀 DISCORD WEBHOOK DEBUG - {item_name}")
+        self.logger.debug("=" * 80)
+
+        # Mask webhook URL for security
+        masked_url = webhook_url[:50] + "***" if len(webhook_url) > 50 else webhook_url
+        self.logger.debug(f"📡 Webhook URL: {masked_url}")
+        self.logger.debug(f"⏰ Timestamp: {datetime.now(timezone.utc).isoformat()}")
+
+        # Log payload structure overview
+        self.logger.debug("\n📋 PAYLOAD STRUCTURE OVERVIEW:")
+        self.logger.debug(f"  - Type: {type(payload).__name__}")
+        self.logger.debug(f"  - Top-level keys: {list(payload.keys()) if isinstance(payload, dict) else 'Not a dict'}")
+
+        if isinstance(payload, dict):
+            self.logger.debug(f"  - Has 'embeds': {'embeds' in payload}")
+            self.logger.debug(f"  - Has 'username': {'username' in payload}")
+            self.logger.debug(f"  - Has 'content': {'content' in payload}")
+
+            if 'embeds' in payload:
+                embeds = payload['embeds']
+                self.logger.debug(f"  - Embeds type: {type(embeds).__name__}")
+                self.logger.debug(f"  - Embeds count: {len(embeds) if isinstance(embeds, list) else 'Not a list'}")
+
+        # Log complete JSON payload with pretty formatting
+        self.logger.debug("\n📦 COMPLETE JSON PAYLOAD:")
+        try:
+            formatted_json = json.dumps(payload, indent=2, ensure_ascii=False)
+            self.logger.debug(formatted_json)
+        except Exception as e:
+            self.logger.error(f"❌ Failed to serialize payload to JSON: {e}")
+            self.logger.debug(f"Raw payload: {payload}")
+
+        # Detailed embed analysis if embeds exist
+        if isinstance(payload, dict) and 'embeds' in payload and isinstance(payload['embeds'], list):
+            self.logger.debug("\n🔍 DETAILED EMBED ANALYSIS:")
+
+            for i, embed in enumerate(payload['embeds']):
+                self.logger.debug(f"\n  📄 EMBED {i}:")
+                self.logger.debug(f"    - Type: {type(embed).__name__}")
+
+                if isinstance(embed, dict):
+                    self.logger.debug(f"    - Keys: {list(embed.keys())}")
+
+                    # Check required and important fields
+                    important_fields = ['title', 'description', 'color', 'fields', 'footer', 'timestamp']
+                    for field in important_fields:
+                        if field in embed:
+                            value = embed[field]
+                            self.logger.debug(
+                                f"    - {field}: {type(value).__name__} = {repr(value)[:100]}{'...' if len(repr(value)) > 100 else ''}")
+                        else:
+                            self.logger.debug(f"    - {field}: ❌ MISSING")
+
+                    # Detailed fields analysis
+                    if 'fields' in embed and isinstance(embed['fields'], list):
+                        self.logger.debug(f"\n    🏷️  FIELDS ANALYSIS ({len(embed['fields'])} fields):")
+
+                        for j, field in enumerate(embed['fields']):
+                            self.logger.debug(f"      Field {j}:")
+                            self.logger.debug(f"        - Type: {type(field).__name__}")
+
+                            if isinstance(field, dict):
+                                self.logger.debug(f"        - Keys: {list(field.keys())}")
+
+                                # Check required field properties
+                                if 'name' in field:
+                                    name_value = field['name']
+                                    self.logger.debug(
+                                        f"        - name: {type(name_value).__name__} = {repr(name_value)}")
+                                    if not isinstance(name_value, str) or not name_value.strip():
+                                        self.logger.error(f"        - ❌ INVALID NAME: Must be non-empty string")
+                                else:
+                                    self.logger.error(f"        - ❌ MISSING 'name' property")
+
+                                if 'value' in field:
+                                    value_value = field['value']
+                                    self.logger.debug(
+                                        f"        - value: {type(value_value).__name__} = {repr(value_value)[:100]}{'...' if len(repr(value_value)) > 100 else ''}")
+                                    if not isinstance(value_value, str) or not value_value.strip():
+                                        self.logger.error(f"        - ❌ INVALID VALUE: Must be non-empty string")
+                                else:
+                                    self.logger.error(f"        - ❌ MISSING 'value' property")
+
+                                if 'inline' in field:
+                                    inline_value = field['inline']
+                                    self.logger.debug(
+                                        f"        - inline: {type(inline_value).__name__} = {repr(inline_value)}")
+                                    if not isinstance(inline_value, bool):
+                                        self.logger.error(f"        - ❌ INVALID INLINE: Must be boolean")
+                            else:
+                                self.logger.error(f"        - ❌ FIELD IS NOT A DICT: {type(field).__name__}")
+
+                    # Check embed limits
+                    if 'title' in embed and isinstance(embed['title'], str):
+                        if len(embed['title']) > 256:
+                            self.logger.error(f"    - ❌ TITLE TOO LONG: {len(embed['title'])} chars (max 256)")
+
+                    if 'description' in embed and isinstance(embed['description'], str):
+                        if len(embed['description']) > 4096:
+                            self.logger.error(
+                                f"    - ❌ DESCRIPTION TOO LONG: {len(embed['description'])} chars (max 4096)")
+
+                    if 'color' in embed:
+                        color_value = embed['color']
+                        if not isinstance(color_value, int) or color_value < 0 or color_value > 16777215:
+                            self.logger.error(f"    - ❌ INVALID COLOR: {color_value} (must be integer 0-16777215)")
+                else:
+                    self.logger.error(f"    - ❌ EMBED IS NOT A DICT: {type(embed).__name__}")
+
+        # Final validation summary
+        self.logger.debug("\n✅ VALIDATION SUMMARY:")
+        validation_errors = []
+
+        if not isinstance(payload, dict):
+            validation_errors.append("Payload is not a dictionary")
+        else:
+            if 'embeds' not in payload and 'content' not in payload:
+                validation_errors.append("Payload missing both 'embeds' and 'content'")
+
+            if 'embeds' in payload:
+                if not isinstance(payload['embeds'], list):
+                    validation_errors.append("'embeds' is not a list")
+                elif len(payload['embeds']) == 0:
+                    validation_errors.append("'embeds' array is empty")
+                elif len(payload['embeds']) > 10:
+                    validation_errors.append(f"Too many embeds: {len(payload['embeds'])} (max 10)")
+
+        if validation_errors:
+            self.logger.error("❌ VALIDATION ERRORS FOUND:")
+            for error in validation_errors:
+                self.logger.error(f"  - {error}")
+        else:
+            self.logger.debug("✅ Basic payload structure appears valid")
+
+        self.logger.debug("=" * 80)
+
     async def is_rate_limited(self, webhook_url: str) -> bool:
         """
         Check if webhook URL is currently rate limited.
@@ -897,10 +1096,11 @@ class DiscordNotifier:
 
     async def send_webhook(self, webhook_url: str, data: Dict[str, Any]) -> bool:
         """
-        Send webhook request to Discord with error handling and retry logic.
+        Send webhook request to Discord with comprehensive debug logging and error handling.
 
         This method handles the actual HTTP request to Discord's webhook API,
-        including error handling, rate limit detection, and retry logic.
+        including error handling, rate limit detection, retry logic, and detailed
+        debug logging to help troubleshoot webhook issues.
 
         Args:
             webhook_url (str): Discord webhook URL
@@ -908,21 +1108,29 @@ class DiscordNotifier:
 
         Returns:
             bool: True if webhook sent successfully, False otherwise
-
-        Example:
-            ```python
-            webhook_data = {
-                "embeds": [embed],
-                "username": "Jellynouncer"
-            }
-            success = await notifier.send_webhook(webhook_url, webhook_data)
-            ```
         """
         if not self.session:
             self.logger.error("HTTP session not initialized")
             return False
 
+        item_name = "Unknown"
+
         try:
+            # Extract item name for logging context
+            if 'embeds' in data and isinstance(data['embeds'], list) and len(data['embeds']) > 0:
+                embed = data['embeds'][0]
+                if isinstance(embed, dict) and 'description' in embed:
+                    # Try to extract item name from description
+                    desc = embed['description']
+                    if isinstance(desc, str) and '**' in desc:
+                        # Extract text between ** markers
+                        parts = desc.split('**')
+                        if len(parts) >= 3:
+                            item_name = parts[1][:50]  # Limit length for logging
+
+            # Payload debugging
+            self._log_discord_payload_debug(webhook_url, data, item_name)
+
             self.logger.debug(f"Sending webhook to Discord: {webhook_url}")
 
             async with self.session.post(webhook_url, json=data) as response:
@@ -933,8 +1141,21 @@ class DiscordNotifier:
 
                 self.rate_limits[webhook_url]["requests"].append(now)
 
+                # Enhanced response logging
+                self.logger.debug(f"📥 Discord API Response:")
+                self.logger.debug(f"  - Status Code: {response.status}")
+                self.logger.debug(f"  - Status Text: {response.reason}")
+                self.logger.debug(f"  - Content Type: {response.headers.get('Content-Type', 'Unknown')}")
+
+                # Log response headers (excluding sensitive ones)
+                self.logger.debug("  - Response Headers:")
+                for header_name, header_value in response.headers.items():
+                    if header_name.lower() not in ['set-cookie', 'authorization']:
+                        self.logger.debug(f"    {header_name}: {header_value}")
+
                 if response.status == 200 or response.status == 204:
-                    self.logger.debug("Webhook sent successfully")
+                    self.logger.info(f"✅ Discord webhook sent successfully for: {item_name}")
+                    self.logger.debug("✅ Webhook sent successfully")
                     return True
                 elif response.status == 429:  # Rate limited
                     # Parse rate limit headers if available
@@ -945,21 +1166,42 @@ class DiscordNotifier:
                         retry_seconds = 60
 
                     self.rate_limits[webhook_url]["blocked_until"] = now + retry_seconds
-                    self.logger.warning(f"Discord rate limit hit, blocked for {retry_seconds} seconds")
+                    self.logger.warning(
+                        f"⏳ Discord rate limit hit for {item_name}, blocked for {retry_seconds} seconds")
                     return False
                 else:
+                    # Enhanced error response handling
                     error_text = await response.text()
-                    self.logger.error(f"Webhook failed with status {response.status}: {error_text}")
+                    self.logger.error(f"❌ Discord webhook failed for {item_name}:")
+                    self.logger.error(f"  - Status: {response.status} {response.reason}")
+                    self.logger.error(f"  - Error Response: {error_text}")
+
+                    # Try to parse error as JSON for better analysis
+                    try:
+                        error_json = json.loads(error_text)
+                        self.logger.error(f"  - Parsed Error: {json.dumps(error_json, indent=2)}")
+
+                        # Specific analysis for 400 errors
+                        if response.status == 400 and isinstance(error_json, dict):
+                            if 'embeds' in error_json:
+                                self.logger.error(f"  - 🎯 EMBED ERROR DETECTED: {error_json['embeds']}")
+                                if isinstance(error_json['embeds'], list):
+                                    for i, embed_error in enumerate(error_json['embeds']):
+                                        self.logger.error(f"    - Embed {i} error: {embed_error}")
+
+                    except Exception as parse_error:
+                        self.logger.debug(f"  - Could not parse error as JSON: {parse_error}")
+
                     return False
 
         except asyncio.TimeoutError:
-            self.logger.error("Webhook request timed out")
+            self.logger.error(f"⏰ Webhook request timed out for: {item_name}")
             return False
         except aiohttp.ClientError as e:
-            self.logger.error(f"Webhook request failed: {e}")
+            self.logger.error(f"🌐 Webhook request failed for {item_name}: {e}")
             return False
         except Exception as e:
-            self.logger.error(f"Unexpected error sending webhook: {e}", exc_info=True)
+            self.logger.error(f"💥 Unexpected error sending webhook for {item_name}: {e}", exc_info=True)
             return False
 
     def get_webhook_status(self) -> Dict[str, Any]:
