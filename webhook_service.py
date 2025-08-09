@@ -252,7 +252,7 @@ class WebhookService:
                 # Create aiohttp session for Discord
                 session = aiohttp.ClientSession()
                 self.discord = DiscordNotifier(self.config.discord)
-                await self.discord.initialize(session, self.config.jellyfin, self.config.templates)
+                await self.discord.initialize(session, self.config.jellyfin, self.config.templates, self.config.notifications)
                 self.logger.info("Discord notification manager initialized")
             except Exception as e:
                 self.logger.error(f"Discord manager initialization failed: {e}")
@@ -460,7 +460,7 @@ class WebhookService:
                     await self.db.save_item(media_item)
 
                     # Send upgrade notification
-                    await self.discord.send_notification(media_item, "upgrade", changes)
+                    await self.discord.send_notification(media_item, "upgrade_item", changes)
 
                     processing_time = time.time() - start_time
                     return {
@@ -494,7 +494,7 @@ class WebhookService:
                 await self.db.save_item(media_item)
 
                 # Send new item notification
-                await self.discord.send_notification(media_item, "new")
+                await self.discord.send_notification(media_item, "new_item")
 
                 processing_time = time.time() - start_time
                 return {

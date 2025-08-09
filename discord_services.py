@@ -35,7 +35,7 @@ from dataclasses import asdict
 import aiohttp
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError
 
-from config_models import DiscordConfig, TemplatesConfig
+from config_models import DiscordConfig, TemplatesConfig, NotificationsConfig
 from media_models import MediaItem
 from utils import get_logger
 
@@ -345,6 +345,7 @@ class DiscordNotifier:
         """
         self.config = config
         self.session: Optional[aiohttp.ClientSession] = None
+        self.notifications_config = None
         self.rate_limits: Dict[str, Dict[str, Any]] = {}
         self.jinja_env: Optional[Environment] = None
 
@@ -357,6 +358,7 @@ class DiscordNotifier:
     async def initialize(self, session: aiohttp.ClientSession, jellyfin_config, templates_config) -> None:
         """Initialize Discord notifier with shared session and configuration dependencies."""
         self.session = session
+        self.notifications_config = NotificationsConfig.notifications_config
 
         # Create thumbnail manager that will share the same session
         self.thumbnail_manager = ThumbnailManager(
@@ -581,6 +583,40 @@ class DiscordNotifier:
                 "webhook_url": webhook_url
             }
 
+    def _get_notification_color(self, action: str, changes: Optional[List] = None) -> int:
+        """Get the appropriate color for this notification type."""
+        if not self.notifications_config or not hasattr(self.notifications_config, 'colors'):
+            # Fallback colors if config not available
+            return 65280 if action == "new_item" else 16766720
+
+        colors = self.notifications_config.colors
+
+        # For new items, use new_item color
+        if action == "new_item":
+            return colors.get("new_item", 65280)  # Default green
+
+        # For upgrades, determine specific upgrade type
+        elif action == "upgraded_item" and changes:
+            # Check what type of upgrade this is
+            for change in changes:
+                change_type = change.get('type', '')
+                if change_type == 'resolution':
+                    return colors.get("resolution_upgrade", 16766720)  # Orange
+                elif change_type == 'codec':
+                    return colors.get("codec_upgrade", 16747520)  # Yellow
+                elif change_type in ['audio_codec', 'audio_channels']:
+                    return colors.get("audio_upgrade", 9662683)  # Purple
+                elif change_type == 'hdr_status':
+                    return colors.get("hdr_upgrade", 16716947)  # Gold
+                elif change_type == 'provider_ids':
+                    return colors.get("provider_update", 2003199)  # Blue
+
+            # Default upgrade color if no specific type found
+            return colors.get("resolution_upgrade", 16766720)
+
+        # Default fallback
+        return 65280  # Green
+
     async def render_embed(self, item: MediaItem, action: str, thumbnail_url: Optional[str],
                            changes: Optional[List] = None) -> Dict[str, Any]:
         """
@@ -643,7 +679,7 @@ class DiscordNotifier:
             "image_max_width": 500,
             "image_max_height": 400,
             # Additional useful template variables
-            "tvdb_attribution_needed": False  # Set based on your rating services config if needed
+            "tvdb_attribution_needed": False,  # Set based on your rating services config if needed
         }
 
         def _get_webhook_grouping_config() -> Dict[str, Any]:
