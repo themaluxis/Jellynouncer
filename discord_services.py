@@ -430,9 +430,9 @@ class DiscordNotifier:
             ```
         """
 
-        def _get_webhook_url_if_enabled(self, webhook_key: str) -> Optional[str]:
+        def _get_webhook_url_if_enabled(webhook_key: str) -> Optional[str]:
             """
-            Helper method to safely get webhook URL if webhook exists, is enabled, and has URL.
+            Helper function to safely get webhook URL if webhook exists, is enabled, and has URL.
 
             Args:
                 webhook_key (str): Key name in the webhooks dictionary
