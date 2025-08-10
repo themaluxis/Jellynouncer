@@ -555,7 +555,7 @@ class DiscordNotifier:
 
             # Send the webhook
             webhook_data = {
-                "embeds": [embed_data],
+                "embeds": embed_data["embeds"],
                 "username": "Jellynouncer"
             }
 
