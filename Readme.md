@@ -10,7 +10,7 @@
 
 > ⚠️ **ALPHA SOFTWARE WARNING** ⚠️
 > 
-> **This software is currently in alpha development stage.** While functional, it may contain bugs, incomplete features, or undergo significant changes. Please use with caution in production environments.
+> **This software is currently in alpha development stage.** This software breaks frequently, it may contain bugs, incomplete features, or undergo significant changes. When a full release is done active development will be switched to a dev branch.
 > 
 > - 🔧 **Active Development**: Features and APIs may change without notice
 > - 🐛 **Potential Issues**: Bugs and edge cases are still being discovered and fixed  
