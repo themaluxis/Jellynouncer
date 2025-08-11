@@ -8,7 +8,7 @@
 [![GitHub Issues](https://img.shields.io/github/issues/MarkusMcNugen/Jellynouncer)](https://github.com/MarkusMcNugen/Jellynouncer/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/MarkusMcNugen/Jellynouncer?style=social)](https://github.com/MarkusMcNugen/Jellynouncer/stargazers)
 
-**Jellynouncer** is a Discord webhook service for Jellyfin media server notifications. It detects new content and quality upgrades, routing notifications to different Discord channels based on content type with customizable embed messages with Jinja2 templates and optional metadata enhancements.
+**Jellynouncer** is a intermediary webhook service that sits between Jellyfin and Discord to process and send new content notifications. It detects new content and quality upgrades, routing notifications to different Discord channels based on content type with customizable embed messages with Jinja2 templates and optional metadata enhancements.
 
 > ⚠️ **ALPHA SOFTWARE WARNING** ⚠️
 > 
