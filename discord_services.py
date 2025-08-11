@@ -764,7 +764,7 @@ class DiscordNotifier:
             "image_max_width": 500,
             "image_max_height": 400,
             # Additional useful template variables
-            "tvdb_attribution_needed": False,  # Set based on your rating services config if needed
+            "tvdb_attribution_needed": hasattr(item, 'has_tvdb_metadata') and getattr(item, 'has_tvdb_metadata', False),  # Set based on whether tvdb metadata was fetched
         }
 
         def _get_webhook_grouping_config() -> Dict[str, Any]:

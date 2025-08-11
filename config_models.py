@@ -831,11 +831,11 @@ class TVDBConfig(BaseModel):
         return v.lower()
 
 
-class RatingServicesConfig(BaseModel):
+class MetadataServicesConfig(BaseModel):
     """
-    Configuration for all external rating services.
+    Configuration for all external metadata services.
 
-    This model brings together all the individual rating service configurations
+    This model brings together all the individual metadata service configurations
     and adds global settings that apply to all services.
 
     **Understanding Service Composition:**
@@ -844,22 +844,24 @@ class RatingServicesConfig(BaseModel):
         individual services and manage their settings independently.
 
     Attributes:
-        enabled (bool): Global rating services enabled flag
+        enabled (bool): Global metadata services enabled flag
         omdb (RatingServiceConfig): OMDb service configuration
         tmdb (RatingServiceConfig): TMDb service configuration
         tvdb (TVDBConfig): TVDB service configuration (enhanced model)
         cache_duration_hours (int): How long to cache rating data (1-8760 hours)
+        tvdb_cache_ttl_hours (int): How long to cache TVDB metadata (1-8760 hours)
         request_timeout_seconds (int): HTTP request timeout (1-60 seconds)
         retry_attempts (int): Number of retry attempts for failed requests (1-10)
 
     Example:
         ```python
-        rating_services = RatingServicesConfig(
+        metadata_services = MetadataServicesConfig(
             enabled=True,
             omdb=RatingServiceConfig(enabled=True, api_key="omdb-key", base_url="..."),
             tmdb=RatingServiceConfig(enabled=True, api_key="tmdb-key", base_url="..."),
-            tvdb=TVDBConfig(enabled=False),  # Disabled
-            cache_duration_hours=72,         # Cache for 3 days
+            tvdb=TVDBConfig(enabled=True, api_key="tvdb-key", subscriber_pin="pin"),
+            cache_duration_hours=72,         # Cache ratings for 3 days
+            tvdb_cache_ttl_hours=24,        # Cache TVDB metadata for 1 day
             request_timeout_seconds=15,      # 15 second timeout
             retry_attempts=3                 # Retry 3 times on failure
         )
@@ -867,7 +869,7 @@ class RatingServicesConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(default=True, description="Global rating services enabled flag")
+    enabled: bool = Field(default=True, description="Global metadata services enabled flag")
 
     # Individual service configurations
     omdb: RatingServiceConfig = Field(
@@ -892,8 +894,9 @@ class RatingServicesConfig(BaseModel):
         )
     )
 
-    # Global settings for all rating services
+    # Global settings for all metadata services
     cache_duration_hours: int = Field(default=168, ge=1, le=8760, description="Rating cache duration in hours")
+    tvdb_cache_ttl_hours: int = Field(default=24, ge=1, le=8760, description="TVDB metadata cache duration in hours")
     request_timeout_seconds: int = Field(default=10, ge=1, le=60, description="HTTP request timeout")
     retry_attempts: int = Field(default=3, ge=1, le=10, description="Number of retry attempts")
 
@@ -965,7 +968,7 @@ class AppConfig(BaseModel):
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
     sync: SyncConfig = Field(default_factory=SyncConfig)
-    rating_services: RatingServicesConfig = Field(default_factory=RatingServicesConfig)
+    metadata_services: MetadataServicesConfig = Field(default_factory=MetadataServicesConfig)
 
 
 # ==================== CONFIGURATION VALIDATION ====================
@@ -1179,10 +1182,11 @@ class ConfigurationValidator:
             'DATABASE_WAL_MODE': ['database', 'wal_mode'],
 
             # Rating services overrides
-            'OMDB_API_KEY': ['rating_services', 'omdb', 'api_key'],
-            'TMDB_API_KEY': ['rating_services', 'tmdb', 'api_key'],
-            'TVDB_API_KEY': ['rating_services', 'tvdb', 'api_key'],
-            'TVDB_SUBSCRIBER_PIN': ['rating_services', 'tvdb', 'subscriber_pin'],
+            'OMDB_API_KEY': ['metadata_services', 'omdb', 'api_key'],
+            'TMDB_API_KEY': ['metadata_services', 'tmdb', 'api_key'],
+            'TVDB_API_KEY': ['metadata_services', 'tvdb', 'api_key'],
+            'TVDB_SUBSCRIBER_PIN': ['metadata_services', 'tvdb', 'subscriber_pin'],
+            'TVDB_CACHE_TTL_HOURS': ['metadata_services', 'tvdb', 'cache_ttl_hours'],
         }
 
         for env_var, path in env_mappings.items():

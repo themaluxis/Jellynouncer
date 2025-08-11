@@ -1,3 +1,6 @@
 .idea
 .venv
 .github/workflows/
+/.idea
+.idea/inspectionProfiles/profiles_settings.xml
+.idea/misc.xml

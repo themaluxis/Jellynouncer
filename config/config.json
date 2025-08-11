@@ -27,6 +27,7 @@
       "subscriber_pin": null
     },
     "cache_duration_hours": 168,
+    "tvdb_cache_ttl_hours": 24,
     "request_timeout_seconds": 10,
     "retry_attempts": 3
   },

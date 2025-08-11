@@ -27,7 +27,7 @@ from datetime import datetime, timezone, timedelta
 
 import aiohttp
 
-from config_models import RatingServicesConfig, TVDBConfig
+from config_models import MetadataServicesConfig, TVDBConfig
 from media_models import MediaItem
 from utils import get_logger
 
@@ -322,7 +322,7 @@ class RatingService:
         fallbacks to ensure notifications are always sent, even if ratings are unavailable.
     """
 
-    def __init__(self, config: RatingServicesConfig):
+    def __init__(self, config: MetadataServicesConfig):
         """
         Initialize rating service with configuration and API client setup.
 
@@ -342,12 +342,12 @@ class RatingService:
         and resource management.
 
         Args:
-            config (RatingServicesConfig): Configuration for all rating services
+            config (MetadataServicesConfig): Configuration for all metadata services
 
         Example:
             ```python
             # Initialize with comprehensive configuration
-            config = RatingServicesConfig(
+            config = MetadataServicesConfig(
                 enabled=True,
                 cache_duration_hours=24,
                 omdb=OMDbConfig(enabled=True, api_key="omdb_key"),
