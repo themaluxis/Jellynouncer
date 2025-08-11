@@ -28,6 +28,7 @@ import asyncio
 import json
 import time
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from dataclasses import asdict
@@ -130,6 +131,40 @@ class ThumbnailManager:
             self.session = None
             self.logger.debug("Thumbnail manager HTTP session closed")
 
+    def _format_uuid_for_jellyfin(self, item_id: str) -> str:
+        """
+        Format a UUID string to the proper Jellyfin URL format with hyphens.
+
+        Jellyfin stores UUIDs without hyphens but requires them with hyphens in URLs.
+        This method converts from the database format to the URL format.
+
+        Args:
+            item_id (str): UUID string either with or without hyphens
+
+        Returns:
+            str: UUID formatted with hyphens for use in Jellyfin URLs
+
+        Example:
+            >>> manager._format_uuid_for_jellyfin("f549ba7fe88b2cbd7ac1794c029d5518")
+            "f549ba7f-e88b-2cbd-7ac1-794c029d5518"
+
+            >>> manager._format_uuid_for_jellyfin("f549ba7f-e88b-2cbd-7ac1-794c029d5518")
+            "f549ba7f-e88b-2cbd-7ac1-794c029d5518"
+        """
+        # Remove any existing hyphens
+        clean_uuid = item_id.replace('-', '')
+
+        # Validate that we have a 32-character hex string
+        if len(clean_uuid) != 32 or not re.match(r'^[a-fA-F0-9]{32}$', clean_uuid):
+            # If it's not a valid UUID format, return as-is
+            # This handles edge cases where item_id might not be a UUID
+            return item_id
+
+        # Format as UUID: 8-4-4-4-12
+        formatted_uuid = f"{clean_uuid[:8]}-{clean_uuid[8:12]}-{clean_uuid[12:16]}-{clean_uuid[16:20]}-{clean_uuid[20:]}"
+
+        return formatted_uuid
+
     async def get_thumbnail_url(
             self,
             item_id: str,
@@ -196,6 +231,10 @@ class ThumbnailManager:
                 self.logger.debug(f"Cached result shows no thumbnail available for item {item_id}")
                 return None
 
+        # Format item_id for Jellyfin URL (convert from unhyphenated to hyphenated UUID)
+        formatted_item_id = self._format_uuid_for_jellyfin(item_id)
+        self.logger.debug(f"Formatted item ID for URL: {item_id} -> {formatted_item_id}")
+
         # Standardized image parameters for consistency with templates
         image_params = "api_key={}&quality=90&maxWidth=500&maxHeight=400".format(self.api_key)
 
@@ -204,32 +243,32 @@ class ThumbnailManager:
 
         # Primary image (poster/cover) - highest priority
         if primary_image_tag:
-            primary_url = f"{self.base_url}/Items/{item_id}/Images/Primary?{image_params}&tag={primary_image_tag}"
+            primary_url = f"{self.base_url}/Items/{formatted_item_id}/Images/Primary?{image_params}&tag={primary_image_tag}"
             thumbnail_candidates.append(("Primary", primary_url))
 
         # Backdrop image - good fallback for movies/shows
         if backdrop_image_tag:
-            backdrop_url = f"{self.base_url}/Items/{item_id}/Images/Backdrop?{image_params}&tag={backdrop_image_tag}"
+            backdrop_url = f"{self.base_url}/Items/{formatted_item_id}/Images/Backdrop?{image_params}&tag={backdrop_image_tag}"
             thumbnail_candidates.append(("Backdrop", backdrop_url))
 
         # Logo image - branding fallback
         if logo_image_tag:
-            logo_url = f"{self.base_url}/Items/{item_id}/Images/Logo?{image_params}&tag={logo_image_tag}"
+            logo_url = f"{self.base_url}/Items/{formatted_item_id}/Images/Logo?{image_params}&tag={logo_image_tag}"
             thumbnail_candidates.append(("Logo", logo_url))
 
-        self.logger.debug(f"Checking {len(thumbnail_candidates)} thumbnail candidates for item {item_id}")
+        self.logger.debug(f"Checking {len(thumbnail_candidates)} thumbnail candidates for item {formatted_item_id}")
 
         # Test each candidate URL
         for image_type, url in thumbnail_candidates:
             if await self.verify_thumbnail(url):
-                self.logger.debug(f"Using {image_type} thumbnail for item {item_id}")
+                self.logger.debug(f"Using {image_type} thumbnail for item {formatted_item_id}")
                 self.cache[cache_key] = url
                 return url
             else:
-                self.logger.debug(f"{image_type} thumbnail not accessible for item {item_id}")
+                self.logger.debug(f"{image_type} thumbnail not accessible for item {formatted_item_id}")
 
         # If no thumbnails work, log and return None
-        self.logger.warning(f"No accessible thumbnails found for item {item_id} ({media_type})")
+        self.logger.warning(f"No accessible thumbnails found for item {formatted_item_id} ({media_type})")
         self.cache[cache_key] = None
         return None
 
