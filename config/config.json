@@ -8,7 +8,7 @@
     "device_name": "jellynotify-webhook-service",
     "device_id": "jellynotify-discord-webhook-001"
   },
-  "rating_services": {
+  "metadata_services": {
     "enabled": true,
     "omdb": {
       "enabled": false,

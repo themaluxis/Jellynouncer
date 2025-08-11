@@ -30,9 +30,8 @@ Classes:
         NotificationsConfig: Notification behavior settings
         ServerConfig: FastAPI web server configuration
         SyncConfig: Library synchronization settings
-        RatingServiceConfig: External rating service settings
+        MetadataServiceConfig: External metadata service settings
         TVDBConfig: Enhanced TVDB-specific settings
-        RatingServicesConfig: All rating services configuration
         AppConfig: Top-level application configuration
 
     Validation:
@@ -714,29 +713,29 @@ class SyncConfig(BaseModel):
     api_request_delay: float = Field(default=0.1, ge=0.0, le=5.0)
 
 
-# ==================== RATING SERVICES CONFIGURATION ====================
+# ==================== METADATA SERVICES CONFIGURATION ====================
 
-class RatingServiceConfig(BaseModel):
+class MetadataServiceConfig(BaseModel):
     """
-    Configuration for individual rating service (OMDb, TMDb, etc.).
+    Configuration for individual metadata service (OMDb, TMDb, etc.).
 
-    This model represents settings for a single external rating service.
+    This model represents settings for a single external metadata service.
     Multiple instances are used for different services like OMDb, TMDb, and TVDb.
 
     **Understanding External API Integration:**
-        Rating services provide additional metadata like ratings, reviews, and
+        Metadata services provide additional metadata like ratings, reviews, and
         enhanced descriptions. Each service has its own API with different
         authentication requirements.
 
     Attributes:
-        enabled (bool): Whether this rating service should be used
+        enabled (bool): Whether this metadata service should be used
         api_key (Optional[str]): API key for authentication (service-specific)
         base_url (str): Base URL for the service API
 
     Example:
         ```python
         # OMDb configuration
-        omdb = RatingServiceConfig(
+        omdb = MetadataServiceConfig(
             enabled=True,
             api_key="your-omdb-key",
             base_url="http://www.omdbapi.com/"
@@ -745,7 +744,7 @@ class RatingServiceConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
 
-    enabled: bool = Field(default=False, description="Whether rating service is enabled")
+    enabled: bool = Field(default=False, description="Whether metadata service is enabled")
     api_key: Optional[str] = Field(default=None, description="API key for the service")
     base_url: str = Field(..., description="Base URL for the service API")
 
@@ -755,7 +754,7 @@ class TVDBConfig(BaseModel):
     Enhanced TVDB configuration supporting both licensed and subscriber models.
 
     TVDB (The TV Database) has a more complex authentication system than other
-    rating services, supporting both subscriber pins and licensed access modes.
+    metadata services, supporting both subscriber pins and licensed access modes.
 
     **Understanding TVDB's Authentication Model:**
         TVDB offers different access levels:
@@ -845,8 +844,8 @@ class MetadataServicesConfig(BaseModel):
 
     Attributes:
         enabled (bool): Global metadata services enabled flag
-        omdb (RatingServiceConfig): OMDb service configuration
-        tmdb (RatingServiceConfig): TMDb service configuration
+        omdb (MetadataServiceConfig): OMDb service configuration
+        tmdb (MetadataServiceConfig): TMDb service configuration
         tvdb (TVDBConfig): TVDB service configuration (enhanced model)
         cache_duration_hours (int): How long to cache rating data (1-8760 hours)
         tvdb_cache_ttl_hours (int): How long to cache TVDB metadata (1-8760 hours)
@@ -857,8 +856,8 @@ class MetadataServicesConfig(BaseModel):
         ```python
         metadata_services = MetadataServicesConfig(
             enabled=True,
-            omdb=RatingServiceConfig(enabled=True, api_key="omdb-key", base_url="..."),
-            tmdb=RatingServiceConfig(enabled=True, api_key="tmdb-key", base_url="..."),
+            omdb=MetadataServiceConfig(enabled=True, api_key="omdb-key", base_url="..."),
+            tmdb=MetadataServiceConfig(enabled=True, api_key="tmdb-key", base_url="..."),
             tvdb=TVDBConfig(enabled=True, api_key="tvdb-key", subscriber_pin="pin"),
             cache_duration_hours=72,         # Cache ratings for 3 days
             tvdb_cache_ttl_hours=24,        # Cache TVDB metadata for 1 day
@@ -872,15 +871,15 @@ class MetadataServicesConfig(BaseModel):
     enabled: bool = Field(default=True, description="Global metadata services enabled flag")
 
     # Individual service configurations
-    omdb: RatingServiceConfig = Field(
-        default_factory=lambda: RatingServiceConfig(
+    omdb: MetadataServiceConfig = Field(
+        default_factory=lambda: MetadataServiceConfig(
             enabled=False,
             api_key=None,
             base_url="http://www.omdbapi.com/"
         )
     )
-    tmdb: RatingServiceConfig = Field(
-        default_factory=lambda: RatingServiceConfig(
+    tmdb: MetadataServiceConfig = Field(
+        default_factory=lambda: MetadataServiceConfig(
             enabled=False,
             api_key=None,
             base_url="https://api.themoviedb.org/3/"
@@ -932,7 +931,7 @@ class AppConfig(BaseModel):
         notifications (NotificationsConfig): Notification behavior settings (optional)
         server (ServerConfig): Web server configuration (optional, has defaults)
         sync (SyncConfig): Library synchronization settings (optional, has defaults)
-        rating_services (RatingServicesConfig): External rating services config (optional)
+        metadata_services (MetadataServicesConfig): External metadata services config (optional)
 
     Example:
         ```python
@@ -1157,8 +1156,8 @@ class ConfigurationValidator:
             config_data['server'] = {}
         if 'database' not in config_data:
             config_data['database'] = {}
-        if 'rating_services' not in config_data:
-            config_data['rating_services'] = {}
+        if 'metadata_services' not in config_data:
+            config_data['metadata_services'] = {}
 
         # Jellyfin overrides
         env_mappings = {
@@ -1181,7 +1180,7 @@ class ConfigurationValidator:
             'DATABASE_PATH': ['database', 'path'],
             'DATABASE_WAL_MODE': ['database', 'wal_mode'],
 
-            # Rating services overrides
+            # Metadata services overrides
             'OMDB_API_KEY': ['metadata_services', 'omdb', 'api_key'],
             'TMDB_API_KEY': ['metadata_services', 'tmdb', 'api_key'],
             'TVDB_API_KEY': ['metadata_services', 'tvdb', 'api_key'],
