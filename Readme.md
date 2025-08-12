@@ -1,4 +1,6 @@
-# Jellynouncer
+<div align="center">
+  <img src="images/Jellynouncer_Full.png" alt="Jellynouncer Logo" width="50%">
+</div>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -6,18 +8,15 @@
 [![GitHub Issues](https://img.shields.io/github/issues/MarkusMcNugen/Jellynouncer)](https://github.com/MarkusMcNugen/Jellynouncer/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/MarkusMcNugen/Jellynouncer?style=social)](https://github.com/MarkusMcNugen/Jellynouncer/stargazers)
 
-**Jellynouncer** is a Discord webhook service for Jellyfin media server notifications. It detects new content and quality upgrades, routing notifications to different Discord channels based on content type with customizable embed messages.
+**Jellynouncer** is a intermediary webhook service that sits between Jellyfin and Discord to process and send new content notifications. It detects new content and quality upgrades, routing notifications to different Discord channels based on content type with customizable embed messages with Jinja2 templates and optional metadata enhancements.
 
 > ⚠️ **ALPHA SOFTWARE WARNING** ⚠️
 > 
-> **This software is currently in alpha development stage.** This software breaks frequently, it may contain bugs, incomplete features, or undergo significant changes. When a full release is done active development will be switched to a dev branch.
+> **This software is currently in alpha development stage.** This software breaks frequently, it may contain bugs, incomplete features, or undergo significant changes. When a full release is done active development will be switched to a dev branch. This readme is not always updated with the changes, it will be updated periodically but should not be relied on until the software is released.
 > 
 > - 🔧 **Active Development**: Features and APIs may change without notice
 > - 🐛 **Potential Issues**: Bugs and edge cases are still being discovered and fixed  
-> - 📋 **Testing Needed**: Please report any issues you encounter
-> - 💾 **Backup Recommended**: Ensure you have backups of any important configurations
-> 
-> We appreciate early adopters and welcome feedback through [GitHub Issues](https://github.com/MarkusMcNugen/Jellynouncer/issues)!
+> - 📋 **Testing**: All testing is done internally until first release whenever that may be
 
 ## Table of Contents
 
