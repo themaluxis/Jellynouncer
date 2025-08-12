@@ -638,17 +638,17 @@ class JellyfinAPI:
 
             # ==================== THUMBNAILS ====================
             # Add image tags from webhook data
-            primary_image_tag = item_data.get('ImageTags', {}).get('Primary'),
-            backdrop_image_tag = item_data.get('ImageTags', {}).get('Backdrop'),
-            logo_image_tag = item_data.get('ImageTags', {}).get('Logo'),
-            thumb_image_tag = item_data.get('ImageTags', {}).get('Thumb'),
-            banner_image_tag = item_data.get('ImageTags', {}).get('Banner'),
+            primary_image_tag = item_data.get('ImageTags', {}).get('Primary')
+            backdrop_image_tag = item_data.get('ImageTags', {}).get('Backdrop')
+            logo_image_tag = item_data.get('ImageTags', {}).get('Logo')
+            thumb_image_tag = item_data.get('ImageTags', {}).get('Thumb')
+            banner_image_tag = item_data.get('ImageTags', {}).get('Banner')
 
             # For episodes, also capture series image tags
-            series_primary_image_tag = item_data.get('SeriesPrimaryImageTag'),
+            series_primary_image_tag = item_data.get('SeriesPrimaryImageTag')
             parent_backdrop_image_tag = item_data.get('ParentBackdropImageTags', [None])[0] if item_data.get(
-                'ParentBackdropImageTags') else None,
-            parent_logo_image_tag = item_data.get('ParentLogoImageTag'),
+                'ParentBackdropImageTags') else None
+            parent_logo_image_tag = item_data.get('ParentLogoImageTag')
 
             # ==================== PROVIDER IDS ====================
             # Extract external provider IDs (IMDb, TMDb, TVDb, etc.)
