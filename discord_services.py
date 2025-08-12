@@ -276,9 +276,9 @@ class ThumbnailManager:
         """
         Verify that a thumbnail URL is accessible and returns valid image data.
 
-        This method performs a HEAD request to check if the thumbnail URL returns
-        a successful response without downloading the full image. This is much
-        faster than downloading the entire image just to verify it exists.
+        This method performs a GET request with a Range header to check if the
+        thumbnail is accessible. This is more compatible than HEAD requests
+        and still efficient as it only downloads a small portion of the image.
 
         Args:
             url (str): Thumbnail URL to verify
@@ -303,13 +303,32 @@ class ThumbnailManager:
             return False
 
         try:
-            # Use HEAD request to check accessibility without downloading full image
-            async with self.session.head(url) as response:
-                is_accessible = response.status == 200
+            # Use GET with Range header for better compatibility
+            # Some servers/proxies don't properly support HEAD requests for images
+            headers = {
+                'Range': 'bytes=0-1024',  # Only download first 1KB to verify
+                'Accept': 'image/*'
+            }
+
+            self.logger.debug(f"Verifying thumbnail URL: {url}")
+
+            async with self.session.get(url, headers=headers, allow_redirects=True) as response:
+                # Accept 200 (OK) and 206 (Partial Content) as success
+                is_accessible = response.status in [200, 206]
+
                 if is_accessible:
-                    self.logger.debug(f"Thumbnail verified: {url}")
+                    # Additional validation: check if content type is an image
+                    content_type = response.headers.get('Content-Type', '').lower()
+                    if content_type and not content_type.startswith('image/'):
+                        self.logger.warning(f"URL returned non-image content type: {content_type}")
+                        is_accessible = False
+                    else:
+                        self.logger.debug(f"Thumbnail verified successfully: {url}")
                 else:
                     self.logger.debug(f"Thumbnail not accessible (HTTP {response.status}): {url}")
+                    # Log response headers for debugging
+                    self.logger.debug(f"Response headers: {dict(response.headers)}")
+
                 return is_accessible
 
         except asyncio.TimeoutError:
@@ -319,7 +338,7 @@ class ThumbnailManager:
             self.logger.warning(f"Thumbnail verification failed: {url} - {e}")
             return False
         except Exception as e:
-            self.logger.error(f"Unexpected error verifying thumbnail: {url} - {e}")
+            self.logger.error(f"Unexpected error verifying thumbnail: {url} - {e}", exc_info=True)
             return False
 
 
