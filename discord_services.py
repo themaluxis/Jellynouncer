@@ -571,13 +571,29 @@ class DiscordNotifier:
 
             self.logger.debug(f"Preparing notification for {item.name} ({item.item_type}) via {webhook_url}")
 
+            # Generate thumbnail URL with fallback for episodes
+            primary_tag = getattr(item, 'primary_image_tag', None)
+            backdrop_tag = getattr(item, 'backdrop_image_tag', None)
+            logo_tag = getattr(item, 'logo_image_tag', None)
+
+            # For episodes without their own images, try series images
+            if item.item_type == 'Episode':
+                if not primary_tag and hasattr(item, 'series_primary_image_tag'):
+                    primary_tag = item.series_primary_image_tag
+                if not backdrop_tag and hasattr(item, 'parent_backdrop_image_tag'):
+                    backdrop_tag = item.parent_backdrop_image_tag
+                if not logo_tag and hasattr(item, 'parent_logo_image_tag'):
+                    logo_tag = item.parent_logo_image_tag
+
             # Generate thumbnail URL
             thumbnail_url = await self.thumbnail_manager.get_thumbnail_url(
-                item_id=item.item_id,
+                item_id=item.item_id if primary_tag == getattr(item, 'primary_image_tag', None) else getattr(item,
+                                                                                                             'series_id',
+                                                                                                             item.item_id),
                 media_type=item.item_type,
-                primary_image_tag=getattr(item, 'primary_image_tag', None),
-                backdrop_image_tag=getattr(item, 'backdrop_image_tag', None),
-                logo_image_tag=getattr(item, 'logo_image_tag', None)
+                primary_image_tag=primary_tag,
+                backdrop_image_tag=backdrop_tag,
+                logo_image_tag=logo_tag
             )
 
             # Render Discord embed using templates

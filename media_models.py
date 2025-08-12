@@ -326,6 +326,21 @@ class MediaItem:
     # Additional provider ID from webhook
     tvdb_slug: Optional[str] = None
 
+    # ==================== IMAGE/THUMBNAIL METADATA ====================
+    # Image tags from Jellyfin for thumbnail generation
+    # These tags are provided by Jellyfin webhooks and are required for the
+    # ThumbnailManager to construct valid thumbnail URLs with proper authentication
+    primary_image_tag: Optional[str] = None  # Main poster/cover art tag
+    backdrop_image_tag: Optional[str] = None  # Background/backdrop image tag
+    logo_image_tag: Optional[str] = None  # Logo/branding image tag
+    thumb_image_tag: Optional[str] = None  # Thumbnail image tag (alternative)
+    banner_image_tag: Optional[str] = None  # Banner image tag (for collections)
+
+    # Image item IDs for cross-references (e.g., series image for episodes)
+    series_primary_image_tag: Optional[str] = None  # For episodes to use series poster
+    parent_backdrop_image_tag: Optional[str] = None  # Parent item backdrop (for episodes/seasons)
+    parent_logo_image_tag: Optional[str] = None  # Parent item logo (for episodes/seasons)
+
     # ==================== SERVER INFORMATION ====================
     # Server context from webhook for template customization
     server_id: Optional[str] = None

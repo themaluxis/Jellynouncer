@@ -1,9 +1,9 @@
 {#
-  Jellynouncer New Item Discord Embed Template
+  Jellynouncer New Item Discord Embed Template - Desktop Optimized
 
   This template generates Discord embed notifications for new media items added to Jellyfin.
-  Supports different media types (Episodes, Series, Movies, Seasons) with appropriate formatting,
-  thumbnails, and metadata display.
+  Optimized for DESKTOP viewing with maximum horizontal layout using inline fields.
+  Supports different media types (Episodes, Series, Movies, Seasons) with appropriate formatting.
 #}
 {
   "embeds": [
@@ -14,6 +14,7 @@
         Creates context-appropriate titles with emojis based on the media type.
         Episodes, Series, Movies, Seasons, Music content, and others get specific titles.
       #}
+
       "title": "{% if item.item_type == 'Episode' -%}
         📺 New Episode Added
       {%- elif item.item_type == 'Series' -%}
@@ -33,20 +34,17 @@
       {%- endif %}",
 
       {#
-        Context-Aware Description
+        Enhanced Description with Plot/Overview
 
-        Formats descriptions differently based on media type:
-        - Episodes: Show series name, season/episode numbers, and episode title
-        - Music: Show song name with artists and album information
-        - Albums: Show album name with album artist
-        - Artists: Show artist name
-        - Series/Movies: Show title with year if available
-        - Includes fallback values for missing data
+        Combines basic info with plot summary for comprehensive context.
+        Different formatting based on media type with overview included directly.
       #}
+
       "description": "{% if item.item_type == 'Episode' -%}
         **{{ item.series_name | default('Unknown Series') }}**
         S{{ '%02d' | format(item.season_number | default(0)) }}E{{ '%02d' | format(item.episode_number | default(0)) }}
         {{ item.name | default('Unknown Episode') }}
+        {%- if item.overview and item.overview | length > 0 %}\n\n{{ (item.overview[:250] + '...') if item.overview | length > 250 else item.overview }}{% endif -%}
       {%- elif item.item_type == 'Audio' -%}
         **{{ item.name | default('Unknown Song') }}**
         {%- if item.artists is defined and item.artists and item.artists | length > 0 %}
@@ -69,9 +67,11 @@
       {%- elif item.item_type == 'Series' -%}
         **{{ item.name | default('Unknown Series') }}**
         {%- if item.year %} ({{ item.year }}){% endif -%}
+        {%- if item.overview and item.overview | length > 0 %}\n\n{{ (item.overview[:250] + '...') if item.overview | length > 250 else item.overview }}{% endif -%}
       {%- else -%}
         **{{ item.name | default('Unknown Title') }}**
         {%- if item.year %} ({{ item.year }}){% endif -%}
+        {%- if item.overview and item.overview | length > 0 %}\n\n{{ (item.overview[:250] + '...') if item.overview | length > 250 else item.overview }}{% endif -%}
       {%- endif %}",
 
       {#
@@ -79,234 +79,203 @@
 
         Uses the color value passed from the application, with green (65280) as fallback
       #}
+
       "color": {{ color | default(65280) }},
 
       {#
-        Dynamic Fields System
+        Desktop-Optimized Fields System
 
-        Uses field counting system to ensure Discord's 25-field limit isn't exceeded.
-        Fields are conditionally added based on available data and field count.
-        Inline fields are used for compact technical specifications.
+        MAXIMIZES HORIZONTAL LAYOUT for desktop viewing:
+        - ALL fields are inline=true for 3-column desktop layout
+        - Strategic field grouping to ensure clean rows
+        - Prioritizes technical specs in compact horizontal rows
+        - Uses intelligent spacers to control row breaks
       #}
+
       "fields": [
-        {%- set field_count = 0 -%}
-        {%- set has_fields = false -%}
+        {%- set fields_added = [] -%}
 
         {#
-          Video Quality Field
+          ROW 1: Core Technical Specifications (Video Quality, Video Codec, Audio)
 
-          Displays video resolution (e.g., "1080p") with HDR status if available.
-          Inline field for compact display alongside other technical specs.
-          Not applicable to music content.
+          First priority row with most important technical details.
+          All inline=true to create a clean 3-column row on desktop.
         #}
+
         {%- if item.video_height is defined and item.video_height and item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist'] -%}
-          {%- if has_fields %},{% endif -%}
-          {%- set has_fields = true -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
         {
           "name": "📐 Quality",
-          "value": "{{ item.video_height }}p
-            {%- if item.video_range is defined and item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif -%}",
+          "value": "{{ item.video_height }}p{% if item.video_range is defined and item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}",
           "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
+          {%- set _ = fields_added.append('quality') -%}
         {%- endif -%}
 
-        {#
-          Video Codec Field
-
-          Shows video codec (e.g., "H264", "HEVC") with profile if available.
-          Helps users understand the technical quality and compatibility.
-          Not applicable to music content.
-        #}
-        {%- if item.video_codec is defined and item.video_codec and field_count < 9 and item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist'] -%}
-          {%- if has_fields %},{% endif -%}
-          {%- set has_fields = true -%}
+        {%- if item.video_codec is defined and item.video_codec and item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist'] -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
         {
           "name": "🎞️ Video",
-          "value": "{{ item.video_codec | upper }}
-            {%- if item.video_profile is defined and item.video_profile %} {{ item.video_profile }}{% endif -%}",
+          "value": "{{ item.video_codec | upper }}{% if item.video_profile is defined and item.video_profile %} {{ item.video_profile }}{% endif %}",
           "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
+          {%- set _ = fields_added.append('video') -%}
         {%- endif -%}
 
-        {#
-          Audio Codec Field
-
-          Displays audio codec and channel configuration (e.g., "AC3 5.1", "AAC 2.0").
-          Uses logic to format channel count properly for surround sound.
-          For music content, shows detailed audio specs including bitrate and sample rate.
-        #}
-        {%- if item.audio_codec is defined and item.audio_codec and field_count < 9 -%}
-          {%- if has_fields %},{% endif -%}
-          {%- set has_fields = true -%}
+        {%- if item.audio_codec is defined and item.audio_codec -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
         {
           "name": "🔊 Audio",
-          "value": "{{ item.audio_codec | upper }}
-            {%- if item.audio_channels is defined and item.audio_channels %} {{ item.audio_channels }}.
-              {%- if item.audio_channels > 2 %}1{% else %}0{% endif -%}
-            {%- endif -%}
-            {%- if item.item_type in ['Audio', 'MusicAlbum', 'MusicArtist'] -%}
-              {%- if item.audio_bitrate is defined and item.audio_bitrate %} • {{ (item.audio_bitrate / 1000) | int }} kbps{% endif -%}
-              {%- if item.audio_samplerate is defined and item.audio_samplerate %} • {{ (item.audio_samplerate / 1000) | round(1) }} kHz{% endif -%}
-            {%- endif -%}",
+          "value": "{{ item.audio_codec | upper }}{% if item.audio_channels is defined and item.audio_channels %} {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% if item.audio_language is defined and item.audio_language and item.audio_language != 'und' %} ({{ item.audio_language | upper }}){% endif %}",
           "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
+          {%- set _ = fields_added.append('audio') -%}
         {%- endif -%}
 
         {#
-          Runtime/Duration Field
+          ROW 2: File Information (Duration, File Size, Content Rating)
 
-          Converts Jellyfin's tick-based runtime to human-readable format.
-          For music: Shows duration in minutes and seconds.
-          For video: Shows duration in minutes.
-          Inline field for quick reference alongside other metadata.
+          Second priority row with file and content metadata.
+          All inline=true for clean 3-column desktop display.
         #}
-        {%- if item.runtime_ticks is defined and item.runtime_ticks and field_count < 9 -%}
-          {%- if has_fields %},{% endif -%}
-          {%- set has_fields = true -%}
+
+        {%- if item.runtime_ticks is defined and item.runtime_ticks and fields_added | length < 9 -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
         {
-          "name": "⏱️ {% if item.item_type in ['Audio', 'MusicAlbum', 'MusicArtist'] %}Duration{% else %}Runtime{% endif %}",
-          "value": "{% if item.item_type in ['Audio', 'MusicAlbum', 'MusicArtist'] -%}
-            {%- set total_seconds = (item.runtime_ticks / 10000000) | int -%}
-            {%- set minutes = (total_seconds / 60) | int -%}
-            {%- set seconds = total_seconds % 60 -%}
-            {{ minutes }}:{{ '%02d' | format(seconds) }}
-          {%- else -%}
-            {{ (item.runtime_ticks // 600000000) }}m
-          {%- endif %}",
+          "name": "⏱️ Duration",
+          "value": "{% set hours = (item.runtime_ticks // 36000000000) %}{% set minutes = ((item.runtime_ticks % 36000000000) // 600000000) %}{% if hours > 0 %}{{ hours }}h {% endif %}{{ minutes }}m",
           "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
+          {%- set _ = fields_added.append('duration') -%}
         {%- endif -%}
 
-        {#
-          Content Rating Field
-
-          Shows official content rating (e.g., "TV-14", "R", "PG-13").
-          Uses shield emoji to clearly indicate this is rating/certification info.
-          Positioned between runtime and release date for logical flow.
-        #}
-        {%- if item.official_rating is defined and item.official_rating and field_count < 9 -%}
-          {%- if has_fields %},{% endif -%}
-          {%- set has_fields = true -%}
+        {%- if item.file_size is defined and item.file_size and fields_added | length < 9 -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
         {
-          "name": "🛡️ Content Rating",
+          "name": "💾 Size",
+          "value": "{% if item.file_size > 1073741824 %}{{ '%.2f' | format(item.file_size / 1073741824) }} GB{% else %}{{ '%.1f' | format(item.file_size / 1048576) }} MB{% endif %}",
+          "inline": true
+        }
+          {%- set _ = fields_added.append('filesize') -%}
+        {%- endif -%}
+
+        {%- if item.official_rating is defined and item.official_rating and fields_added | length < 9 -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
+        {
+          "name": "🛡️ Rating",
           "value": "{{ item.official_rating }}",
           "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
+          {%- set _ = fields_added.append('rating') -%}
         {%- endif -%}
 
         {#
-          Air Date / Release Date Field
+          ROW 3: Release/Content Information (Release Date, Year, Genres)
 
-          Context-aware labeling: "Air Date" for episodes, "Release" for movies/series.
-          Shows premiere/release date in YYYY-MM-DD format for consistency.
+          Third priority row with release metadata and genres.
+          Genres field uses compact display with "+X more" format.
         #}
-        {%- if item.premiere_date is defined and item.premiere_date and field_count < 9 -%}
-          {%- if has_fields %},{% endif -%}
-          {%- set has_fields = true -%}
+
+        {%- if item.premiere_date is defined and item.premiere_date and fields_added | length < 12 -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
         {
           "name": "📅 {% if item.item_type == 'Episode' %}Air Date{% else %}Release{% endif %}",
           "value": "{{ item.premiere_date[:10] }}",
           "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
+          {%- set _ = fields_added.append('release') -%}
         {%- endif -%}
 
-        {#
-          Genres Field
+        {%- if item.year is defined and item.year and item.item_type not in ['Episode', 'Audio'] and fields_added | length < 12 -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
+        {
+          "name": "📅 Year",
+          "value": "{{ item.year }}",
+          "inline": true
+        }
+          {%- set _ = fields_added.append('year') -%}
+        {%- endif -%}
 
-          Non-inline field for better readability of genre lists.
-          Shows up to 4 genres with "+X more" indicator for additional genres.
-          Placed last among metadata fields for visual balance.
-        #}
-        {%- if item.genres is defined and item.genres and item.genres | length > 0 and field_count < 9 -%}
-          {%- if has_fields %},{% endif -%}
-          {%- set has_fields = true -%}
+        {%- if item.genres is defined and item.genres and item.genres | length > 0 and fields_added | length < 12 -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
         {
           "name": "🎭 Genres",
-          "value": "{{ item.genres[:4] | join(', ') }}
-            {%- if item.genres | length > 4 %} +{{ item.genres | length - 4 }} more{% endif -%}",
-          "inline": false
+          "value": "{{ item.genres[:3] | join(', ') }}{% if item.genres | length > 3 %} +{{ item.genres | length - 3 }}{% endif %}",
+          "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
+          {%- set _ = fields_added.append('genres') -%}
         {%- endif -%}
 
         {#
-          Music-Specific Information
+          SPACER LOGIC: Force new row for special content types
 
-          For Music Albums and Artists, show additional metadata that doesn't fit in the description.
-          This provides detailed music-specific information in a dedicated field.
+          Uses invisible spacers to force next fields onto new row when needed.
+          Ensures music content gets its own dedicated row for better organization.
         #}
-        {%- if item.item_type in ['MusicAlbum', 'MusicArtist'] and field_count < 9 -%}
+
+        {%- if item.item_type in ['MusicAlbum', 'MusicArtist'] and fields_added | length % 3 != 0 -%}
+          {%- set spacers_needed = 3 - (fields_added | length % 3) -%}
+          {%- for i in range(spacers_needed) -%}
+            {%- if fields_added | length > 0 %},{% endif -%}
+        {
+          "name": "\u200B",
+          "value": "\u200B",
+          "inline": true
+        }
+            {%- set _ = fields_added.append('spacer_' + i|string) -%}
+          {%- endfor -%}
+        {%- endif -%}
+
+        {#
+          ROW 4: Music-Specific Information (Optional)
+
+          For Music Albums and Artists, show additional metadata.
+          Uses 2-column layout with spacer for visual balance.
+        #}
+
+        {%- if item.item_type in ['MusicAlbum', 'MusicArtist'] -%}
           {%- set music_info_parts = [] -%}
           {%- if item.item_type == 'MusicAlbum' and item.artists is defined and item.artists and item.artists | length > 0 -%}
-            {%- set _ = music_info_parts.append('**Artists:** ' + item.artists | join(', ')) -%}
+            {%- set _ = music_info_parts.append('**Artists:** ' + item.artists[:3] | join(', ')) -%}
+            {%- if item.artists | length > 3 -%}
+              {%- set _ = music_info_parts.append(' +' + (item.artists | length - 3)|string + ' more') -%}
+            {%- endif -%}
           {%- endif -%}
           {%- if item.year is defined and item.year -%}
             {%- set _ = music_info_parts.append('**Year:** ' + item.year | string) -%}
           {%- endif -%}
           {%- if music_info_parts | length > 0 -%}
-            {%- if has_fields %},{% endif -%}
-            {%- set has_fields = true -%}
+            {%- if fields_added | length > 0 %},{% endif -%}
         {
           "name": "🎵 {% if item.item_type == 'MusicAlbum' %}Album{% else %}Artist{% endif %} Info",
           "value": "{{ music_info_parts | join('\n') }}",
-          "inline": false
+          "inline": true
         }
-          {%- set field_count = field_count + 1 -%}
+            {%- set _ = fields_added.append('music_info') -%}
+            {# Add spacer for visual balance #}
+            {%- if fields_added | length > 0 %},{% endif -%}
+        {
+          "name": "\u200B",
+          "value": "\u200B",
+          "inline": true
+        }
+            {%- set _ = fields_added.append('music_spacer') -%}
           {%- endif -%}
         {%- endif -%}
-      ],
+	  ],
+      {%- if thumbnail_url is defined and thumbnail_url %}
 
       {#
-        Main Image Display
+        Intelligent Thumbnail System
 
-        Uses the main image field for prominent poster/artwork display below description.
-        Shows movie posters, album covers, series artwork, etc.
-        Larger than thumbnail for better visual impact.
-
-        Image Priority:
-        - Movies: Movie poster
-        - Music: Album/Artist artwork
-        - Series: Series poster
-        - Episodes: Episode or series artwork
-        - Other: Primary artwork when available
+        Displays verified thumbnails when available, with proper fallback handling.
+        Compatible with the ThumbnailManager's verification process.
       #}
-      "image": {
-        "url": "{% if item.item_type == 'Episode' and item.item_id is defined -%}
-          {{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=400&maxWidth=300
-        {%- elif item.item_type == 'Episode' and item.series_id is defined -%}
-          {{ jellyfin_url }}/Items/{{ item.series_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=400&maxWidth=300
-        {%- elif item.item_type == 'Movie' and item.item_id is defined -%}
-          {{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=400&maxWidth=300
-        {%- elif item.item_type in ['Audio', 'MusicAlbum', 'MusicArtist'] and item.item_id is defined -%}
-          {{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=400&maxWidth=300
-        {%- elif item.item_id is defined -%}
-          {{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=400&maxWidth=300
-        {%- else -%}
-          {{ jellyfin_url }}/web/favicon.ico
-        {%- endif %}"
-      },
 
-      {#
-        Thumbnail for Logos Only
-
-        Small thumbnail in top-right corner reserved for logos and branding.
-        Shows series logos for episodes, studio logos, or other branding elements.
-
-        Logo Priority:
-        - Episodes: Series logo (if available)
-        - Other content: Studio logo or branding (when implemented)
-        - Fallback: No thumbnail if no logo available
-      #}
-      {% if item.item_type == 'Episode' and item.series_id is defined and item.series_id %},
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ item.series_id }}/Images/Logo?api_key={{ api_key }}&maxHeight=64&maxWidth=200"
-      }{% endif %},
+        "url": "{{ thumbnail_url }}"
+      },
+      {%- endif %}
 
       {#
         Footer Information
@@ -315,6 +284,7 @@
         Uses Jellyfin favicon as footer icon for consistent branding.
         Fallback to timestamp if date_created is unavailable.
       #}
+
       "footer": {
         "text": "Added {{ item.date_created[:10] if item.date_created else timestamp[:10] }} • {{ item.server_name or 'Jellyfin' }}",
         "icon_url": "{{ jellyfin_url }}/web/favicon.png"
@@ -326,6 +296,7 @@
         ISO timestamp for Discord's "time ago" formatting.
         Clickable embed that links directly to the item in Jellyfin web interface.
       #}
+
       "timestamp": "{{ timestamp }}",
       "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.item_id }}"
     }

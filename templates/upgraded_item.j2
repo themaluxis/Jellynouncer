@@ -1,10 +1,9 @@
 {#
-  Jellynouncer Upgraded Item Discord Embed Template
+  Jellynouncer Upgraded Item Discord Embed Template - Desktop Optimized
 
   This template generates Discord embed notifications for media items that have been upgraded in Jellyfin.
-  Upgrades include quality improvements (resolution, codec, audio), file replacements, and metadata updates.
-  Supports different media types (Episodes, Series, Movies, Music) with appropriate formatting,
-  thumbnails, and change summaries.
+  Optimized for DESKTOP viewing with maximum horizontal layout using inline fields.
+  Supports different media types with appropriate formatting and change summaries.
 #}
 {
   "embeds": [
@@ -14,7 +13,6 @@
 
         Creates context-appropriate upgrade titles with emojis based on the media type.
         Shows specific upgrade type if only one change occurred.
-        Episodes, Series, Movies, Music content get specific titles.
       #}
       "title": "⬆️ {% if item.item_type == 'Episode' -%}
         📺 Episode
@@ -35,20 +33,16 @@
       {%- endif %} {% if changes|length == 1 %}{{ changes[0].type|title }} {% endif %}Upgraded",
 
       {#
-        Context-Aware Description
+        Enhanced Description with Overview
 
-        Formats descriptions differently based on media type:
-        - Episodes: Show series name, season/episode numbers, and episode title
-        - Music: Show song name with artists and album information
-        - Albums: Show album name with album artist
-        - Artists: Show artist name
-        - Series/Movies: Show title with year if available
-        - Includes fallback values for missing data
+        Combines basic info with plot summary for comprehensive context.
+        Different formatting based on media type with overview included directly.
       #}
       "description": "{% if item.item_type == 'Episode' -%}
         **{{ item.series_name | default('Unknown Series') }}**
         S{{ '%02d' | format(item.season_number | default(0)) }}E{{ '%02d' | format(item.episode_number | default(0)) }}
         {{ item.name | default('Unknown Episode') }}
+        {%- if item.overview and item.overview | length > 0 %}\n\n{{ (item.overview[:250] + '...') if item.overview | length > 250 else item.overview }}{% endif -%}
       {%- elif item.item_type == 'Audio' -%}
         **{{ item.name | default('Unknown Song') }}**
         {%- if item.artists is defined and item.artists and item.artists | length > 0 %}
@@ -71,6 +65,7 @@
       {%- else -%}
         **{{ item.name | default('Unknown Title') }}**
         {%- if item.year %} ({{ item.year }}){% endif -%}
+        {%- if item.overview and item.overview | length > 0 %}\n\n{{ (item.overview[:250] + '...') if item.overview | length > 250 else item.overview }}{% endif -%}
       {%- endif %}",
 
       {#
@@ -81,239 +76,237 @@
       "color": {{ color }},
 
       {#
-        Dynamic Fields System
+        Desktop-Optimized Fields System
 
-        Uses field counting system to ensure Discord's 25-field limit isn't exceeded.
-        Fields are conditionally added based on available data and field count.
-        Starts with upgrade summary, then shows current technical specifications.
+        MAXIMIZES HORIZONTAL LAYOUT for desktop viewing:
+        - ALL fields are inline=true for 3-column desktop layout
+        - Strategic field grouping to ensure clean rows
+        - Upgrade changes shown in compact format
       #}
       "fields": [
-        {%- set field_count = 0 -%}
-        {%- set has_fields = false -%}
+        {%- set fields_added = [] -%}
 
         {#
-          Change Summary Fields
+          ROW 1: Upgrade Changes (Up to 3 changes inline)
 
           Shows what was upgraded with before → after format.
-          Displays up to 3 changes as individual fields for emphasis.
-          Uses specific icons and formatting for different upgrade types.
+          All inline for compact 3-column display on desktop.
         #}
-        {% for change in changes[:3] %}
-        {%- if has_fields %},{% endif -%}
-        {%- set has_fields = true -%}
+        {%- for change in changes[:3] -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
         {
-          "name": "{% if change.type == 'resolution' %}📐 Resolution Upgrade{% elif change.type == 'codec' %}🎞️ Video Codec Upgrade{% elif change.type == 'audio_codec' %}🔊 Audio Codec Upgrade{% elif change.type == 'audio_channels' %}🔊 Audio Channels Upgrade{% elif change.type == 'hdr_status' %}🌈 HDR Status Upgrade{% elif change.type == 'file_size' %}💾 File Replaced{% elif change.type == 'provider_ids' %}🔗 Metadata Updated{% else %}🔄 {{ change.type|title }} Upgrade{% endif %}",
-          "value": "{% if change.type == 'resolution' %}{{ change.old_value or 'Unknown' }}p → **{{ change.new_value or 'Unknown' }}p**{% elif change.type == 'codec' %}{{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_codec' %}{{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**{% elif change.type == 'audio_channels' %}{{ change.old_value or 0 }} ch → **{{ change.new_value or 0 }} ch**{% elif change.type == 'hdr_status' %}{{ change.old_value or 'SDR' }} → **{{ change.new_value or 'SDR' }}**{% elif change.type == 'file_size' %}File replaced with {% if item.file_size %}{{ "%.1f"|format(item.file_size / 1073741824) }}GB{% else %}new version{% endif %}{% elif change.type == 'provider_ids' %}{{ change.description }}{% else %}{{ change.description }}{% endif %}",
-          "inline": {% if loop.index <= 2 %}true{% else %}false{% endif %}
+          "name": "{% if change.type == 'resolution' %}📐 Resolution{% elif change.type == 'codec' %}🎞️ Video Codec{% elif change.type == 'audio_codec' %}🔊 Audio{% elif change.type == 'audio_channels' %}🔊 Channels{% elif change.type == 'hdr_status' %}🌈 HDR{% elif change.type == 'file_size' %}💾 File{% elif change.type == 'provider_ids' %}🔗 Metadata{% else %}🔄 {{ change.type|title }}{% endif %}",
+          "value": "{% if change.type == 'resolution' %}{{ change.old_value or '?' }}p → **{{ change.new_value or '?' }}p**{% elif change.type == 'codec' %}{{ change.old_value or '?' }} → **{{ change.new_value or '?' }}**{% elif change.type == 'audio_codec' %}{{ change.old_value or '?' }} → **{{ change.new_value or '?' }}**{% elif change.type == 'audio_channels' %}{{ change.old_value or 0 }}ch → **{{ change.new_value or 0 }}ch**{% elif change.type == 'hdr_status' %}{{ change.old_value or 'SDR' }} → **{{ change.new_value or 'SDR' }}**{% elif change.type == 'file_size' %}Replaced{% if item.file_size %} ({{ "%.1f"|format(item.file_size / 1073741824) }}GB){% endif %}{% else %}Updated{% endif %}",
+          "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
-        {% endfor %}
+          {%- set _ = fields_added.append('change_' + loop.index0|string) -%}
+        {%- endfor -%}
 
         {#
-          Current Technical Specifications
-
-          Shows current state after upgrade for context.
-          Only shows if we have 2 or fewer change fields to avoid clutter.
-          Inline fields for compact display of technical specs.
+          SPACER: Force new row after changes if needed
         #}
-        {% if changes|length <= 2 %}
-        {%- if field_count > 0 %},{% endif -%}
-        {%- set has_fields = true -%}
+        {%- if fields_added | length % 3 != 0 -%}
+          {%- set spacers_needed = 3 - (fields_added | length % 3) -%}
+          {%- for i in range(spacers_needed) -%}
+            {%- if fields_added | length > 0 %},{% endif -%}
+        {
+          "name": "\u200B",
+          "value": "\u200B",
+          "inline": true
+        }
+            {%- set _ = fields_added.append('spacer1_' + i|string) -%}
+          {%- endfor -%}
+        {%- endif -%}
+
+        {#
+          ROW 2: Current Technical Specifications (Quality, Video, Audio)
+
+          Shows current state after upgrade.
+          All inline=true for 3-column desktop display.
+        #}
+        {%- if item.video_height is defined and item.video_height and item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist'] and fields_added | length < 12 -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
         {
           "name": "📐 Current Quality",
-          "value": "{% if item.video_height %}{{ item.video_height }}p{% else %}Unknown{% endif %}{% if item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}",
+          "value": "{{ item.video_height }}p{% if item.video_range is defined and item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}",
           "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
-        {% if item.video_codec %}
-        ,{
-          "name": "🎞️ Current Codec",
-          "value": "{{ item.video_codec.upper() }}{% if item.video_profile %} ({{ item.video_profile }}){% endif %}",
+          {%- set _ = fields_added.append('quality') -%}
+        {%- endif -%}
+
+        {%- if item.video_codec is defined and item.video_codec and item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist'] and fields_added | length < 12 -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
+        {
+          "name": "🎞️ Current Video",
+          "value": "{{ item.video_codec | upper }}{% if item.video_profile is defined and item.video_profile %} {{ item.video_profile }}{% endif %}",
           "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
-        {% endif %}
-        {% if item.audio_codec %}
-        ,{
+          {%- set _ = fields_added.append('video') -%}
+        {%- endif -%}
+
+        {%- if item.audio_codec is defined and item.audio_codec and fields_added | length < 12 -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
+        {
           "name": "🔊 Current Audio",
-          "value": "{{ item.audio_codec.upper() }}{% if item.audio_channels %} {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% if item.item_type in ['Audio', 'MusicAlbum', 'MusicArtist'] %}{% if item.audio_bitrate %} • {{ (item.audio_bitrate / 1000) | int }} kbps{% endif %}{% if item.audio_samplerate %} • {{ (item.audio_samplerate / 1000) | round(1) }} kHz{% endif %}{% endif %}",
+          "value": "{{ item.audio_codec | upper }}{% if item.audio_channels is defined and item.audio_channels %} {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% if item.audio_language is defined and item.audio_language and item.audio_language != 'und' %} ({{ item.audio_language | upper }}){% endif %}",
           "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
-        {% endif %}
-        {% endif %}
+          {%- set _ = fields_added.append('audio') -%}
+        {%- endif -%}
 
         {#
-          Runtime/Duration Field
+          ROW 3: File Information (Duration, File Size, Rating)
 
-          Shows current runtime after upgrade.
-          Different formatting for music vs video content.
+          Additional metadata about the upgraded file.
+          All inline=true for clean 3-column desktop display.
         #}
-        {% if item.runtime_ticks and field_count < 9 %}
-        ,{
-          "name": "⏱️ {% if item.item_type in ['Audio', 'MusicAlbum', 'MusicArtist'] %}Duration{% else %}Runtime{% endif %}",
-          "value": "{% if item.item_type in ['Audio', 'MusicAlbum', 'MusicArtist'] -%}
-            {%- set total_seconds = (item.runtime_ticks / 10000000) | int -%}
-            {%- set minutes = (total_seconds / 60) | int -%}
-            {%- set seconds = total_seconds % 60 -%}
-            {{ minutes }}:{{ '%02d' | format(seconds) }}
-          {%- else -%}
-            {{ (item.runtime_ticks // 600000000) }}m
-          {%- endif %}",
+        {%- if item.runtime_ticks is defined and item.runtime_ticks and fields_added | length < 15 -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
+        {
+          "name": "⏱️ Duration",
+          "value": "{% set hours = (item.runtime_ticks // 36000000000) %}{% set minutes = ((item.runtime_ticks % 36000000000) // 600000000) %}{% if hours > 0 %}{{ hours }}h {% endif %}{{ minutes }}m",
           "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
-        {% endif %}
+          {%- set _ = fields_added.append('duration') -%}
+        {%- endif -%}
 
-        {#
-          Content Rating Field
+        {%- if item.file_size is defined and item.file_size and fields_added | length < 15 -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
+        {
+          "name": "💾 File Size",
+          "value": "{% if item.file_size > 1073741824 %}{{ '%.2f' | format(item.file_size / 1073741824) }} GB{% else %}{{ '%.1f' | format(item.file_size / 1048576) }} MB{% endif %}",
+          "inline": true
+        }
+          {%- set _ = fields_added.append('filesize') -%}
+        {%- endif -%}
 
-          Shows official content rating with shield emoji.
-          Positioned for logical flow with other metadata.
-        #}
-        {% if item.official_rating and field_count < 9 %}
-        ,{
-          "name": "🛡️ Content Rating",
+        {%- if item.official_rating is defined and item.official_rating and fields_added | length < 15 -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
+        {
+          "name": "🛡️ Rating",
           "value": "{{ item.official_rating }}",
           "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
-        {% endif %}
+          {%- set _ = fields_added.append('rating') -%}
+        {%- endif -%}
 
         {#
-          Air Date / Release Date Field
+          ROW 4: Release Information (Air Date, Year, Genres)
 
-          Context-aware labeling: "Air Date" for episodes, "Release" for movies/series.
+          Release metadata and genres in compact format.
         #}
-        {% if item.premiere_date and field_count < 9 %}
-        ,{
+        {%- if item.premiere_date is defined and item.premiere_date and fields_added | length < 18 -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
+        {
           "name": "📅 {% if item.item_type == 'Episode' %}Air Date{% else %}Release{% endif %}",
           "value": "{{ item.premiere_date[:10] }}",
           "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
-        {% endif %}
+          {%- set _ = fields_added.append('release') -%}
+        {%- endif -%}
 
-        {#
-          External Ratings
-
-          Shows ratings from external sources like IMDB, Rotten Tomatoes, etc.
-          Non-inline for better mobile display readability.
-        #}
-        {% if ratings and ratings|length > 0 and field_count < 9 %}
-        ,{
-          "name": "⭐ Ratings",
-          "value": "{% for rating_key, rating_data in ratings.items() %}{% if rating_key == 'imdb' %}**IMDb:** {{ rating_data.value }}/{{ rating_data.scale }}{% elif rating_key == 'rotten_tomatoes' %}**RT:** {{ rating_data.value }}%{% elif rating_key == 'metacritic' %}**MC:** {{ rating_data.value }}/{{ rating_data.scale }}{% elif rating_key == 'tmdb' %}**TMDb:** {{ rating_data.value }}/{{ rating_data.scale }}{% if rating_data.vote_count %} ({{ rating_data.vote_count }} votes){% endif %}{% elif rating_key == 'tvdb' %}**TVDb:** {{ rating_data.value }}/{{ rating_data.scale }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}",
-          "inline": false
+        {%- if item.year is defined and item.year and item.item_type not in ['Episode', 'Audio'] and fields_added | length < 18 -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
+        {
+          "name": "📅 Year",
+          "value": "{{ item.year }}",
+          "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
-        {% endif %}
+          {%- set _ = fields_added.append('year') -%}
+        {%- endif -%}
 
-        {#
-          External Links
-
-          Provides links to external databases and information sources.
-          Non-inline for better clickability and readability.
-        #}
-        {% if (item.imdb_id or item.tmdb_id or item.tvdb_id) and field_count < 9 %}
-        ,{
-          "name": "🔗 External Links",
-          "value": "{% if item.imdb_id %}[IMDb](https://www.imdb.com/title/{{ item.imdb_id }}/){% endif %}{% if item.tmdb_id %}{% if item.imdb_id %} • {% endif %}[TMDb](https://www.themoviedb.org/{% if item.item_type == 'Movie' %}movie{% elif item.item_type == 'Series' %}tv{% else %}tv{% endif %}/{{ item.tmdb_id }}){% endif %}{% if item.tvdb_id %}{% if item.imdb_id or item.tmdb_id %} • {% endif %}{% if ratings.tvdb and ratings.tvdb.proper_url %}[TVDb]({{ ratings.tvdb.proper_url }}){% elif item.item_type == 'Episode' %}[TVDb](https://thetvdb.com/episodes/{{ item.tvdb_id }}){% elif item.item_type == 'Series' %}[TVDb](https://thetvdb.com/series/{{ item.tvdb_id }}){% else %}[TVDb](https://thetvdb.com/dereferrer/series/{{ item.tvdb_id }}){% endif %}{% endif %}",
-          "inline": false
+        {%- if item.genres is defined and item.genres and item.genres | length > 0 and fields_added | length < 18 -%}
+          {%- if fields_added | length > 0 %},{% endif -%}
+        {
+          "name": "🎭 Genres",
+          "value": "{{ item.genres[:3] | join(', ') }}{% if item.genres | length > 3 %} +{{ item.genres | length - 3 }}{% endif %}",
+          "inline": true
         }
-        {%- set field_count = field_count + 1 -%}
-        {% endif %}
+          {%- set _ = fields_added.append('genres') -%}
+        {%- endif -%}
 
         {#
-          Music-Specific Information
+          SPACER LOGIC: Force new row for special content types
+
+          Uses invisible spacers to force next fields onto new row when needed.
+        #}
+        {%- if item.item_type in ['MusicAlbum', 'MusicArtist'] and fields_added | length % 3 != 0 -%}
+          {%- set spacers_needed = 3 - (fields_added | length % 3) -%}
+          {%- for i in range(spacers_needed) -%}
+            {%- if fields_added | length > 0 %},{% endif -%}
+        {
+          "name": "\u200B",
+          "value": "\u200B",
+          "inline": true
+        }
+            {%- set _ = fields_added.append('spacer2_' + i|string) -%}
+          {%- endfor -%}
+        {%- endif -%}
+
+        {#
+          ROW 5: Music-Specific Information (Optional)
 
           For Music Albums and Artists, show additional metadata.
-          Only displayed if we haven't exceeded field limits.
         #}
-        {%- if item.item_type in ['MusicAlbum', 'MusicArtist'] and field_count < 9 -%}
+        {%- if item.item_type in ['MusicAlbum', 'MusicArtist'] -%}
           {%- set music_info_parts = [] -%}
           {%- if item.item_type == 'MusicAlbum' and item.artists is defined and item.artists and item.artists | length > 0 -%}
-            {%- set _ = music_info_parts.append('**Artists:** ' + item.artists | join(', ')) -%}
+            {%- set _ = music_info_parts.append('**Artists:** ' + item.artists[:3] | join(', ')) -%}
+            {%- if item.artists | length > 3 -%}
+              {%- set _ = music_info_parts.append(' +' + (item.artists | length - 3)|string + ' more') -%}
+            {%- endif -%}
           {%- endif -%}
           {%- if item.year is defined and item.year -%}
             {%- set _ = music_info_parts.append('**Year:** ' + item.year | string) -%}
           {%- endif -%}
           {%- if music_info_parts | length > 0 -%}
-        ,{
+            {%- if fields_added | length > 0 %},{% endif -%}
+        {
           "name": "🎵 {% if item.item_type == 'MusicAlbum' %}Album{% else %}Artist{% endif %} Info",
           "value": "{{ music_info_parts | join('\n') }}",
-          "inline": false
+          "inline": true
         }
-          {%- set field_count = field_count + 1 -%}
+            {%- set _ = fields_added.append('music_info') -%}
+            {# Add spacer for visual balance #}
+            {%- if fields_added | length > 0 %},{% endif -%}
+        {
+          "name": "\u200B",
+          "value": "\u200B",
+          "inline": true
+        }
+            {%- set _ = fields_added.append('music_spacer') -%}
           {%- endif -%}
         {%- endif -%}
       ],
-
+      {%- if thumbnail_url is defined and thumbnail_url %}
       {#
-        Main Image Display
+        Intelligent Thumbnail System
 
-        Uses the main image field for prominent poster/artwork display below description.
-        Shows movie posters, album covers, series artwork, etc.
-        Larger than thumbnail for better visual impact and showcases the upgraded content.
-
-        Image Priority:
-        - Movies: Movie poster
-        - Music: Album/Artist artwork
-        - Series: Series poster
-        - Episodes: Episode or series artwork
-        - Other: Primary artwork when available
+        Uses the verified thumbnail from ThumbnailManager.
+        Displays verified thumbnails when available.
       #}
-      "image": {
-        "url": "{% if item.item_type == 'Episode' and item.item_id is defined -%}
-          {{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=400&maxWidth=300
-        {%- elif item.item_type == 'Episode' and item.series_id is defined -%}
-          {{ jellyfin_url }}/Items/{{ item.series_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=400&maxWidth=300
-        {%- elif item.item_type == 'Movie' and item.item_id is defined -%}
-          {{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=400&maxWidth=300
-        {%- elif item.item_type in ['Audio', 'MusicAlbum', 'MusicArtist'] and item.item_id is defined -%}
-          {{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=400&maxWidth=300
-        {%- elif item.item_id is defined -%}
-          {{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=400&maxWidth=300
-        {%- else -%}
-          {{ jellyfin_url }}/web/favicon.ico
-        {%- endif %}"
-      },
-
-      {#
-        Thumbnail for Logos Only
-
-        Small thumbnail in top-right corner reserved for logos and branding.
-        Shows series logos for episodes, studio logos, or other branding elements.
-        Helps identify the content brand while showing the upgraded artwork in main image.
-
-        Logo Priority:
-        - Episodes: Series logo (if available)
-        - Other content: Studio logo or branding (when implemented)
-        - Fallback: No thumbnail if no logo available
-      #}
-      {% if item.item_type == 'Episode' and item.series_id is defined and item.series_id %},
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ item.series_id }}/Images/Logo?api_key={{ api_key }}&maxHeight=64&maxWidth=200"
-      }{% endif %},
-
+        "url": "{{ thumbnail_url }}"
+      },
+      {%- endif %}
       {#
         Footer Information
 
-        Shows when the item was upgraded and server name.
+        Shows when the item was upgraded with server name.
         Uses Jellyfin favicon as footer icon for consistent branding.
-        Special attribution for TheTVDB metadata when needed.
       #}
       "footer": {
-        "text": "Updated in Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC{% if tvdb_attribution_needed %}\nMetadata provided by TheTVDB{% endif %}",
+        "text": "Upgraded {{ item.date_created[:10] if item.date_created else timestamp[:10] }} • {{ item.server_name or 'Jellyfin' }}",
         "icon_url": "{{ jellyfin_url }}/web/favicon.png"
       },
-
       {#
-        Timestamp
+        Timestamp and URL
 
         ISO timestamp for Discord's "time ago" formatting.
+        Clickable embed that links directly to the item in Jellyfin web interface.
       #}
-      "timestamp": "{{ timestamp }}"
+      "timestamp": "{{ timestamp }}",
+      "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.item_id }}"
     }
   ]
 }
