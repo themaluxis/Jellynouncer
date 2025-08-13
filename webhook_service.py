@@ -1041,13 +1041,10 @@ class WebhookService:
 
                     for item_data in batch:
                         try:
-                            # Convert Jellyfin API data to MediaItem
                             media_item = await self.jellyfin.convert_to_media_item(item_data)
                             media_items.append(media_item)
                         except Exception as e:
-                            self.logger.warning(
-                                f"Error converting item {item_data.get('Id', 'unknown')}: {e}"
-                            )
+                            self.logger.warning(f"Error converting item {item_data.get('Id', 'unknown')}: {e}")
                             conversion_errors += 1
                             total_individual_errors += 1
 
@@ -1055,18 +1052,30 @@ class WebhookService:
                     if media_items:
                         batch_results = await self.db.save_items_batch(media_items)
 
-                        # Update counters based on batch results
-                        items_processed += batch_results['successful']
-                        total_individual_errors += batch_results['failed']
+                        # Check if entire batch failed (likely schema issue)
+                        if batch_results['failed'] == len(media_items) and batch_results['successful'] == 0:
+                            # Entire batch failed - this is a batch error
+                            batch_errors += 1
+                            total_individual_errors += batch_results['failed']
 
-                        batch_time = time.time() - batch_start_time
-                        self.logger.debug(
-                            f"Batch {i // db_batch_size + 1}: "
-                            f"{batch_results['successful']}/{len(media_items)} saved, "
-                            f"{batch_results['failed']} failed, "
-                            f"{conversion_errors} conversion errors "
-                            f"({batch_time:.2f}s)"
-                        )
+                            self.logger.error(
+                                f"Batch {i // db_batch_size + 1}: ENTIRE BATCH FAILED - "
+                                f"likely schema mismatch or database issue. "
+                                f"{batch_results['failed']} items could not be saved."
+                            )
+                        else:
+                            # Partial success - some items saved, some failed
+                            items_processed += batch_results['successful']
+                            total_individual_errors += batch_results['failed']
+
+                            batch_time = time.time() - batch_start_time
+                            self.logger.debug(
+                                f"Batch {i // db_batch_size + 1}: "
+                                f"{batch_results['successful']}/{len(media_items)} saved, "
+                                f"{batch_results['failed']} failed, "
+                                f"{conversion_errors} conversion errors "
+                                f"({batch_time:.2f}s)"
+                            )
                     else:
                         # All items in this batch failed conversion
                         self.logger.warning(f"Batch {i // db_batch_size + 1}: All items failed conversion")
@@ -1086,10 +1095,14 @@ class WebhookService:
                         )
 
                 except Exception as e:
-                    # Handle batch-level errors
+                    # Handle batch-level errors (connection issues, etc.)
                     self.logger.error(f"Error processing batch starting at index {i}: {e}")
                     batch_errors += 1
                     total_individual_errors += len(batch)
+
+                # Add small delay between batches to prevent overwhelming the system
+                if i + db_batch_size < len(all_items):  # Don't delay after the last batch
+                    await asyncio.sleep(self.config.sync.api_request_delay)
 
                 # Add small delay between batches to prevent overwhelming the system
                 if i + db_batch_size < len(all_items):  # Don't delay after the last batch
