@@ -36,7 +36,7 @@ from dataclasses import asdict
 import aiohttp
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError
 
-from config_models import DiscordConfig, TemplatesConfig
+from config_models import DiscordConfig
 from media_models import MediaItem
 from utils import get_logger
 
@@ -67,7 +67,6 @@ class ThumbnailManager:
 
     Attributes:
         base_url (str): Base URL for Jellyfin server thumbnail requests
-        api_key (str): API key for authenticated thumbnail requests
         session (aiohttp.ClientSession): HTTP session for thumbnail verification
         cache (Dict): In-memory cache of verified thumbnail URLs
         logger (logging.Logger): Component-specific logger
@@ -88,16 +87,14 @@ class ThumbnailManager:
         ```
     """
 
-    def __init__(self, jellyfin_url: str, api_key: str):
+    def __init__(self, jellyfin_url: str):
         """
         Initialize thumbnail manager with Jellyfin connection details.
 
         Args:
             jellyfin_url (str): Base URL of the Jellyfin server
-            api_key (str): API key for authenticated requests
         """
         self.base_url = jellyfin_url.rstrip('/')
-        self.api_key = api_key
         self.session: Optional[aiohttp.ClientSession] = None
         self.cache: Dict[str, Optional[str]] = {}
         self.logger = get_logger("jellynouncer.discord.thumbnails")
@@ -244,7 +241,8 @@ class ThumbnailManager:
         self.logger.debug(f"Formatted item ID for URL: {item_id} -> {formatted_item_id}")
 
         # Standardized image parameters for consistency with templates
-        image_params = "api_key={}&quality=90&maxWidth=500&maxHeight=400".format(self.api_key)
+        # API key removed - images must be publicly accessible in Jellyfin
+        image_params = "quality=90&maxWidth=500&maxHeight=400"
 
         # Try thumbnail sources in order of preference
         thumbnail_candidates = []
@@ -296,7 +294,7 @@ class ThumbnailManager:
 
         Example:
             ```python
-            url = "http://jellyfin:8096/Items/123/Images/Primary?api_key=..."
+            url = "http://jellyfin:8096/Items/123/Images/Primary?..."
             is_valid = await manager.verify_thumbnail(url)
             if is_valid:
                 # Use the thumbnail in Discord embed
@@ -383,7 +381,6 @@ class DiscordNotifier:
 
     Attributes:
         config (DiscordConfig): Discord configuration from application config
-        templates_config (TemplatesConfig): Template configuration settings
         thumbnail_manager (ThumbnailManager): Thumbnail URL management
         session (aiohttp.ClientSession): HTTP session for webhook requests
         rate_limits (Dict): Rate limiting state per webhook URL
@@ -428,8 +425,7 @@ class DiscordNotifier:
 
         # Create thumbnail manager that will share the same session
         self.thumbnail_manager = ThumbnailManager(
-            jellyfin_url=jellyfin_config.server_url,
-            api_key=jellyfin_config.api_key
+            jellyfin_url=jellyfin_config.server_url
         )
         # Pass the shared session to thumbnail manager instead of letting it create its own
         self.thumbnail_manager.session = session

@@ -320,41 +320,17 @@
         {% endif %}
       ],
 
+      {%- if thumbnail_url is defined and thumbnail_url %}
       {#
-        Main Image Display
+        Intelligent Thumbnail System
 
-        Uses the main image field for prominent poster/artwork display below description.
-        Shows movie posters, album covers, series artwork, etc.
-        Larger than thumbnail for better visual impact and showcases the upgraded content.
-
-        Image Priority:
-        - Movies: Movie poster
-        - Music: Album/Artist artwork
-        - Series: Series poster
-        - Episodes: Episode or series artwork
-        - Other: Primary artwork when available
+        Displays verified thumbnails when available, with proper fallback handling.
+        Compatible with the ThumbnailManager's verification process.
       #}
-      {% if has_thumbnail is defined and has_thumbnail and verified_thumbnail_url is defined and verified_thumbnail_url %},
-      "image": {
-        "url": "{{ verified_thumbnail_url }}"
-      }{% endif %},
-
-      {#
-        Thumbnail for Logos Only
-
-        Small thumbnail in top-right corner reserved for logos and branding.
-        Shows series logos for episodes, studio logos, or other branding elements.
-        Helps identify the content brand while showing the upgraded artwork in main image.
-
-        Logo Priority:
-        - Episodes: Series logo (if available)
-        - Other content: Studio logo or branding (when implemented)
-        - Fallback: No thumbnail if no logo available
-      #}
-      {% if item.item_type == 'Episode' and item.series_id is defined and item.series_id %},
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ item.series_id }}/Images/Logo?api_key={{ api_key }}&maxHeight=64&maxWidth=200"
-      }{% endif %},
+        "url": "{{ thumbnail_url }}"
+      },
+      {%- endif %}
 
       {#
         Footer Information

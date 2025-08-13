@@ -14,7 +14,6 @@
         Creates context-appropriate titles with emojis based on the media type.
         Episodes, Series, Movies, Seasons, Music content, and others get specific titles.
       #}
-
       "title": "{% if item.item_type == 'Episode' -%}
         📺 New Episode Added
       {%- elif item.item_type == 'Series' -%}
@@ -39,7 +38,6 @@
         Combines basic info with plot summary for comprehensive context.
         Different formatting based on media type with overview included directly.
       #}
-
       "description": "{% if item.item_type == 'Episode' -%}
         **{{ item.series_name | default('Unknown Series') }}**
         S{{ '%02d' | format(item.season_number | default(0)) }}E{{ '%02d' | format(item.episode_number | default(0)) }}
@@ -79,7 +77,6 @@
 
         Uses the color value passed from the application, with green (65280) as fallback
       #}
-
       "color": {{ color | default(65280) }},
 
       {#
@@ -91,7 +88,6 @@
         - Prioritizes technical specs in compact horizontal rows
         - Uses intelligent spacers to control row breaks
       #}
-
       "fields": [
         {%- set fields_added = [] -%}
 
@@ -101,7 +97,6 @@
           First priority row with most important technical details.
           All inline=true to create a clean 3-column row on desktop.
         #}
-
         {%- if item.video_height is defined and item.video_height and item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist'] -%}
           {%- if fields_added | length > 0 %},{% endif -%}
         {
@@ -138,7 +133,6 @@
           Second priority row with file and content metadata.
           All inline=true for clean 3-column desktop display.
         #}
-
         {%- if item.runtime_ticks is defined and item.runtime_ticks and fields_added | length < 9 -%}
           {%- if fields_added | length > 0 %},{% endif -%}
         {
@@ -175,7 +169,6 @@
           Third priority row with release metadata and genres.
           Genres field uses compact display with "+X more" format.
         #}
-
         {%- if item.premiere_date is defined and item.premiere_date and fields_added | length < 12 -%}
           {%- if fields_added | length > 0 %},{% endif -%}
         {
@@ -212,7 +205,6 @@
           Uses invisible spacers to force next fields onto new row when needed.
           Ensures music content gets its own dedicated row for better organization.
         #}
-
         {%- if item.item_type in ['MusicAlbum', 'MusicArtist'] and fields_added | length % 3 != 0 -%}
           {%- set spacers_needed = 3 - (fields_added | length % 3) -%}
           {%- for i in range(spacers_needed) -%}
@@ -232,7 +224,6 @@
           For Music Albums and Artists, show additional metadata.
           Uses 2-column layout with spacer for visual balance.
         #}
-
         {%- if item.item_type in ['MusicAlbum', 'MusicArtist'] -%}
           {%- set music_info_parts = [] -%}
           {%- if item.item_type == 'MusicAlbum' and item.artists is defined and item.artists and item.artists | length > 0 -%}
@@ -264,19 +255,16 @@
         {%- endif -%}
 	  ],
       {%- if thumbnail_url is defined and thumbnail_url %}
-
       {#
         Intelligent Thumbnail System
 
         Displays verified thumbnails when available, with proper fallback handling.
         Compatible with the ThumbnailManager's verification process.
       #}
-
       "thumbnail": {
         "url": "{{ thumbnail_url }}"
       },
       {%- endif %}
-
       {#
         Footer Information
 
@@ -284,19 +272,16 @@
         Uses Jellyfin favicon as footer icon for consistent branding.
         Fallback to timestamp if date_created is unavailable.
       #}
-
       "footer": {
         "text": "Added {{ item.date_created[:10] if item.date_created else timestamp[:10] }} • {{ item.server_name or 'Jellyfin' }}",
         "icon_url": "{{ jellyfin_url }}/web/favicon.png"
       },
-
       {#
         Timestamp and URL
 
         ISO timestamp for Discord's "time ago" formatting.
         Clickable embed that links directly to the item in Jellyfin web interface.
       #}
-
       "timestamp": "{{ timestamp }}",
       "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.item_id }}"
     }
