@@ -807,7 +807,6 @@ class DiscordNotifier:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "server_url": self.thumbnail_manager.base_url,
             "jellyfin_url": self.thumbnail_manager.base_url,  # Keep both for backward compatibility
-            "api_key": self.thumbnail_manager.api_key,
             "color": self._get_notification_color(action, changes),
             # Standardized image parameters
             "image_quality": 90,
