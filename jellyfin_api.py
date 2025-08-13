@@ -609,6 +609,32 @@ class JellyfinAPI:
             succeeds even with incomplete Jellyfin data.
         """
         try:
+            # ==================== DEBUG LOGGING ====================
+            self.logger.debug("=" * 60)
+            self.logger.debug(f"JELLYFIN API RESPONSE DEBUG for item: {item_data.get('Name', 'Unknown')}")
+            self.logger.debug(f"Item Type: {item_data.get('Type', 'Unknown')}")
+            self.logger.debug(f"Item ID: {item_data.get('Id', 'Unknown')}")
+
+            # Log the ImageTags structure
+            image_tags = item_data.get('ImageTags', {})
+            self.logger.debug(f"ImageTags present: {bool(image_tags)}")
+            if image_tags:
+                self.logger.debug(f"ImageTags content: {image_tags}")
+                self.logger.debug(f"  - Primary: {image_tags.get('Primary', 'NOT SET')}")
+                self.logger.debug(f"  - Backdrop: {image_tags.get('Backdrop', 'NOT SET')}")
+                self.logger.debug(f"  - Logo: {image_tags.get('Logo', 'NOT SET')}")
+                self.logger.debug(f"  - Thumb: {image_tags.get('Thumb', 'NOT SET')}")
+                self.logger.debug(f"  - Banner: {image_tags.get('Banner', 'NOT SET')}")
+            else:
+                self.logger.debug("No ImageTags in API response!")
+
+            # Log episode-specific tags
+            if item_data.get('Type') == 'Episode':
+                self.logger.debug(f"SeriesPrimaryImageTag: {item_data.get('SeriesPrimaryImageTag', 'NOT SET')}")
+                self.logger.debug(f"ParentBackdropImageTags: {item_data.get('ParentBackdropImageTags', 'NOT SET')}")
+                self.logger.debug(f"ParentLogoImageTag: {item_data.get('ParentLogoImageTag', 'NOT SET')}")
+
+            self.logger.debug("=" * 60)
             # ==================== CORE IDENTIFICATION ====================
             # Extract basic item information (always required)
             item_id = item_data.get('Id', '')
@@ -649,6 +675,13 @@ class JellyfinAPI:
             parent_backdrop_image_tag = item_data.get('ParentBackdropImageTags', [None])[0] if item_data.get(
                 'ParentBackdropImageTags') else None
             parent_logo_image_tag = item_data.get('ParentLogoImageTag')
+
+            # DEBUG: Log what we extracted
+            self.logger.debug(f"Extracted image tags:")
+            self.logger.debug(f"  primary_image_tag: {primary_image_tag}")
+            self.logger.debug(f"  backdrop_image_tag: {backdrop_image_tag}")
+            self.logger.debug(f"  logo_image_tag: {logo_image_tag}")
+            self.logger.debug(f"  Type of primary_image_tag: {type(primary_image_tag)}")
 
             # ==================== PROVIDER IDS ====================
             # Extract external provider IDs (IMDb, TMDb, TVDb, etc.)

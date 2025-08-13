@@ -231,6 +231,14 @@ class ThumbnailManager:
                 self.logger.debug(f"Cached result shows no thumbnail available for item {item_id}")
                 return None
 
+        # DEBUG: Log incoming parameters
+        self.logger.debug(f"get_thumbnail_url called with:")
+        self.logger.debug(f"  item_id: {item_id}")
+        self.logger.debug(f"  media_type: {media_type}")
+        self.logger.debug(f"  primary_image_tag: {primary_image_tag} (type: {type(primary_image_tag)})")
+        self.logger.debug(f"  backdrop_image_tag: {backdrop_image_tag} (type: {type(backdrop_image_tag)})")
+        self.logger.debug(f"  logo_image_tag: {logo_image_tag} (type: {type(logo_image_tag)})")
+
         # Format item_id for Jellyfin URL (convert from unhyphenated to hyphenated UUID)
         formatted_item_id = self._format_uuid_for_jellyfin(item_id)
         self.logger.debug(f"Formatted item ID for URL: {item_id} -> {formatted_item_id}")
@@ -591,9 +599,20 @@ class DiscordNotifier:
             self.logger.debug(f"Preparing notification for {item.name} ({item.item_type}) via {webhook_url}")
 
             # Generate thumbnail URL with fallback for episodes
+            self.logger.debug(f"Checking MediaItem for image tags:")
+            self.logger.debug(f"  hasattr primary_image_tag: {hasattr(item, 'primary_image_tag')}")
+            self.logger.debug(f"  hasattr backdrop_image_tag: {hasattr(item, 'backdrop_image_tag')}")
+            self.logger.debug(f"  hasattr logo_image_tag: {hasattr(item, 'logo_image_tag')}")
+
             primary_tag = getattr(item, 'primary_image_tag', None)
             backdrop_tag = getattr(item, 'backdrop_image_tag', None)
             logo_tag = getattr(item, 'logo_image_tag', None)
+
+            self.logger.debug(f"Retrieved from MediaItem:")
+            self.logger.debug(f"  primary_tag value: {primary_tag}")
+            self.logger.debug(f"  backdrop_tag value: {backdrop_tag}")
+            self.logger.debug(f"  logo_tag value: {logo_tag}")
+            self.logger.debug(f"  primary_tag type: {type(primary_tag)}")
 
             # For episodes without their own images, try series images
             if item.item_type == 'Episode':
