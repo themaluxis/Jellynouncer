@@ -34,9 +34,8 @@ from webhook_models import WebhookPayload
 from database_manager import DatabaseManager
 from jellyfin_api import JellyfinAPI
 from discord_services import DiscordNotifier
-from metadata_services import RatingService
+from metadata_services import MetadataService
 from change_detector import ChangeDetector
-from tvdb import TVDB, add_tvdb_metadata_to_item
 from utils import get_logger
 
 
@@ -80,7 +79,7 @@ class WebhookService:
         jellyfin (JellyfinAPI): Jellyfin API client for communicating with media server
         change_detector (ChangeDetector): Logic for detecting meaningful media changes
         discord (DiscordNotifier): Discord notification manager for sending messages
-        rating_service (RatingService): Service for fetching external rating information
+        metadata_service (MetadataService): Service for fetching external metadata information
 
     Service State Tracking:
         last_vacuum (float): Timestamp of last database maintenance operation
@@ -149,8 +148,7 @@ class WebhookService:
         self.jellyfin = None
         self.change_detector = None
         self.discord = None
-        self.rating_service = None
-        self.tvdb_client = None
+        self.metadata_service = None
 
         # Initialize service state tracking attributes
         # These keep track of what the service is currently doing
@@ -180,7 +178,7 @@ class WebhookService:
             2. Initialize database manager and create/migrate tables
             3. Connect to Jellyfin API and verify authentication
             4. Set up Discord notification manager with webhooks
-            5. Initialize external rating services (OMDb, TMDb, TVDb)
+            5. Initialize external metadata services (OMDb, TMDb, TVDb)
             6. Create change detector for upgrade notifications
             7. Perform initial library sync if needed
             8. Start background maintenance tasks
@@ -188,7 +186,7 @@ class WebhookService:
         **Error Handling Strategy:**
             Each initialization step is wrapped in try/catch blocks to provide
             detailed error information. Critical failures will stop the service,
-            while non-critical failures (like rating services) will log warnings
+            while non-critical failures (like metadata services) will log warnings
             but allow the service to continue.
 
         Raises:
@@ -260,40 +258,18 @@ class WebhookService:
                 self.logger.error(f"Discord manager initialization failed: {e}")
                 raise SystemExit(f"Cannot start without Discord manager: {e}")
 
-            # Step 5: Initialize rating service (non-critical)
-            self.logger.debug("Initializing external rating services...")
+            # Step 5: Initialize metadata service (non-critical)
+            self.logger.debug("Initializing external metadata services...")
             try:
-                self.rating_service = RatingService(self.config.metadata_services)
-                await self.rating_service.initialize(session, self.db)
-                if self.rating_service.enabled:
-                    self.logger.info("Rating services initialized and enabled")
+                self.metadata_service = MetadataService(self.config.metadata_services)
+                await self.metadata_service.initialize(session, self.db)
+                if self.metadata_service.enabled:
+                    self.logger.info("Metadata services initialized and enabled")
                 else:
-                    self.logger.info("Rating services initialized but disabled")
+                    self.logger.info("Metadata services initialized but disabled")
             except Exception as e:
-                self.logger.warning(f"Rating service initialization failed: {e}")
-                self.logger.info("Service will continue without rating enhancements")
-
-            # Step 5.5: Initialize TVDB client (non-critical)
-            self.logger.debug("Initializing TVDB metadata client...")
-            try:
-                if (self.config.metadata_services.tvdb.enabled and
-                        self.config.metadata_services.tvdb.api_key):
-
-                    self.tvdb_client = TVDB(
-                        api_key=self.config.metadata_services.tvdb.api_key,
-                        pin=self.config.metadata_services.tvdb.subscriber_pin,
-                        enable_caching=True,
-                        cache_ttl=self.config.metadata_services.tvdb_cache_ttl_hours * 3600
-                        # Convert hours to seconds
-                    )
-                    await self.tvdb_client.__aenter__()
-                    self.logger.info("TVDB metadata client initialized successfully")
-                else:
-                    self.logger.info("TVDB metadata client disabled or no API key provided")
-            except Exception as e:
-                self.logger.warning(f"TVDB metadata client initialization failed: {e}")
-                self.logger.info("Service will continue without TVDB metadata enhancement")
-                self.tvdb_client = None
+                self.logger.warning(f"Metadata service initialization failed: {e}")
+                self.logger.info("Service will continue without metadata enhancements")
 
             # Step 6: Initialize change detector
             self.logger.debug("Setting up change detector...")
@@ -466,22 +442,12 @@ class WebhookService:
                     "message": str(e)
                 }
 
-            # Add TVDB metadata enhancement for TV content
-            if (self.tvdb_client and
-                    hasattr(media_item, 'item_type') and
-                    media_item.item_type.lower() in ['series', 'season', 'episode'] and
-                    hasattr(media_item, 'tvdb_id') and
-                    media_item.tvdb_id):
-
+            # Add TVDB metadata enhancement for TV content through metadata service
+            if self.metadata_service and self.metadata_service.enabled:
                 try:
-                    self.logger.debug(f"Adding TVDB metadata to {media_item.item_type}: {media_item.name}")
-                    await add_tvdb_metadata_to_item(media_item, self.tvdb_client)
-
-                    if hasattr(media_item, 'has_tvdb_metadata') and media_item.has_tvdb_metadata:
-                        self.logger.info(f"Successfully enhanced {media_item.name} with TVDB metadata")
-
+                    await self.metadata_service.enhance_item_with_tvdb_metadata(media_item)
                 except Exception as e:
-                    self.logger.warning(f"Failed to add TVDB metadata to {media_item.name}: {e}")
+                    self.logger.error(f"Failed to enhance item with TVDB metadata: {e}")
 
             # Check if this is a new item or an update to existing item
             existing_item = await self.db.get_item(media_item.item_id)
@@ -624,7 +590,7 @@ class WebhookService:
             - Jellyfin API connectivity and authentication
             - Database accessibility and performance
             - Discord webhook configuration and connectivity
-            - Rating service availability (if enabled)
+            - Metadata service availability (if enabled)
             - Service operational status (sync status, etc.)
 
         **Health Status Levels:**
@@ -718,25 +684,25 @@ class WebhookService:
                 if health_data["status"] == "healthy":
                     health_data["status"] = "degraded"
 
-            # Check rating service status (non-critical)
+            # Check metadata service status (non-critical)
             try:
-                if self.rating_service and self.rating_service.enabled:
-                    health_data["components"]["rating_services"] = {
+                if self.metadata_service and self.metadata_service.enabled:
+                    health_data["components"]["metadata_services"] = {
                         "status": "healthy",
                         "enabled": True,
-                        "cache_duration_hours": self.rating_service.cache_duration_hours
+                        "cache_duration_hours": self.metadata_service.cache_duration_hours
                     }
                 else:
-                    health_data["components"]["rating_services"] = {
+                    health_data["components"]["metadata_services"] = {
                         "status": "disabled",
                         "enabled": False
                     }
             except Exception as e:
-                health_data["components"]["rating_services"] = {
+                health_data["components"]["metadata_services"] = {
                     "status": "error",
                     "error": str(e)
                 }
-                # Rating service errors don't affect overall health
+                # Metadata service errors don't affect overall health
 
             # Add service operational status
             health_data["service_status"] = {
@@ -1277,13 +1243,13 @@ class WebhookService:
             # Signal background tasks to stop
             self.shutdown_event.set()
 
-            # Close TVDB client
-            if self.tvdb_client:
+            # Close metadata service (which handles TVDB cleanup internally)
+            if self.metadata_service:
                 try:
-                    await self.tvdb_client.__aexit__(None, None, None)
-                    self.logger.debug("TVDB client cleaned up")
+                    await self.metadata_service.cleanup()
+                    self.logger.debug("Metadata service cleaned up")
                 except Exception as e:
-                    self.logger.error(f"Error cleaning up TVDB client: {e}")
+                    self.logger.error(f"Error cleaning up metadata service: {e}")
 
             # Close database connections
             if self.db:

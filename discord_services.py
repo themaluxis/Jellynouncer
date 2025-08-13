@@ -36,7 +36,7 @@ from dataclasses import asdict
 import aiohttp
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError
 
-from config_models import DiscordConfig, TemplatesConfig, NotificationsConfig
+from config_models import DiscordConfig, TemplatesConfig
 from media_models import MediaItem
 from utils import get_logger
 
@@ -145,10 +145,10 @@ class ThumbnailManager:
             str: UUID formatted with hyphens for use in Jellyfin URLs
 
         Example:
-            >>> manager._format_uuid_for_jellyfin("f549ba7fe88b2cbd7ac1794c029d5518")
+            >>> ThumbnailManager._format_uuid_for_jellyfin("f549ba7fe88b2cbd7ac1794c029d5518")
             "f549ba7f-e88b-2cbd-7ac1-794c029d5518"
 
-            >>> manager._format_uuid_for_jellyfin("f549ba7f-e88b-2cbd-7ac1-794c029d5518")
+            >>> ThumbnailManager._format_uuid_for_jellyfin("f549ba7f-e88b-2cbd-7ac1-794c029d5518")
             "f549ba7f-e88b-2cbd-7ac1-794c029d5518"
         """
         # Remove any existing hyphens

@@ -24,8 +24,7 @@ import time
 import ssl
 from datetime import datetime, timezone
 import logging
-import json
-from typing import Dict, Any, Optional, List, Callable
+from typing import Dict, Any, Optional, List, Callable, Union
 
 from jellyfin_apiclient_python import JellyfinClient
 
@@ -138,6 +137,9 @@ class JellyfinAPI:
         self.config = config
         self.logger = get_logger("jellynouncer.jellyfin")
         self.client = None
+
+        # Cache for server information
+        self._cached_server_info = None
 
         # Connection management
         self.last_connection_check = 0
@@ -692,7 +694,6 @@ class JellyfinAPI:
 
             # ==================== TV SERIES HIERARCHY ====================
             # Extract TV series information for episodes and seasons
-            parent_id = item_data.get('ParentId')
             series_name = item_data.get('SeriesName')
             series_id = item_data.get('SeriesId')
             series_premiere_date = None
@@ -922,36 +923,6 @@ class JellyfinAPI:
                 width = item_data.get('Width')
                 height = item_data.get('Height')
 
-            # ==================== CONTENT HASH GENERATION ====================
-            # Generate enhanced content hash for change detection
-            # Include all technical specifications that matter for upgrades
-            hash_data = {
-                "item_id": item_id,
-                "name": name,
-                "item_type": item_type,
-                # Video specifications
-                "video_height": video_height,
-                "video_width": video_width,
-                "video_codec": video_codec,
-                "video_profile": video_profile,
-                "video_range": video_range,
-                "video_framerate": video_framerate,
-                "video_bitrate": video_bitrate,
-                "video_bitdepth": video_bitdepth,
-                # Audio specifications
-                "audio_codec": audio_codec,
-                "audio_channels": audio_channels,
-                "audio_bitrate": audio_bitrate,
-                "audio_samplerate": audio_samplerate,
-                # File information
-                "file_path": file_path,
-                "file_size": file_size,
-            }
-
-            # Create hash from JSON representation
-            hash_string = json.dumps(hash_data, sort_keys=True, default=str)
-            content_hash = str(hash(hash_string))
-
             # ==================== CREATE COMPREHENSIVE MEDIAITEM ====================
             # Create MediaItem with ALL webhook fields mapped
             media_item = MediaItem(
@@ -960,12 +931,28 @@ class JellyfinAPI:
                 name=name,
                 item_type=item_type,
 
+                # Server information
+                server_id=server_id,
+                server_name=server_name,
+                server_version=server_version,
+                server_url=server_url,
+
                 # Content metadata
                 year=year,
                 series_name=series_name,
                 season_number=season_number,
                 episode_number=episode_number,
                 overview=overview,
+
+                # Image/thumbnail metadata
+                primary_image_tag=primary_image_tag,
+                backdrop_image_tag=backdrop_image_tag,
+                logo_image_tag=logo_image_tag,
+                thumb_image_tag=thumb_image_tag,
+                banner_image_tag=banner_image_tag,
+                series_primary_image_tag=series_primary_image_tag,
+                parent_backdrop_image_tag=parent_backdrop_image_tag,
+                parent_logo_image_tag=parent_logo_image_tag,
 
                 # Video technical specifications
                 video_height=video_height,
@@ -1007,6 +994,9 @@ class JellyfinAPI:
                 subtitle_type=subtitle_type,
                 subtitle_language=subtitle_language,
                 subtitle_codec=subtitle_codec,
+                subtitle_default=subtitle_default,
+                subtitle_forced=subtitle_forced,
+                subtitle_external=subtitle_external,
 
                 # External provider IDs
                 imdb_id=imdb_id,
@@ -1100,11 +1090,11 @@ class JellyfinAPI:
             This method is primarily used for diagnostic purposes and
             during initial service configuration validation.
         """
-        test_results = {
-            'connected': False,
-            'server_info': None,
-            'error': None,
-            'response_time': None
+        test_results: Dict[str, Union[bool, Optional[str], Optional[Dict], Optional[float]]] = {
+            'connected': False,  # bool
+            'server_info': None,  # Optional[Dict]
+            'error': None,  # Optional[str]
+            'response_time': None  # Optional[float]
         }
 
         try:
@@ -1112,7 +1102,8 @@ class JellyfinAPI:
 
             # Test basic connection
             if not await self.connect():
-                test_results['error'] = "Failed to establish connection"
+                test_results[
+                    'error'] = "Failed to establish connection"  # This is valid - assigning str to Optional[str]
                 return test_results
 
             # Get server information
@@ -1142,7 +1133,8 @@ class JellyfinAPI:
             test_results.update({
                 'connected': True,
                 'server_info': system_info,
-                'response_time': round(response_time, 3)
+                'response_time': round(response_time, 3),
+                'error': None  # Explicitly set to None on success
             })
 
             self.logger.info(f"Connection test passed in {response_time:.3f}s")

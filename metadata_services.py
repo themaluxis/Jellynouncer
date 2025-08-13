@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Jellynouncer Rating Services Module
+Jellynouncer Metadata Services Module
 
-This module provides comprehensive rating and metadata enhancement services by integrating
+This module provides comprehensive metadata and metadata enhancement services by integmetadata
 with multiple external APIs including OMDb, TMDb, and TVDb. It enriches Discord notifications
-with additional rating information, reviews, and enhanced metadata not available in Jellyfin.
+with additional metadata information, reviews, and enhanced metadata not available in Jellyfin.
 
-The rating services are designed to be optional and fault-tolerant - if they fail, the core
-notification service continues to operate normally without rating enhancements.
+The metadata services are designed to be optional and fault-tolerant - if they fail, the core
+notification service continues to operate normally without metadata enhancements.
 
 Classes:
-    RatingService: Main service coordinator for all rating providers
+    MetadataService: Main service coordinator for all metadata providers
     TVDBAPIv4: Specialized client for TVDB API v4 integration
 
 Author: Mark Newton
@@ -27,247 +27,57 @@ from datetime import datetime, timezone, timedelta
 
 import aiohttp
 
-from config_models import MetadataServicesConfig, TVDBConfig
+from config_models import MetadataServicesConfig
 from media_models import MediaItem
+from tvdb import TVDB
 from utils import get_logger
 
 
-class TVDBAPIv4:
+class MetadataService:
     """
-    Specialized client for TVDB API v4 integration.
+    Comprehensive metadata service that integrates multiple external APIs.
 
-    The TV Database (TVDB) provides comprehensive television show information
-    including ratings, episode data, and artwork. This client handles the
-    complexities of TVDB's authentication system and API access patterns.
-
-    **TVDB API v4 Features:**
-    - Comprehensive TV show and episode metadata
-    - Multiple authentication modes (subscriber, licensed)
-    - Enhanced artwork and poster collections
-    - Community ratings and reviews
-    - Multi-language support
-
-    **Authentication Modes:**
-    - Subscriber: Enhanced access with API key + PIN
-    - Licensed: Commercial access with different auth flow
-    - Auto: Automatically detect best available mode
-
-    Attributes:
-        config (TVDBConfig): TVDB configuration and authentication settings
-        logger (logging.Logger): Logger instance for TVDB operations
-        session (aiohttp.ClientSession): HTTP session for API requests
-        access_token (Optional[str]): Current authentication token
-        token_expires (Optional[datetime]): Token expiration timestamp
-        access_mode (str): Current access mode (subscriber, licensed, auto)
-
-    Example:
-        ```python
-        tvdb_config = TVDBConfig(
-            enabled=True,
-            api_key="your_tvdb_key",
-            subscriber_pin="your_pin"
-        )
-
-        tvdb_client = TVDBAPIv4(tvdb_config, logger)
-        await tvdb_client.initialize(session)
-
-        # Get TV show information
-        show_data = await tvdb_client.get_series_info("12345")
-        if show_data:
-            logger.info(f"Show: {show_data['name']}")
-            logger.info(f"Rating: {show_data.get('rating', 'N/A')}")
-        ```
-    """
-
-    def __init__(self, config: TVDBConfig, logger: logging.Logger):
-        """
-        Initialize TVDB API v4 client with configuration.
-
-        Args:
-            config (TVDBConfig): TVDB configuration with API key and access settings
-            logger (logging.Logger): Logger instance for TVDB operations
-        """
-        self.config = config
-        self.logger = logger
-        self.session = None
-        self.access_token = None
-        self.token_expires = None
-        self.access_mode = config.access_mode
-
-        # Determine actual access mode based on available credentials
-        if config.subscriber_pin and config.api_key:
-            self.access_mode = "subscriber"
-        elif config.api_key:
-            self.access_mode = "licensed"
-        else:
-            self.access_mode = "disabled"
-
-        self.logger.debug(f"TVDB client initialized in {self.access_mode} mode")
-
-    async def initialize(self, session: aiohttp.ClientSession) -> bool:
-        """
-        Initialize TVDB client with HTTP session and authenticate.
-
-        Args:
-            session (aiohttp.ClientSession): Shared HTTP session for requests
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        self.session = session
-
-        if self.access_mode == "disabled":
-            self.logger.info("TVDB client disabled - no API key provided")
-            return False
-
-        try:
-            success = await self._authenticate()
-            if success:
-                self.logger.info(f"TVDB client initialized successfully ({self.access_mode} mode)")
-            else:
-                self.logger.warning("TVDB authentication failed")
-            return success
-        except Exception as e:
-            self.logger.error(f"TVDB initialization failed: {e}")
-            return False
-
-    async def _authenticate(self) -> bool:
-        """
-        Authenticate with TVDB API and obtain access token.
-
-        Returns:
-            bool: True if authentication successful, False otherwise
-        """
-        try:
-            auth_data = {"apikey": self.config.api_key}
-
-            if self.access_mode == "subscriber" and self.config.subscriber_pin:
-                auth_data["pin"] = self.config.subscriber_pin
-
-            async with self.session.post(
-                    f"{self.config.base_url}login",
-                    json=auth_data,
-                    timeout=10
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    self.access_token = data.get("data", {}).get("token")
-
-                    if self.access_token:
-                        # Token typically expires in 24 hours
-                        self.token_expires = datetime.now(timezone.utc) + timedelta(hours=23)
-                        self.logger.debug("TVDB authentication successful")
-                        return True
-                    else:
-                        self.logger.error("TVDB authentication response missing token")
-                        return False
-                else:
-                    error_text = await response.text()
-                    self.logger.error(f"TVDB authentication failed: {response.status} - {error_text}")
-                    return False
-
-        except Exception as e:
-            self.logger.error(f"TVDB authentication error: {e}")
-            return False
-
-    async def _ensure_authenticated(self) -> bool:
-        """
-        Ensure we have a valid authentication token.
-
-        Returns:
-            bool: True if token is valid or refresh successful, False otherwise
-        """
-        if not self.access_token or not self.token_expires:
-            return await self._authenticate()
-
-        # Check if token is about to expire (refresh 1 hour early)
-        if datetime.now(timezone.utc) >= (self.token_expires - timedelta(hours=1)):
-            self.logger.debug("TVDB token expiring soon, refreshing...")
-            return await self._authenticate()
-
-        return True
-
-    async def get_series_info(self, tvdb_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get TV series information from TVDB.
-
-        Args:
-            tvdb_id (str): TVDB series ID
-
-        Returns:
-            Optional[Dict[str, Any]]: Series information if found, None otherwise
-        """
-        if not await self._ensure_authenticated():
-            return None
-
-        try:
-            headers = {"Authorization": f"Bearer {self.access_token}"}
-
-            async with self.session.get(
-                    f"{self.config.base_url}series/{tvdb_id}",
-                    headers=headers,
-                    timeout=10
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    series_data = data.get("data", {})
-
-                    self.logger.debug(f"Retrieved TVDB series info for {tvdb_id}")
-                    return series_data
-                else:
-                    self.logger.warning(f"TVDB series not found: {tvdb_id} (status: {response.status})")
-                    return None
-
-        except Exception as e:
-            self.logger.error(f"Error retrieving TVDB series {tvdb_id}: {e}")
-            return None
-
-
-class RatingService:
-    """
-    Comprehensive rating service that integrates multiple external APIs.
-
-    This service manages rating data from various sources including OMDb (which aggregates
+    This service manages metadata data from various sources including OMDb (which aggregates
     IMDb, Rotten Tomatoes, and Metacritic), TMDb, and TVDb. It provides a unified interface
-    for rating information while handling the complexity of multiple APIs, caching strategies,
+    for metadata information while handling the complexity of multiple APIs, caching strategies,
     and error recovery.
 
-    **Understanding External Rating APIs:**
+    **Understanding External Metadata APIs:**
 
     **OMDb (Open Movie Database):**
-    - Aggregates ratings from IMDb, Rotten Tomatoes, and Metacritic
+    - Aggregates metadatas from IMDb, Rotten Tomatoes, and Metacritic
     - Provides comprehensive movie and TV show information
     - Requires API key (free tier available)
-    - Single API call returns multiple rating sources
+    - Single API call returns multiple metadata sources
 
     **TMDb (The Movie Database):**
     - Community-driven movie and TV database
-    - Provides user ratings, vote counts, and metadata
+    - Provides user metadatas, vote counts, and metadata
     - Free API with generous rate limits
     - Excellent for movie information and posters
 
     **TVDb (The TV Database):**
     - Specialized TV show database with episode-level information
-    - Community ratings and comprehensive episode metadata
+    - Community metadatas and comprehensive episode metadata
     - Both free and paid tiers available
     - Best source for TV show information and artwork
 
     **Advanced Features:**
 
     **Intelligent Caching:**
-    Rating data doesn't change frequently, so aggressive caching reduces API usage:
+    Metadata data doesn't change frequently, so aggressive caching reduces API usage:
     - Database-backed cache with configurable expiration
     - Automatic cleanup of expired cache entries
     - Cache hit optimization for repeated requests
 
     **Multi-Source Aggregation:**
-    Combines ratings from multiple sources to provide comprehensive information:
-    - OMDb: IMDb ratings, Rotten Tomatoes percentages, Metacritic scores
-    - TMDb: Community ratings and vote counts
-    - TVDb: TV-specific ratings and episode information
+    Combines metadatas from multiple sources to provide comprehensive information:
+    - OMDb: IMDb metadatas, Rotten Tomatoes percentages, Metacritic scores
+    - TMDb: Community metadatas and vote counts
+    - TVDb: TV-specific metadatas and episode information
 
     **Graceful Error Handling:**
-    External APIs can fail, but the service continues operating:
+    External APIs can fail, but the service continues opemetadata:
     - Individual API failures don't break the entire service
     - Retry logic with exponential backoff for temporary failures
     - Fallback strategies when preferred sources are unavailable
@@ -279,21 +89,21 @@ class RatingService:
     - Batching optimization for multiple requests
 
     Attributes:
-        config (RatingServicesConfig): Configuration for all rating services
-        logger (logging.Logger): Logger instance for rating operations
+        config (MetadataServicesConfig): Configuration for all metadata services
+        logger (logging.Logger): Logger instance for metadata operations
         session (aiohttp.ClientSession): HTTP session for API requests
         db_manager: Database manager for cache storage
-        enabled (bool): Whether rating service is enabled globally
-        tvdb_api (TVDBAPIv4): TVDb API client for TV show information
-        omdb_api_key (str): OMDb API key for movie/TV ratings
-        tmdb_api_key (str): TMDb API key for community ratings
-        cache_duration_hours (int): How long to cache rating data
+        enabled (bool): Whether metadata service is enabled globally
+        tvdb_client (TVDBAPIv4): TVDb API client for TV show information
+        omdb_api_key (str): OMDb API key for movie/TV metadatas
+        tmdb_api_key (str): TMDb API key for community metadatas
+        cache_duration_hours (int): How long to cache metadata data
         last_request_times (Dict): Rate limiting state per service
 
     Example:
         ```python
-        # Initialize rating service
-        rating_config = RatingServicesConfig(
+        # Initialize metadata service
+        metadata_config = MetadataServicesConfig(
             enabled=True,
             cache_duration_hours=24,
             omdb=OMDbConfig(enabled=True, api_key="your_omdb_key"),
@@ -301,43 +111,43 @@ class RatingService:
             tvdb=TVDBConfig(enabled=True, api_key="your_tvdb_key")
         )
 
-        rating_service = RatingService(rating_config)
+        metadata_service = MetadataService(metadata_config)
 
         # Initialize with shared resources
         async with aiohttp.ClientSession() as session:
-            await rating_service.initialize(session, db_manager)
+            await metadata_service.initialize(session, db_manager)
 
-            # Get comprehensive ratings for a movie
+            # Get comprehensive metadatas for a movie
             movie = MediaItem(item_id="abc123", name="The Matrix", imdb_id="tt0133093")
-            ratings = await rating_service.get_ratings_for_item(movie)
+            metadatas = await metadata_service.get_metadatas_for_item(movie)
 
-            logger.info(f"IMDb: {ratings.get('imdb', {}).get('rating', 'N/A')}")
-            logger.info(f"Rotten Tomatoes: {ratings.get('rotten_tomatoes', {}).get('rating', 'N/A')}")
-            logger.info(f"TMDb: {ratings.get('tmdb', {}).get('rating', 'N/A')}")
+            logger.info(f"IMDb: {metadatas.get('imdb', {}).get('metadata', 'N/A')}")
+            logger.info(f"Rotten Tomatoes: {metadatas.get('rotten_tomatoes', {}).get('metadata', 'N/A')}")
+            logger.info(f"TMDb: {metadatas.get('tmdb', {}).get('metadata', 'N/A')}")
         ```
 
     Note:
-        This service is designed to enhance Discord notifications with rich rating
+        This service is designed to enhance Discord notifications with rich metadata
         information. It gracefully handles API failures and provides sensible
-        fallbacks to ensure notifications are always sent, even if ratings are unavailable.
+        fallbacks to ensure notifications are always sent, even if metadatas are unavailable.
     """
 
     def __init__(self, config: MetadataServicesConfig):
         """
-        Initialize rating service with configuration and API client setup.
+        Initialize metadata service with configuration and API client setup.
 
-        This constructor sets up the rating service with configuration for all
-        external APIs and initializes the TVDb client. It doesn't perform network
-        operations - those happen in the initialize() method.
+        This constructor sets up the metadata service with configuration for all
+        external APIs and prepares for TVDB client initialization. It doesn't perform
+        network operations - those happen in the initialize() method.
 
         **Service Configuration:**
-        The rating service can enable/disable individual APIs based on configuration:
-        - Global enable/disable switch for entire rating system
+        The metadata service can enable/disable individual APIs based on configuration:
+        - Global enable/disable switch for entire metadata system
         - Per-API enable/disable switches for granular control
         - API key validation to prevent misconfiguration
 
         **TVDB Integration:**
-        The TVDb client is initialized during construction but requires async
+        The TVDB client is prepared during construction but requires async
         initialization later. This separation allows for clean error handling
         and resource management.
 
@@ -355,12 +165,12 @@ class RatingService:
                 tvdb=TVDBConfig(enabled=True, api_key="tvdb_key")
             )
 
-            rating_service = RatingService(config)
-            logger.info(f"Rating service enabled: {rating_service.enabled}")
+            metadata_service = MetadataService(config)
+            logger.info(f"Metadata service enabled: {metadata_service.enabled}")
             ```
         """
         self.config = config
-        self.logger = get_logger("jellynouncer.ratings")
+        self.logger = get_logger("jellynouncer.metadata")
         self.session = None  # Set during initialize()
         self.db_manager = None  # Set during initialize()
 
@@ -379,32 +189,32 @@ class RatingService:
         self.omdb_api_key = self.omdb_config.api_key
         self.tmdb_api_key = self.tmdb_config.api_key
 
-        # Initialize TVDB API v4 client if enabled
-        self.tvdb_api = None
-        if self.tvdb_config.enabled:
-            self.tvdb_api = TVDBAPIv4(self.tvdb_config, self.logger)
+        # Prepare TVDB API v4 client initialization if enabled
+        self.tvdb_client = None
+        self.tvdb_config_ready = self.tvdb_config.enabled and self.tvdb_config.api_key
 
         # Rate limiting state for external APIs
         self.last_request_times = {}
         self.min_request_interval = 1.0  # Minimum seconds between API requests
 
         # Log initialization status and available services
-        self.logger.info(f"Rating service initialized - Enabled: {self.enabled}")
+        self.logger.info(f"Metadata service initialized - Enabled: {self.enabled}")
         if self.enabled:
             available_services = []
             if self.omdb_config.enabled and self.omdb_api_key:
                 available_services.append("OMDb")
             if self.tmdb_config.enabled and self.tmdb_api_key:
                 available_services.append("TMDb")
-            if self.tvdb_config.enabled and self.tvdb_api:
-                available_services.append(f"TVDb v4 ({self.tvdb_api.access_mode})")
+            if self.tvdb_config_ready:
+                access_mode = "subscriber" if self.tvdb_config.subscriber_pin else "standard"
+                available_services.append(f"TVDb v4 ({access_mode})")
 
             service_list = ', '.join(available_services) if available_services else 'None (no API keys configured)'
-            self.logger.info(f"Available rating services: {service_list}")
+            self.logger.info(f"Available metadata services: {service_list}")
 
     async def initialize(self, session: aiohttp.ClientSession, db_manager) -> None:
         """
-        Initialize rating service with shared resources and perform setup tasks.
+        Initialize metadata service with shared resources and perform setup tasks.
 
         This async method completes the initialization process by setting up
         shared resources and performing any necessary authentication or setup
@@ -418,74 +228,78 @@ class RatingService:
 
         Args:
             session (aiohttp.ClientSession): Shared HTTP session for all API requests
-            db_manager: Database manager for caching rating data
+            db_manager: Database manager for caching metadata
 
         Example:
             ```python
             async with aiohttp.ClientSession() as session:
-                await rating_service.initialize(session, db_manager)
+                await metadata_service.initialize(session, db_manager)
 
-                # Now ready to fetch ratings
-                ratings = await rating_service.get_ratings_for_item(media_item)
+                # Now ready to fetch metadata and metadatas
+                metadata = await metadata_service.get_metadatas_for_item(media_item)
             ```
         """
         self.session = session
         self.db_manager = db_manager
 
         if not self.enabled:
-            self.logger.info("Rating services disabled in configuration")
+            self.logger.info("Metadata services disabled in configuration")
             return
 
         # Initialize TVDB client if configured
-        if self.tvdb_api:
+        if self.tvdb_config_ready:
             try:
-                tvdb_success = await self.tvdb_api.initialize(session)
-                if tvdb_success:
-                    self.logger.info("TVDB client initialized successfully")
-                else:
-                    self.logger.warning("TVDB client initialization failed")
+                self.tvdb_client = TVDB(
+                    api_key=self.tvdb_config.api_key,
+                    pin=self.tvdb_config.subscriber_pin,
+                    enable_caching=True,
+                    cache_ttl=self.config.cache_duration_hours * 3600  # Convert to seconds
+                )
+                await self.tvdb_client.__aenter__()
+                self.logger.info("TVDB client initialized successfully")
             except Exception as e:
                 self.logger.error(f"TVDB initialization error: {e}")
+                self.tvdb_client = None
 
-        self.logger.info("Rating service initialization completed")
+        self.logger.info("Metadata service initialization completed")
 
-    async def get_ratings_for_item(self, item: MediaItem) -> Dict[str, Dict[str, Any]]:
+    async def get_metadatas_for_item(self, item: MediaItem) -> Dict[str, Dict[str, Any]]:
         """
-        Get comprehensive rating information for a media item from all available sources.
+        Get comprehensive metadata information for a media item from all available sources.
 
-        This is the main entry point for rating retrieval. It coordinates calls
+        This is the main entry point for metadata retrieval. It coordinates calls
         to multiple external APIs and combines the results into a unified format.
         The method handles errors gracefully - individual API failures don't
         prevent other sources from being queried.
 
-        **Rating Sources:**
-        - OMDb: IMDb ratings, Rotten Tomatoes scores, Metacritic scores
-        - TMDb: Community ratings and vote counts
-        - TVDb: TV show specific ratings and metadata
+        **Metadata Sources:**
+        - OMDb: IMDb metadatas, Rotten Tomatoes scores, Metacritic scores
+        - TMDb: Community metadatas and vote counts
+        - TVDb: TV show specific metadatas and metadata
 
         **Caching Strategy:**
-        Ratings are cached aggressively since they don't change frequently.
+        Metadatas are cached aggressively since they don't change frequently.
         Cache duration is configurable and helps reduce API usage and improve
         response times for repeated requests.
 
         Args:
-            item (MediaItem): Media item to get ratings for
+            item (MediaItem): Media item to get metadatas for
 
         Returns:
-            Dict[str, Dict[str, Any]]: Nested dictionary with ratings from each source.
-            Format: {source_name: {rating_type: value, ...}}
+            Dict[str, Dict[str, Any]]: Nested dictionary with metadatas from each source.
+            Format: {source_name: {metadata_type: value, ...}}
 
         Example:
             ```python
-            ratings = await rating_service.get_ratings_for_item(media_item)
+            metadatas = await metadata_service.get_metadatas_for_item(media_item)
 
-            # Access different rating sources
-            imdb_rating = ratings.get('imdb', {}).get('rating')
-            rt_score = ratings.get('rotten_tomatoes', {}).get('rating')
-            tmdb_rating = ratings.get('tmdb', {}).get('rating')
+            # Access different metadata sources
+            imdb_metadata = metadatas.get('imdb', {}).get('metadata')
+            rt_score = metadatas.get('rotten_tomatoes', {}).get('metadata')
+            tmdb_metadata = metadatas.get('tmdb', {}).get('metadata')
 
-            if imdb_rating:
-                logger.info(f"IMDb: {imdb_rating}/10")
+            if imdb_metadata:
+                logger.info(f"IMDb: {imdb_metadata}/10")
             if rt_score:
                 logger.info(f"Rotten Tomatoes: {rt_score}%")
             ```
@@ -497,63 +311,131 @@ class RatingService:
         if not self.enabled:
             return {}
 
-        self.logger.debug(f"Getting ratings for {item.name} ({item.item_type})")
+        self.logger.debug(f"Getting metadatas for {item.name} ({item.item_type})")
 
         # Check cache first to avoid unnecessary API requests
-        cached_ratings = await self._get_cached_ratings(item)
-        if cached_ratings:
-            self.logger.debug(f"Using cached ratings for {item.name}")
-            return cached_ratings
+        cached_metadatas = await self._get_cached_metadatas(item)
+        if cached_metadatas:
+            self.logger.debug(f"Using cached metadatas for {item.name}")
+            return cached_metadatas
 
-        # Collect ratings from all available sources concurrently
-        rating_tasks = []
+        # Collect metadatas from all available sources concurrently
+        metadata_tasks = []
 
         # OMDb API (IMDb, Rotten Tomatoes, Metacritic)
         if (self.omdb_config.enabled and self.omdb_api_key and
                 (item.imdb_id or item.tmdb_id)):
-            rating_tasks.append(self._get_omdb_ratings(item))
+            metadata_tasks.append(self._get_omdb_metadatas(item))
 
-        # TMDb API (Community ratings)
+        # TMDb API (Community metadatas)
         if (self.tmdb_config.enabled and self.tmdb_api_key and
                 (item.tmdb_id or item.imdb_id)):
-            rating_tasks.append(self._get_tmdb_ratings(item))
+            metadata_tasks.append(self._get_tmdb_metadatas(item))
 
-        # TVDb API (TV show ratings)
-        if (self.tvdb_api and item.item_type in ['Episode', 'Season', 'Series'] and
+        # TVDb API (TV show metadatas)
+        if (self.tvdb_client and item.item_type in ['Episode', 'Season', 'Series'] and
                 item.tvdb_id):
-            rating_tasks.append(self._get_tvdb_ratings(item))
+            metadata_tasks.append(self._get_tvdb_metadatas(item))
 
-        # Execute all rating requests concurrently for better performance
-        if rating_tasks:
+        # Execute all metadata requests concurrently for better performance
+        if metadata_tasks:
             try:
-                rating_results = await asyncio.gather(*rating_tasks, return_exceptions=True)
+                metadata_results = await asyncio.gather(*metadata_tasks, return_exceptions=True)
 
                 # Combine results from all sources
-                combined_ratings = {}
-                for result in rating_results:
+                combined_metadatas = {}
+                for result in metadata_results:
                     if isinstance(result, dict):
-                        combined_ratings.update(result)
+                        combined_metadatas.update(result)
                     elif isinstance(result, Exception):
-                        self.logger.warning(f"Rating API error: {result}")
+                        self.logger.warning(f"Metadata API error: {result}")
 
                 # Cache the combined results for future requests
-                if combined_ratings:
-                    await self._cache_ratings(item, combined_ratings)
+                if combined_metadatas:
+                    await self._cache_metadatas(item, combined_metadatas)
 
-                self.logger.debug(f"Retrieved ratings from {len(combined_ratings)} sources for {item.name}")
-                return combined_ratings
+                self.logger.debug(f"Retrieved metadatas from {len(combined_metadatas)} sources for {item.name}")
+                return combined_metadatas
 
             except Exception as e:
-                self.logger.error(f"Error getting ratings for {item.name}: {e}")
+                self.logger.error(f"Error getting metadatas for {item.name}: {e}")
 
         return {}
 
-    async def _get_cached_ratings(self, item: MediaItem) -> Optional[Dict[str, Dict[str, Any]]]:
+    async def cleanup(self) -> None:
         """
-        Retrieve cached rating information for a media item.
+        Clean up resources used by the metadata service.
 
-        This private method checks the database cache for existing rating information
-        that hasn't expired. It helps reduce API usage by reusing recent rating data.
+        This method should be called when shutting down the service to ensure
+        all connections are properly closed and resources are released.
+        """
+        if self.tvdb_client:
+            try:
+                await self.tvdb_client.__aexit__(None, None, None)
+                self.logger.debug("TVDB client cleaned up")
+            except Exception as e:
+                self.logger.error(f"Error cleaning up TVDB client: {e}")
+
+    async def enhance_item_with_tvdb_metadata(self, media_item: MediaItem) -> bool:
+        """
+        Enhance a media item with TVDB metadata if applicable.
+
+        This method adds additional metadata from TVDB to TV-related media items
+        (series, seasons, episodes) when TVDB IDs are available. It enriches the
+        media item with information like ratings, artwork, and additional details
+        not available from Jellyfin.
+
+        **Enhancement Process:**
+        - Checks if item is TV content (series, season, or episode)
+        - Verifies TVDB ID is available
+        - Fetches and applies TVDB metadata
+        - Handles errors gracefully without affecting core functionality
+
+        Args:
+            media_item (MediaItem): The media item to enhance with TVDB metadata
+
+        Returns:
+            bool: True if enhancement was successful, False otherwise
+
+        Example:
+            ```python
+            if await metadata_service.enhance_item_with_tvdb_metadata(media_item):
+                logger.info(f"Enhanced {media_item.name} with TVDB metadata")
+            ```
+        """
+        # Check if TVDB client is available and item is eligible
+        if not self.tvdb_client:
+            return False
+
+        if not (hasattr(media_item, 'item_type') and
+                media_item.item_type.lower() in ['series', 'season', 'episode']):
+            return False
+
+        if not (hasattr(media_item, 'tvdb_id') and media_item.tvdb_id):
+            return False
+
+        try:
+            self.logger.debug(f"Adding TVDB metadata to {media_item.item_type}: {media_item.name}")
+
+            # Import the enhancement function from tvdb module
+            from tvdb import add_tvdb_metadata_to_item
+
+            # Apply TVDB metadata to the item
+            await add_tvdb_metadata_to_item(media_item, self.tvdb_client)
+
+            self.logger.debug(f"Successfully enhanced {media_item.name} with TVDB metadata")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to enhance {media_item.name} with TVDB metadata: {e}")
+            return False
+
+    async def _get_cached_metadatas(self, item: MediaItem) -> Optional[Dict[str, Dict[str, Any]]]:
+        """
+        Retrieve cached metadata information for a media item.
+
+        This private method checks the database cache for existing metadata information
+        that hasn't expired. It helps reduce API usage by reusing recent metadata data.
 
         **Cache Key Generation:**
         Creates a unique cache key based on the item's provider IDs to ensure
@@ -563,7 +445,7 @@ class RatingService:
             item (MediaItem): Media item to check cache for
 
         Returns:
-            Optional[Dict[str, Dict[str, Any]]]: Cached ratings if found and valid, None otherwise
+            Optional[Dict[str, Dict[str, Any]]]: Cached metadatas if found and valid, None otherwise
         """
         if not self.db_manager:
             return None
@@ -584,29 +466,29 @@ class RatingService:
 
             cache_key = "_".join(cache_key_parts)
 
-            # Check database for cached ratings (implementation would depend on db_manager structure)
+            # Check database for cached metadatas (implementation would depend on db_manager structure)
             # This is a placeholder for the actual cache retrieval logic
-            # In a real implementation, you'd query the database for cached rating data
+            # In a real implementation, you'd query the database for cached metadata data
 
             self.logger.debug(f"Checking cache for key: {cache_key}")
             return None  # Placeholder - implement actual cache retrieval
 
         except Exception as e:
-            self.logger.warning(f"Error checking rating cache: {e}")
+            self.logger.warning(f"Error checking metadata cache: {e}")
             return None
 
-    async def _cache_ratings(self, item: MediaItem, ratings: Dict[str, Dict[str, Any]]) -> None:
+    async def _cache_metadatas(self, item: MediaItem, metadatas: Dict[str, Dict[str, Any]]) -> None:
         """
-        Cache rating information for future use.
+        Cache metadata information for future use.
 
-        This private method stores rating data in the database cache with an
+        This private method stores metadata data in the database cache with an
         expiration timestamp based on the configured cache duration.
 
         Args:
-            item (MediaItem): Media item the ratings belong to
-            ratings (Dict[str, Dict[str, Any]]): Ratings to cache
+            item (MediaItem): Media item the metadatas belong to
+            metadatas (Dict[str, Dict[str, Any]]): Metadatas to cache
         """
-        if not self.db_manager or not ratings:
+        if not self.db_manager or not metadatas:
             return
 
         try:
@@ -629,20 +511,20 @@ class RatingService:
 
             # Store in cache (implementation would depend on db_manager structure)
             # This is a placeholder for the actual cache storage logic
-            self.logger.debug(f"Caching ratings for key: {cache_key} (expires: {expiration})")
+            self.logger.debug(f"Caching metadatas for key: {cache_key} (expires: {expiration})")
 
         except Exception as e:
-            self.logger.warning(f"Error caching ratings: {e}")
+            self.logger.warning(f"Error caching metadatas: {e}")
 
-    async def _get_omdb_ratings(self, item: MediaItem) -> Dict[str, Dict[str, Any]]:
+    async def _get_omdb_metadatas(self, item: MediaItem) -> Dict[str, Dict[str, Any]]:
         """
-        Get ratings from OMDb API (IMDb, Rotten Tomatoes, Metacritic).
+        Get metadatas from OMDb API (IMDb, Rotten Tomatoes, Metacritic).
 
         Args:
-            item (MediaItem): Media item to get ratings for
+            item (MediaItem): Media item to get metadatas for
 
         Returns:
-            Dict[str, Dict[str, Any]]: OMDb ratings data
+            Dict[str, Dict[str, Any]]: OMDb metadatas data
         """
         if not self.omdb_api_key:
             return {}
@@ -669,34 +551,34 @@ class RatingService:
                     data = await response.json()
 
                     if data.get('Response') == 'True':
-                        ratings = {}
+                        metadatas = {}
 
-                        # Extract IMDb rating
-                        if data.get('imdbRating') and data['imdbRating'] != 'N/A':
-                            ratings['imdb'] = {
-                                'rating': data['imdbRating'],
+                        # Extract IMDb metadata
+                        if data.get('imdbMetadata') and data['imdbMetadata'] != 'N/A':
+                            metadatas['imdb'] = {
+                                'metadata': data['imdbMetadata'],
                                 'votes': data.get('imdbVotes', ''),
                                 'source': 'OMDb'
                             }
 
-                        # Extract other ratings from Ratings array
-                        for rating in data.get('Ratings', []):
-                            source = rating.get('Source', '').lower()
-                            value = rating.get('Value', '')
+                        # Extract other metadatas from Metadatas array
+                        for metadata in data.get('Metadatas', []):
+                            source = metadata.get('Source', '').lower()
+                            value = metadata.get('Value', '')
 
                             if 'rotten tomatoes' in source:
-                                ratings['rotten_tomatoes'] = {
-                                    'rating': value.replace('%', ''),
+                                metadatas['rotten_tomatoes'] = {
+                                    'metadata': value.replace('%', ''),
                                     'source': 'OMDb'
                                 }
                             elif 'metacritic' in source:
-                                ratings['metacritic'] = {
-                                    'rating': value.split('/')[0],
+                                metadatas['metacritic'] = {
+                                    'metadata': value.split('/')[0],
                                     'source': 'OMDb'
                                 }
 
-                        self.logger.debug(f"Retrieved {len(ratings)} OMDb ratings for {item.name}")
-                        return ratings
+                        self.logger.debug(f"Retrieved {len(metadatas)} OMDb metadatas for {item.name}")
+                        return metadatas
                     else:
                         self.logger.debug(f"OMDb: Item not found: {item.name}")
                         return {}
@@ -708,15 +590,15 @@ class RatingService:
             self.logger.error(f"OMDb API request failed for {item.name}: {e}")
             return {}
 
-    async def _get_tmdb_ratings(self, item: MediaItem) -> Dict[str, Dict[str, Any]]:
+    async def _get_tmdb_metadatas(self, item: MediaItem) -> Dict[str, Dict[str, Any]]:
         """
-        Get ratings from TMDb API.
+        Get metadatas from TMDb API.
 
         Args:
-            item (MediaItem): Media item to get ratings for
+            item (MediaItem): Media item to get metadatas for
 
         Returns:
-            Dict[str, Dict[str, Any]]: TMDb ratings data
+            Dict[str, Dict[str, Any]]: TMDb metadatas data
         """
         if not self.tmdb_api_key:
             return {}
@@ -755,20 +637,20 @@ class RatingService:
                         else:
                             return {}
 
-                    rating = data.get('vote_average')
+                    metadata = data.get('vote_average')
                     vote_count = data.get('vote_count')
 
-                    if rating:
-                        tmdb_ratings = {
+                    if metadata:
+                        tmdb_metadatas = {
                             'tmdb': {
-                                'rating': str(rating),
+                                'metadata': str(metadata),
                                 'vote_count': str(vote_count) if vote_count else '0',
                                 'source': 'TMDb'
                             }
                         }
 
-                        self.logger.debug(f"Retrieved TMDb rating for {item.name}: {rating}")
-                        return tmdb_ratings
+                        self.logger.debug(f"Retrieved TMDb metadata for {item.name}: {metadata}")
+                        return tmdb_metadatas
 
                     return {}
                 else:
@@ -779,33 +661,33 @@ class RatingService:
             self.logger.error(f"TMDb API request failed for {item.name}: {e}")
             return {}
 
-    async def _get_tvdb_ratings(self, item: MediaItem) -> Dict[str, Dict[str, Any]]:
+    async def _get_tvdb_metadatas(self, item: MediaItem) -> Dict[str, Dict[str, Any]]:
         """
-        Get ratings from TVDB API.
+        Get metadatas from TVDB API.
 
         Args:
-            item (MediaItem): Media item to get ratings for
+            item (MediaItem): Media item to get metadatas for
 
         Returns:
-            Dict[str, Dict[str, Any]]: TVDB ratings data
+            Dict[str, Dict[str, Any]]: TVDB metadatas data
         """
-        if not self.tvdb_api or not item.tvdb_id:
+        if not self.tvdb_client or not item.tvdb_id:
             return {}
 
         try:
-            series_info = await self.tvdb_api.get_series_info(item.tvdb_id)
+            series_info = await self.tvdb_client.get_series_info(item.tvdb_id)
             if series_info:
-                rating = series_info.get('score')
-                if rating:
-                    tvdb_ratings = {
+                metadata = series_info.get('score')
+                if metadata:
+                    tvdb_metadatas = {
                         'tvdb': {
-                            'rating': str(rating),
+                            'metadata': str(metadata),
                             'source': 'TVDB'
                         }
                     }
 
-                    self.logger.debug(f"Retrieved TVDB rating for {item.name}: {rating}")
-                    return tvdb_ratings
+                    self.logger.debug(f"Retrieved TVDB metadata for {item.name}: {metadata}")
+                    return tvdb_metadatas
 
             return {}
 

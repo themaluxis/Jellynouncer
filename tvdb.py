@@ -278,7 +278,7 @@ class TVDB:
     async def __aenter__(self) -> TVDB:
         """Async context manager entry."""
         await self._ensure_session()
-        await self.authenticate()
+        # Authentication will be handled lazily when needed by _make_request
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -510,6 +510,12 @@ class TVDB:
         """
         Authenticate with TVDB API and obtain bearer token.
 
+        This method handles authentication with the TVDB API v4. It supports both
+        standard API key authentication and subscriber authentication with PIN.
+
+        The authentication token is valid for approximately 30 days, after which
+        it will be automatically renewed.
+
         Raises:
             TVDBAuthenticationError: If authentication fails
         """
@@ -518,6 +524,7 @@ class TVDB:
             auth_data["pin"] = self.pin
 
         try:
+            # Note: Authentication endpoint doesn't require auth header
             response_data = await self._make_request(
                 "POST",
                 "/login",
@@ -527,8 +534,11 @@ class TVDB:
 
             if "data" in response_data and "token" in response_data["data"]:
                 self.bearer_token = response_data["data"]["token"]
+                # Token expires in 30 days, but we'll refresh after 28 for safety
                 self.token_expires_at = datetime.now() + timedelta(days=28)
-                self.logger.info("Successfully authenticated with TVDB API")
+
+                access_mode = "subscriber" if self.pin else "standard"
+                self.logger.info(f"Successfully authenticated with TVDB API ({access_mode} mode)")
             else:
                 raise TVDBAuthenticationError("No token received in authentication response")
 
