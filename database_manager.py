@@ -246,6 +246,11 @@ class DatabaseManager:
                                     logo_image_tag            TEXT,                      -- Logo image tag identifier
                                     thumb_image_tag           TEXT,                      -- Thumbnail image tag identifier
                                     banner_image_tag          TEXT,                      -- Banner image tag identifier
+                                    
+                                    -- Parent/series image tags for episodes that need fallback images
+                                    series_primary_image_tag  TEXT,                      -- Series poster for episodes without own image
+                                    parent_backdrop_image_tag TEXT,                      -- Parent item backdrop (for episodes/seasons)
+                                    parent_logo_image_tag     TEXT,                      -- Parent logo image tag
 
                                     -- =============================================================================
                                     -- VIDEO TECHNICAL SPECIFICATIONS
