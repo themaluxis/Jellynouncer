@@ -253,6 +253,23 @@ class MetadataService:
                 self.logger.debug("=" * 60)
                 self.logger.debug(f"📊 OMDb METADATA RECEIVED for: {item.name}")
                 self.logger.debug("=" * 60)
+
+                # Log raw data structure first
+                self.logger.debug("📦 RAW OMDb DATA STRUCTURE:")
+                if hasattr(omdb_data, '__dict__'):
+                    # If it's an object with __dict__
+                    import json
+                    try:
+                        # Try to serialize the object's dict representation
+                        raw_dict = omdb_data.__dict__ if hasattr(omdb_data, '__dict__') else omdb_data
+                        self.logger.debug(json.dumps(raw_dict, indent=2, default=str))
+                    except Exception as e:
+                        # Fallback to repr if JSON serialization fails
+                        self.logger.debug(f"  {repr(omdb_data)}")
+                else:
+                    # If it's already a dict or other type
+                    self.logger.debug(f"  {omdb_data}")
+
                 self.logger.debug(f"  - IMDb ID: {getattr(omdb_data, 'imdb_id', 'N/A')}")
                 self.logger.debug(f"  - Title: {getattr(omdb_data, 'title', 'N/A')}")
                 self.logger.debug(f"  - Year: {getattr(omdb_data, 'year', 'N/A')}")
@@ -322,6 +339,23 @@ class MetadataService:
                 self.logger.debug("=" * 60)
                 self.logger.debug(f"📺 TVDb METADATA RECEIVED for: {item.name}")
                 self.logger.debug("=" * 60)
+
+                # Log raw data structure first
+                self.logger.debug("📦 RAW TVDb DATA STRUCTURE:")
+                if hasattr(tvdb_data, '__dict__'):
+                    # If it's an object with __dict__
+                    import json
+                    try:
+                        # Try to serialize the object's dict representation
+                        raw_dict = tvdb_data.__dict__ if hasattr(tvdb_data, '__dict__') else tvdb_data
+                        self.logger.debug(json.dumps(raw_dict, indent=2, default=str))
+                    except Exception as e:
+                        # Fallback to repr if JSON serialization fails
+                        self.logger.debug(f"  {repr(tvdb_data)}")
+                else:
+                    # If it's already a dict or other type
+                    self.logger.debug(f"  {tvdb_data}")
+
                 self.logger.debug(f"  - TVDb ID: {getattr(tvdb_data, 'tvdb_id', 'N/A')}")
                 self.logger.debug(f"  - Name: {getattr(tvdb_data, 'name', 'N/A')}")
                 self.logger.debug(f"  - Status: {getattr(tvdb_data, 'status', 'N/A')}")
@@ -367,6 +401,35 @@ class MetadataService:
                 self.logger.debug("=" * 60)
                 self.logger.debug(f"🎬 TMDb METADATA RECEIVED for: {item.name}")
                 self.logger.debug("=" * 60)
+
+                # Log raw data structure first
+                self.logger.debug("📦 RAW TMDb DATA STRUCTURE:")
+                if hasattr(tmdb_data, '__dict__'):
+                    # If it's an object with __dict__
+                    import json
+                    try:
+                        # Try to serialize the object's dict representation
+                        raw_dict = tmdb_data.__dict__ if hasattr(tmdb_data, '__dict__') else tmdb_data
+                        self.logger.debug(json.dumps(raw_dict, indent=2, default=str))
+                    except Exception as e:
+                        # Fallback to repr if JSON serialization fails
+                        self.logger.debug(f"  {repr(tmdb_data)}")
+                else:
+                    # If it's already a dict or other type
+                    self.logger.debug(f"  {tmdb_data}")
+
+                # Log all available attributes
+                self.logger.debug("\n🔍 ALL AVAILABLE ATTRIBUTES:")
+                if hasattr(tmdb_data, '__dict__'):
+                    for attr_name in dir(tmdb_data):
+                        if not attr_name.startswith('_'):
+                            try:
+                                attr_value = getattr(tmdb_data, attr_name)
+                                if not callable(attr_value):
+                                    self.logger.debug(f"  - {attr_name}: {attr_value}")
+                            except:
+                                pass
+
                 self.logger.debug(f"  - TMDb ID: {getattr(tmdb_data, 'tmdb_id', 'N/A')}")
                 self.logger.debug(f"  - Media Type: {getattr(tmdb_data, 'media_type', 'N/A')}")
                 self.logger.debug(f"  - Title: {getattr(tmdb_data, 'title', 'N/A')}")
