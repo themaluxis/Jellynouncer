@@ -468,6 +468,20 @@ class MetadataService:
         # Set the ratings attribute on the item
         setattr(item, 'ratings', ratings)
 
+        # Debug logging for ratings summary
+        if ratings:
+            self.logger.debug("=" * 60)
+            self.logger.debug(f"⭐ RATINGS SUMMARY for: {item.name}")
+            self.logger.debug("=" * 60)
+            for key, value in ratings.items():
+                if isinstance(value, dict):
+                    self.logger.debug(f"  - {key}: {value.get('value', 'N/A')} (count: {value.get('count', 'N/A')})")
+                else:
+                    self.logger.debug(f"  - {key}: {value}")
+            self.logger.debug("=" * 60)
+        else:
+            self.logger.debug(f"No ratings data available for: {item.name}")
+
     async def cleanup(self) -> None:
         """
         Clean up resources when shutting down the metadata service.
