@@ -414,103 +414,111 @@ class WebhookService:
         try:
             self.logger.debug(f"Processing webhook for {payload.Name} ({payload.ItemType})")
 
-            # Extract media item information from webhook payload
-            try:
-                # Get detailed item information from Jellyfin
-                item_data = await self.jellyfin.get_item(payload.ItemId)
-                if not item_data:
-                    self.logger.warning(f"Could not fetch item data for {payload.ItemId}")
-                    return {
-                        "status": "error",
-                        "action": "fetch_failed",
-                        "item_id": payload.ItemId,
-                        "item_name": payload.Name,
-                        "message": "Could not fetch item data from Jellyfin"
-                    }
-
-                # Convert to our internal MediaItem format
-                media_item = await self.jellyfin.convert_to_media_item(item_data)
-                self.logger.debug(f"Converted to MediaItem: {media_item.name}")
-
-            except Exception as e:
-                self.logger.error(f"Error extracting media item from webhook: {e}")
+            # Get detailed item information from Jellyfin
+            item_data = await self.jellyfin.get_item(payload.ItemId)
+            if not item_data:
+                self.logger.warning(f"Could not fetch item data for {payload.ItemId}")
                 return {
                     "status": "error",
-                    "action": "extraction_failed",
+                    "action": "fetch_failed",
                     "item_id": payload.ItemId,
                     "item_name": payload.Name,
-                    "message": str(e)
+                    "message": "Could not fetch item data from Jellyfin"
                 }
 
-            # Add TVDB metadata enhancement for TV content through metadata service
-            if self.metadata_service and self.metadata_service.enabled:
-                try:
-                    await self.metadata_service.enhance_item_with_tvdb_metadata(media_item)
-                except Exception as e:
-                    self.logger.error(f"Failed to enhance item with TVDB metadata: {e}")
+            # Convert to our internal MediaItem format (for database storage)
+            media_item = await self.jellyfin.convert_to_media_item(item_data)
+            self.logger.debug(f"Converted to MediaItem: {media_item.name}")
 
-            # Check if this is a new item or an update to existing item
+            # Check if this is a new item or an update
             existing_item = await self.db.get_item(media_item.item_id)
 
             if existing_item:
-                # This is an update - check for meaningful changes
-                self.logger.debug(f"Found existing item, checking for changes...")
-
-                changes = self.change_detector.detect_changes(existing_item, media_item)
+                # Check for changes
+                changes = await self.change_detector.detect_changes(existing_item, media_item)
 
                 if changes:
-                    # Meaningful changes detected - update and notify
-                    change_summary = self.change_detector.get_change_summary(changes)
-                    self.logger.info(f"Changes detected for {media_item.name}: {change_summary}")
-
-                    # Update database with new information
+                    # This is an upgrade - update database with basic fields
+                    self.logger.info(f"Quality upgrade detected for: {media_item.name}")
                     await self.db.save_item(media_item)
 
-                    # Send upgrade notification
-                    await self.discord.send_notification(media_item, "upgrade_item", changes)
+                    # Enrich with ALL type-specific fields for notification
+                    enriched_item = await self.jellyfin.enrich_media_item_for_notification(
+                        media_item,
+                        item_data,
+                        retry_on_failure=True
+                    )
 
-                    processing_time = time.time() - start_time
+                    # Log enrichment status
+                    if hasattr(enriched_item, 'is_enriched') and enriched_item.is_enriched:
+                        self.logger.info(f"Item enriched with type-specific fields for {enriched_item.item_type}")
+                    else:
+                        self.logger.warning(f"Using basic item data for notification (enrichment failed)")
+
+                    # Send upgrade notification with enriched item
+                    await self.discord.send_notification(enriched_item, "upgraded_item", changes)
+
                     return {
                         "status": "success",
-                        "action": "item_updated",
+                        "action": "upgraded_item",
                         "item_id": media_item.item_id,
                         "item_name": media_item.name,
-                        "changes_detected": len(changes),
-                        "change_summary": change_summary,
-                        "processing_time": round(processing_time, 3)
+                        "item_type": media_item.item_type,
+                        "changes": len(changes),
+                        "enriched": getattr(enriched_item, 'is_enriched', False),
+                        "processing_time": round(time.time() - start_time, 3)
                     }
                 else:
-                    # No meaningful changes - just update timestamp
-                    self.logger.debug(f"No meaningful changes detected for {media_item.name}")
-                    await self.db.save_item(media_item)
+                    # No significant changes - metadata only update
+                    self.logger.debug(f"No significant changes for: {media_item.name}")
+                    await self.db.save_item(media_item)  # Update metadata
 
-                    processing_time = time.time() - start_time
                     return {
                         "status": "success",
                         "action": "metadata_updated",
                         "item_id": media_item.item_id,
                         "item_name": media_item.name,
                         "message": "Metadata updated, no notification sent",
-                        "processing_time": round(processing_time, 3)
+                        "processing_time": round(time.time() - start_time, 3)
                     }
             else:
-                # This is a new item - save and notify
+                # This is a new item
                 self.logger.info(f"New item detected: {media_item.name} ({media_item.item_type})")
 
-                # Save to database
+                # Save to database (basic fields only)
                 await self.db.save_item(media_item)
 
-                # Send new item notification
-                await self.discord.send_notification(media_item, "new_item")
+                # Enrich with ALL type-specific fields for notification
+                enriched_item = await self.jellyfin.enrich_media_item_for_notification(
+                    media_item,
+                    item_data,
+                    retry_on_failure=True
+                )
 
-                processing_time = time.time() - start_time
+                # Log enrichment status
+                if hasattr(enriched_item, 'is_enriched') and enriched_item.is_enriched:
+                    self.logger.info(f"New {enriched_item.item_type} enriched with all available fields")
+                else:
+                    self.logger.warning(f"Using basic item data for notification (enrichment failed)")
+
+                # Add TVDB metadata enhancement if applicable
+                if self.metadata_service and self.metadata_service.enabled:
+                    try:
+                        await self.metadata_service.enhance_item_with_tvdb_metadata(enriched_item)
+                    except Exception as e:
+                        self.logger.error(f"Failed to enhance with TVDB metadata: {e}")
+
+                # Send new item notification with enriched item
+                await self.discord.send_notification(enriched_item, "new_item")
+
                 return {
                     "status": "success",
                     "action": "new_item",
                     "item_id": media_item.item_id,
                     "item_name": media_item.name,
                     "item_type": media_item.item_type,
-                    "processing_time": round(processing_time, 3)
+                    "enriched": getattr(enriched_item, 'is_enriched', False),
+                    "processing_time": round(time.time() - start_time, 3)
                 }
 
         except Exception as e:

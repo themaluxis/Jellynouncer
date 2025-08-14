@@ -1058,6 +1058,371 @@ class JellyfinAPI:
                 item_type=item_data.get('Type', 'Unknown'),
             )
 
+    # jellyfin_api.py - Optimized enrichment method
+
+    async def enrich_media_item_for_notification(
+            self,
+            media_item: MediaItem,
+            item_data: Optional[Dict[str, Any]] = None,
+            retry_on_failure: bool = True
+    ) -> MediaItem:
+        """
+        Enrich a MediaItem with ADDITIONAL Jellyfin fields not present in webhook.
+
+        This method adds fields that are useful for Discord notifications but
+        aren't included in the webhook payload and don't need database storage.
+        It only fetches and adds fields that are missing, not overwriting existing data.
+
+        Args:
+            media_item: Base MediaItem with webhook fields already populated
+            item_data: Optional pre-fetched item data to avoid re-fetching
+            retry_on_failure: Whether to retry once on API failure
+
+        Returns:
+            MediaItem: Same instance enriched with additional type-specific fields
+
+        Note:
+            Checks each field before setting to avoid overwriting webhook data.
+            Only fetches fields that webhooks don't provide.
+        """
+        try:
+            # Fetch full item data if not provided
+            if not item_data:
+                self.logger.debug(
+                    f"Fetching additional data for enrichment: {media_item.item_id} ({media_item.item_type})")
+                try:
+                    item_data = await self.get_item(media_item.item_id)
+                except Exception as e:
+                    if retry_on_failure:
+                        self.logger.warning(f"First enrichment fetch failed, retrying: {e}")
+                        await asyncio.sleep(0.5)
+                        try:
+                            item_data = await self.get_item(media_item.item_id)
+                        except Exception as retry_error:
+                            self.logger.error(f"Enrichment fetch retry failed: {retry_error}")
+                            return media_item
+                    else:
+                        self.logger.error(f"Enrichment fetch failed: {e}")
+                        return media_item
+
+            if not item_data:
+                self.logger.warning(f"Could not fetch enrichment data for {media_item.item_id}")
+                return media_item
+
+            # Track fields we're adding for logging
+            added_fields = []
+
+            # ==================== FIELDS NOT IN WEBHOOK PAYLOAD ====================
+            # Only add fields that webhooks don't provide
+
+            # Original title (not in webhook)
+            if not hasattr(media_item, 'original_title') or not media_item.original_title:
+                media_item.original_title = item_data.get('OriginalTitle')
+                if media_item.original_title:
+                    added_fields.append('original_title')
+
+            # Image tags beyond primary (webhook only has Video_0_PrimaryImageItemId)
+            image_tags = item_data.get('ImageTags', {})
+            if not hasattr(media_item, 'logo_image_tag'):
+                media_item.logo_image_tag = image_tags.get('Logo')
+                media_item.thumb_image_tag = image_tags.get('Thumb')
+                media_item.banner_image_tag = image_tags.get('Banner')
+                media_item.art_image_tag = image_tags.get('Art')
+                media_item.disc_image_tag = image_tags.get('Disc')
+                media_item.box_image_tag = image_tags.get('Box')
+                if any([media_item.logo_image_tag, media_item.thumb_image_tag, media_item.banner_image_tag]):
+                    added_fields.append('additional_images')
+
+            # Backdrop images (not in webhook)
+            if not hasattr(media_item, 'backdrop_image_tags'):
+                media_item.backdrop_image_tags = item_data.get('BackdropImageTags', [])
+                if media_item.backdrop_image_tags:
+                    added_fields.append('backdrop_images')
+
+            # Screenshots (not in webhook)
+            if not hasattr(media_item, 'screenshot_image_tags'):
+                media_item.screenshot_image_tags = item_data.get('ScreenshotImageTags', [])
+                if media_item.screenshot_image_tags:
+                    added_fields.append('screenshots')
+
+            # Ratings not in webhook
+            if not hasattr(media_item, 'critic_rating') or media_item.critic_rating is None:
+                media_item.critic_rating = item_data.get('CriticRating')
+                media_item.critic_rating_summary = item_data.get('CriticRatingSummary')
+                if media_item.critic_rating:
+                    added_fields.append('critic_rating')
+
+            if not hasattr(media_item, 'community_rating') or media_item.community_rating is None:
+                media_item.community_rating = item_data.get('CommunityRating')
+                media_item.vote_count = item_data.get('VoteCount')
+                if media_item.community_rating:
+                    added_fields.append('community_rating')
+
+            # External URLs (not in webhook)
+            if not hasattr(media_item, 'external_urls'):
+                media_item.external_urls = item_data.get('ExternalUrls', [])
+                media_item.home_page_url = item_data.get('HomePageUrl')
+                if media_item.external_urls or media_item.home_page_url:
+                    added_fields.append('external_urls')
+
+            # Additional provider IDs not in webhook (webhook has imdb, tmdb, tvdb, tvdbslug)
+            provider_ids = item_data.get('ProviderIds', {})
+            if not hasattr(media_item, 'zap2it_id'):
+                media_item.zap2it_id = provider_ids.get('Zap2It')
+                media_item.musicbrainz_id = provider_ids.get('MusicBrainz')
+                media_item.audiodbartist_id = provider_ids.get('AudioDbArtist')
+                media_item.audiodbalbum_id = provider_ids.get('AudioDbAlbum')
+                media_item.gamesdb_id = provider_ids.get('GamesDb')
+                if any([media_item.zap2it_id, media_item.musicbrainz_id]):
+                    added_fields.append('additional_provider_ids')
+
+            # ==================== MEDIA TYPE SPECIFIC ENRICHMENT ====================
+            media_type = media_item.item_type.lower() if media_item.item_type else ""
+
+            if media_type == 'movie':
+                self._enrich_movie_only_fields(media_item, item_data, added_fields)
+            elif media_type in ['series', 'season', 'episode']:
+                self._enrich_tv_only_fields(media_item, item_data, media_type, added_fields)
+            elif media_type in ['audio', 'musicalbum', 'musicartist']:
+                self._enrich_music_only_fields(media_item, item_data, added_fields)
+            elif media_type == 'photo':
+                self._enrich_photo_only_fields(media_item, item_data, added_fields)
+
+            # ALL media streams (webhook only has first of each type)
+            self._enrich_all_media_streams(media_item, item_data, added_fields)
+
+            # Mark item as enriched
+            if added_fields:
+                media_item.is_enriched = True
+                media_item.enrichment_timestamp = datetime.now(timezone.utc).isoformat()
+                media_item.enriched_fields = added_fields
+
+                self.logger.info(f"Enriched {media_item.name} ({media_item.item_type}) with {len(added_fields)} "
+                                 f"additional field groups: {', '.join(added_fields[:5])}")
+            else:
+                self.logger.debug(f"No additional enrichment needed for {media_item.name} - webhook data sufficient")
+
+            return media_item
+
+        except Exception as e:
+            self.logger.error(f"Failed to enrich media item {media_item.item_id}: {e}", exc_info=True)
+            return media_item
+
+    def _enrich_movie_only_fields(self, media_item: MediaItem, item_data: Dict[str, Any],
+                                  added_fields: List[str]) -> None:
+        """
+        Add movie-specific fields NOT present in webhook.
+        """
+        # Financial information (not in webhook)
+        if not hasattr(media_item, 'budget'):
+            media_item.budget = item_data.get('Budget')
+            media_item.revenue = item_data.get('Revenue')
+            if media_item.budget or media_item.revenue:
+                added_fields.append('financial_info')
+
+        # Awards and metascore (not in webhook)
+        if not hasattr(media_item, 'awards'):
+            media_item.awards = item_data.get('Awards')
+            media_item.metascore = item_data.get('Metascore')
+            if media_item.awards or media_item.metascore:
+                added_fields.append('awards_scores')
+
+        # Collection info (not in webhook)
+        if not hasattr(media_item, 'tmdb_collection_name'):
+            media_item.tmdb_collection_name = item_data.get('TmdbCollectionName')
+            if media_item.tmdb_collection_name:
+                added_fields.append('collection_info')
+
+        # Additional taglines (webhook may have one in Tagline field)
+        if not hasattr(media_item, 'taglines'):
+            media_item.taglines = item_data.get('Taglines', [])
+            if media_item.taglines:
+                added_fields.append('taglines')
+
+        # Trailers (not in webhook)
+        if not hasattr(media_item, 'remote_trailers'):
+            media_item.remote_trailers = []
+            for trailer in item_data.get('RemoteTrailers', []):
+                media_item.remote_trailers.append({
+                    'url': trailer.get('Url'),
+                    'name': trailer.get('Name'),
+                    'type': trailer.get('Type'),
+                    'is_direct_link': trailer.get('IsDirectLink', False)
+                })
+            if media_item.remote_trailers:
+                added_fields.append('trailers')
+
+        # Special features count (not in webhook)
+        if not hasattr(media_item, 'special_feature_count'):
+            media_item.local_trailer_count = item_data.get('LocalTrailerCount', 0)
+            media_item.special_feature_count = item_data.get('SpecialFeatureCount', 0)
+            if media_item.special_feature_count > 0:
+                added_fields.append('special_features')
+
+        # Technical details not in webhook
+        if not hasattr(media_item, 'video_type'):
+            media_item.video_type = item_data.get('VideoType')  # BluRay, DVD, File
+            media_item.iso_type = item_data.get('IsoType')
+            media_item.video_3d_format = item_data.get('Video3DFormat')
+            if media_item.video_type:
+                added_fields.append('media_format')
+
+        # Recommendations (not in webhook)
+        if not hasattr(media_item, 'recommendations'):
+            media_item.recommendations = item_data.get('Recommendations', [])
+            if media_item.recommendations:
+                added_fields.append('recommendations')
+
+    def _enrich_tv_only_fields(self, media_item: MediaItem, item_data: Dict[str, Any],
+                               media_type: str, added_fields: List[str]) -> None:
+        """
+        Add TV-specific fields NOT present in webhook.
+        """
+        # Series status and schedule (not in webhook)
+        if media_type == 'series' and not hasattr(media_item, 'status'):
+            media_item.status = item_data.get('Status')  # Continuing/Ended
+            media_item.air_days = item_data.get('AirDays', [])
+            media_item.air_time = item_data.get('AirTime')
+            if media_item.status:
+                added_fields.append('series_status')
+
+        # Episode alternate numbering (not in webhook)
+        if media_type == 'episode':
+            if not hasattr(media_item, 'absolute_episode_number'):
+                media_item.absolute_episode_number = item_data.get('AbsoluteEpisodeNumber')
+                media_item.dvd_season_number = item_data.get('DvdSeasonNumber')
+                media_item.dvd_episode_number = item_data.get('DvdEpisodeNumber')
+                media_item.airs_before_season_number = item_data.get('AirsBeforeSeasonNumber')
+                media_item.airs_after_season_number = item_data.get('AirsAfterSeasonNumber')
+                media_item.airs_before_episode_number = item_data.get('AirsBeforeEpisodeNumber')
+                if media_item.absolute_episode_number or media_item.dvd_episode_number:
+                    added_fields.append('alternate_numbering')
+
+            # Season name (not in webhook)
+            if not hasattr(media_item, 'season_name'):
+                media_item.season_name = item_data.get('SeasonName')
+                if media_item.season_name:
+                    added_fields.append('season_name')
+
+    def _enrich_music_only_fields(self, media_item: MediaItem, item_data: Dict[str, Any],
+                                  added_fields: List[str]) -> None:
+        """
+        Add music-specific fields NOT present in webhook.
+        """
+        # Detailed artist information (webhook only has basic artists list)
+        if not hasattr(media_item, 'album_artists_data'):
+            media_item.album_artists_data = item_data.get('AlbumArtists', [])
+            media_item.artist_items = item_data.get('ArtistItems', [])
+            if media_item.album_artists_data or media_item.artist_items:
+                added_fields.append('detailed_artists')
+
+        # Music metadata not in webhook
+        if not hasattr(media_item, 'composers'):
+            media_item.composers = item_data.get('Composers', [])
+            media_item.contributors = item_data.get('Contributors', [])
+            media_item.moods = item_data.get('Moods', [])
+            media_item.styles = item_data.get('Styles', [])
+            if any([media_item.composers, media_item.contributors, media_item.moods]):
+                added_fields.append('music_metadata')
+
+        # Lyrics (not in webhook)
+        if not hasattr(media_item, 'lyrics'):
+            media_item.lyrics = item_data.get('Lyrics')
+            if media_item.lyrics:
+                added_fields.append('lyrics')
+
+        # MusicBrainz IDs (webhook doesn't have these)
+        if not hasattr(media_item, 'musicbrainz_artist_id'):
+            media_item.musicbrainz_artist_id = item_data.get('MusicBrainzArtistId')
+            media_item.musicbrainz_album_id = item_data.get('MusicBrainzAlbumId')
+            media_item.musicbrainz_album_artist_id = item_data.get('MusicBrainzAlbumArtistId')
+            media_item.musicbrainz_track_id = item_data.get('MusicBrainzTrackId')
+            media_item.musicbrainz_release_group_id = item_data.get('MusicBrainzReleaseGroupId')
+            if media_item.musicbrainz_track_id:
+                added_fields.append('musicbrainz_ids')
+
+        # Track/disc numbers (not always in webhook)
+        if not hasattr(media_item, 'track_number'):
+            media_item.track_number = item_data.get('IndexNumber')
+            media_item.disc_number = item_data.get('ParentIndexNumber')
+            media_item.total_discs = item_data.get('TotalDiscs')
+            if media_item.track_number:
+                added_fields.append('track_info')
+
+    def _enrich_photo_only_fields(self, media_item: MediaItem, item_data: Dict[str, Any],
+                                  added_fields: List[str]) -> None:
+        """
+        Add photo-specific EXIF fields NOT present in webhook.
+        """
+        # Camera information (not in webhook)
+        if not hasattr(media_item, 'camera_make'):
+            media_item.camera_make = item_data.get('CameraMake')
+            media_item.camera_model = item_data.get('CameraModel')
+            media_item.software = item_data.get('Software')
+            if media_item.camera_make or media_item.camera_model:
+                added_fields.append('camera_info')
+
+        # Photo settings (not in webhook)
+        if not hasattr(media_item, 'exposure_time'):
+            media_item.exposure_time = item_data.get('ExposureTime')
+            media_item.focal_length = item_data.get('FocalLength')
+            media_item.aperture = item_data.get('Aperture')
+            media_item.shutter_speed = item_data.get('ShutterSpeed')
+            media_item.iso_speed_rating = item_data.get('IsoSpeedRating')
+            if media_item.exposure_time or media_item.focal_length:
+                added_fields.append('photo_settings')
+
+        # GPS information (not in webhook)
+        if not hasattr(media_item, 'latitude'):
+            media_item.latitude = item_data.get('Latitude')
+            media_item.longitude = item_data.get('Longitude')
+            media_item.altitude = item_data.get('Altitude')
+            if media_item.latitude and media_item.longitude:
+                added_fields.append('gps_location')
+
+    def _enrich_all_media_streams(self, media_item: MediaItem, item_data: Dict[str, Any],
+                                  added_fields: List[str]) -> None:
+        """
+        Add ALL media streams - webhook only provides first of each type.
+
+        Webhook provides Video_0_*, Audio_0_*, Subtitle_0_*
+        This adds all additional streams for multi-track media.
+        """
+        all_streams = item_data.get('MediaStreams', [])
+
+        # Get all video streams (webhook only has Video_0)
+        video_streams = [s for s in all_streams if s.get('Type') == 'Video']
+        if len(video_streams) > 1:  # Only add if there are multiple
+            media_item.video_streams = video_streams
+            media_item.video_stream_count = len(video_streams)
+            added_fields.append('multiple_video_streams')
+
+        # Get all audio streams (webhook only has Audio_0)
+        audio_streams = [s for s in all_streams if s.get('Type') == 'Audio']
+        if len(audio_streams) > 1:  # Only add if there are multiple
+            media_item.audio_streams = audio_streams
+            media_item.audio_stream_count = len(audio_streams)
+            added_fields.append('multiple_audio_streams')
+
+        # Get all subtitle streams (webhook only has Subtitle_0)
+        subtitle_streams = [s for s in all_streams if s.get('Type') == 'Subtitle']
+        if len(subtitle_streams) > 1:  # Only add if there are multiple
+            media_item.subtitle_streams = subtitle_streams
+            media_item.subtitle_stream_count = len(subtitle_streams)
+            added_fields.append('multiple_subtitle_streams')
+
+        # Default stream indices (not in webhook)
+        if not hasattr(media_item, 'default_audio_stream_index'):
+            media_item.default_audio_stream_index = item_data.get('DefaultAudioStreamIndex')
+            media_item.default_subtitle_stream_index = item_data.get('DefaultSubtitleStreamIndex')
+
+        # Media sources for multi-version items
+        media_sources = item_data.get('MediaSources', [])
+        if len(media_sources) > 1:
+            media_item.all_media_sources = media_sources
+            media_item.media_source_count = len(media_sources)
+            added_fields.append('multiple_versions')
+
     async def test_connection(self) -> Dict[str, Any]:
         """
         Test connection to Jellyfin and return diagnostic information.
