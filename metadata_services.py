@@ -384,20 +384,13 @@ class MetadataService:
                 self.logger.debug(f"  - Revenue: ${getattr(tmdb_data, 'revenue', 'N/A')}")
                 self.logger.debug(f"  - Homepage: {getattr(tmdb_data, 'homepage', 'N/A')}")
 
-                # Log genres if available
+                # Log genres if available - FIXED VERSION
                 if hasattr(tmdb_data, 'genres') and tmdb_data.genres:
-                    if isinstance(tmdb_data.genres, list):
-                        genres_str = ', '.join(
-                            [g.get('name', 'Unknown') if isinstance(g, dict) else str(g) for g in tmdb_data.genres])
-                        self.logger.debug(f"  - Genres: {genres_str}")
-                    else:
-                        self.logger.debug(f"  - Genres: {tmdb_data.genres}")
+                    self.logger.debug(f"  - Genres: {tmdb_data.genres}")
 
                 # Log production companies if available
                 if hasattr(tmdb_data, 'production_companies') and tmdb_data.production_companies:
-                    companies_str = ', '.join([c.get('name', 'Unknown') if isinstance(c, dict) else str(c) for c in
-                                               tmdb_data.production_companies[:3]])
-                    self.logger.debug(f"  - Production Companies: {companies_str}")
+                    self.logger.debug(f"  - Production Companies: {tmdb_data.production_companies[:3]}")
 
                 # Log image paths
                 self.logger.debug(f"  - Poster Path: {getattr(tmdb_data, 'poster_path', 'N/A')}")

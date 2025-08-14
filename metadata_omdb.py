@@ -316,12 +316,22 @@ class OMDbAPI:
             # Ensure ratings_data is a list
             if isinstance(ratings_data, list):
                 for rating_data in ratings_data:
-                    # Each rating should be a dict with 'source' and 'value'
-                    if isinstance(rating_data, dict):
+                    # The omdb library might return OMDbRating objects or dicts
+                    if hasattr(rating_data, 'source') and hasattr(rating_data, 'value'):
+                        # It's an OMDbRating object from the library
+                        ratings.append(OMDbRating(
+                            source=getattr(rating_data, 'source', 'Unknown'),
+                            value=getattr(rating_data, 'value', 'N/A')
+                        ))
+                    elif isinstance(rating_data, dict):
+                        # It's a dictionary
                         ratings.append(OMDbRating(
                             source=rating_data.get("source", "Unknown"),
                             value=rating_data.get("value", "N/A")
                         ))
+                    else:
+                        # Log unexpected type
+                        self.logger.warning(f"Unexpected rating data type: {type(rating_data)}")
 
             # The omdb library already converts field names to underscore_case
             # So we should use the underscore versions
@@ -361,7 +371,7 @@ class OMDbAPI:
             return metadata
 
         except Exception as e:
-            self.logger.error(f"Error parsing OMDb response: {e}")
+            self.logger.error(f"Error parsing OMDb response: {e}", exc_info=True)
             # Return empty metadata with error message
             return OMDbMetadata(
                 response=False,
