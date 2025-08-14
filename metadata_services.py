@@ -248,7 +248,49 @@ class MetadataService:
             if omdb_data:
                 # Use setattr to add the dynamic attribute
                 setattr(item, 'omdb', omdb_data)
-                self.logger.debug(f"Added OMDb metadata for {item.name}")
+
+                # Detailed debug logging
+                self.logger.debug("=" * 60)
+                self.logger.debug(f"📊 OMDb METADATA RECEIVED for: {item.name}")
+                self.logger.debug("=" * 60)
+                self.logger.debug(f"  - IMDb ID: {getattr(omdb_data, 'imdb_id', 'N/A')}")
+                self.logger.debug(f"  - Title: {getattr(omdb_data, 'title', 'N/A')}")
+                self.logger.debug(f"  - Year: {getattr(omdb_data, 'year', 'N/A')}")
+                self.logger.debug(f"  - Rated: {getattr(omdb_data, 'rated', 'N/A')}")
+                self.logger.debug(f"  - Released: {getattr(omdb_data, 'released', 'N/A')}")
+                self.logger.debug(f"  - Runtime: {getattr(omdb_data, 'runtime', 'N/A')}")
+                self.logger.debug(f"  - Genre: {getattr(omdb_data, 'genre', 'N/A')}")
+                self.logger.debug(f"  - Director: {getattr(omdb_data, 'director', 'N/A')}")
+                self.logger.debug(f"  - Writer: {getattr(omdb_data, 'writer', 'N/A')}")
+                self.logger.debug(f"  - Actors: {getattr(omdb_data, 'actors', 'N/A')}")
+                self.logger.debug(
+                    f"  - Plot: {(getattr(omdb_data, 'plot', 'N/A')[:100] + '...') if getattr(omdb_data, 'plot', None) and len(getattr(omdb_data, 'plot', '')) > 100 else getattr(omdb_data, 'plot', 'N/A')}")
+                self.logger.debug(f"  - Language: {getattr(omdb_data, 'language', 'N/A')}")
+                self.logger.debug(f"  - Country: {getattr(omdb_data, 'country', 'N/A')}")
+                self.logger.debug(f"  - Awards: {getattr(omdb_data, 'awards', 'N/A')}")
+                self.logger.debug(f"  - Poster URL: {getattr(omdb_data, 'poster', 'N/A')}")
+                self.logger.debug(f"  - Metascore: {getattr(omdb_data, 'metascore', 'N/A')}")
+                self.logger.debug(f"  - IMDb Rating: {getattr(omdb_data, 'imdb_rating', 'N/A')}")
+                self.logger.debug(f"  - IMDb Votes: {getattr(omdb_data, 'imdb_votes', 'N/A')}")
+                self.logger.debug(f"  - Box Office: {getattr(omdb_data, 'box_office', 'N/A')}")
+                self.logger.debug(f"  - Production: {getattr(omdb_data, 'production', 'N/A')}")
+
+                # Log ratings if available
+                if hasattr(omdb_data, 'ratings') and omdb_data.ratings:
+                    self.logger.debug(f"  - Ratings count: {len(omdb_data.ratings)}")
+                    for rating in omdb_data.ratings:
+                        self.logger.debug(f"    • {rating.source}: {rating.value}")
+
+                # Log ratings dictionary if available
+                if hasattr(omdb_data, 'ratings_dict') and omdb_data.ratings_dict:
+                    self.logger.debug(f"  - Ratings dict keys: {list(omdb_data.ratings_dict.keys())}")
+                    for source, rating_info in omdb_data.ratings_dict.items():
+                        if hasattr(rating_info, 'value'):
+                            self.logger.debug(f"    • {source}: {rating_info.value}")
+
+                self.logger.debug("=" * 60)
+            else:
+                self.logger.debug(f"No OMDb metadata returned for {item.name}")
         except Exception as e:
             self.logger.error(f"Error fetching OMDb metadata: {e}")
 
@@ -275,7 +317,35 @@ class MetadataService:
             if tvdb_data:
                 # Use setattr to add the dynamic attribute
                 setattr(item, 'tvdb', tvdb_data)
-                self.logger.debug(f"Added TVDb metadata for {item.name}")
+
+                # Detailed debug logging
+                self.logger.debug("=" * 60)
+                self.logger.debug(f"📺 TVDb METADATA RECEIVED for: {item.name}")
+                self.logger.debug("=" * 60)
+                self.logger.debug(f"  - TVDb ID: {getattr(tvdb_data, 'tvdb_id', 'N/A')}")
+                self.logger.debug(f"  - Name: {getattr(tvdb_data, 'name', 'N/A')}")
+                self.logger.debug(f"  - Status: {getattr(tvdb_data, 'status', 'N/A')}")
+                self.logger.debug(f"  - First Aired: {getattr(tvdb_data, 'first_aired', 'N/A')}")
+                self.logger.debug(f"  - Network: {getattr(tvdb_data, 'network', 'N/A')}")
+                self.logger.debug(f"  - Runtime: {getattr(tvdb_data, 'runtime', 'N/A')} min")
+                self.logger.debug(f"  - Average Runtime: {getattr(tvdb_data, 'average_runtime', 'N/A')} min")
+                self.logger.debug(f"  - Rating: {getattr(tvdb_data, 'rating', 'N/A')}")
+                self.logger.debug(f"  - Rating Count: {getattr(tvdb_data, 'rating_count', 'N/A')}")
+                self.logger.debug(
+                    f"  - Overview: {(getattr(tvdb_data, 'overview', 'N/A')[:100] + '...') if getattr(tvdb_data, 'overview', None) and len(getattr(tvdb_data, 'overview', '')) > 100 else getattr(tvdb_data, 'overview', 'N/A')}")
+
+                # Log genres if available
+                if hasattr(tvdb_data, 'genres') and tvdb_data.genres:
+                    self.logger.debug(f"  - Genres: {', '.join(tvdb_data.genres)}")
+
+                # Log image URLs if available
+                self.logger.debug(f"  - Poster URL: {getattr(tvdb_data, 'poster_url', 'N/A')}")
+                self.logger.debug(f"  - Banner URL: {getattr(tvdb_data, 'banner_url', 'N/A')}")
+                self.logger.debug(f"  - Fanart URL: {getattr(tvdb_data, 'fanart_url', 'N/A')}")
+
+                self.logger.debug("=" * 60)
+            else:
+                self.logger.debug(f"No TVDb metadata returned for {item.name}")
 
         except Exception as e:
             self.logger.error(f"Error fetching TVDb metadata: {e}")
@@ -292,7 +362,55 @@ class MetadataService:
             if tmdb_data:
                 # Attach the TMDb metadata object to the item
                 setattr(item, 'tmdb', tmdb_data)
-                self.logger.debug(f"Added TMDb metadata for {item.name}")
+
+                # Detailed debug logging
+                self.logger.debug("=" * 60)
+                self.logger.debug(f"🎬 TMDb METADATA RECEIVED for: {item.name}")
+                self.logger.debug("=" * 60)
+                self.logger.debug(f"  - TMDb ID: {getattr(tmdb_data, 'tmdb_id', 'N/A')}")
+                self.logger.debug(f"  - Media Type: {getattr(tmdb_data, 'media_type', 'N/A')}")
+                self.logger.debug(f"  - Title: {getattr(tmdb_data, 'title', 'N/A')}")
+                self.logger.debug(f"  - Original Title: {getattr(tmdb_data, 'original_title', 'N/A')}")
+                self.logger.debug(f"  - Release Date: {getattr(tmdb_data, 'release_date', 'N/A')}")
+                self.logger.debug(f"  - Vote Average: {getattr(tmdb_data, 'vote_average', 'N/A')}/10")
+                self.logger.debug(f"  - Vote Count: {getattr(tmdb_data, 'vote_count', 'N/A')}")
+                self.logger.debug(f"  - Popularity: {getattr(tmdb_data, 'popularity', 'N/A')}")
+                self.logger.debug(
+                    f"  - Overview: {(getattr(tmdb_data, 'overview', 'N/A')[:100] + '...') if getattr(tmdb_data, 'overview', None) and len(getattr(tmdb_data, 'overview', '')) > 100 else getattr(tmdb_data, 'overview', 'N/A')}")
+                self.logger.debug(f"  - Tagline: {getattr(tmdb_data, 'tagline', 'N/A')}")
+                self.logger.debug(f"  - Status: {getattr(tmdb_data, 'status', 'N/A')}")
+                self.logger.debug(f"  - Runtime: {getattr(tmdb_data, 'runtime', 'N/A')} min")
+                self.logger.debug(f"  - Budget: ${getattr(tmdb_data, 'budget', 'N/A')}")
+                self.logger.debug(f"  - Revenue: ${getattr(tmdb_data, 'revenue', 'N/A')}")
+                self.logger.debug(f"  - Homepage: {getattr(tmdb_data, 'homepage', 'N/A')}")
+
+                # Log genres if available
+                if hasattr(tmdb_data, 'genres') and tmdb_data.genres:
+                    genres_str = ', '.join(
+                        [g.get('name', 'Unknown') if isinstance(g, dict) else str(g) for g in tmdb_data.genres])
+                    self.logger.debug(f"  - Genres: {genres_str}")
+
+                # Log production companies if available
+                if hasattr(tmdb_data, 'production_companies') and tmdb_data.production_companies:
+                    companies_str = ', '.join([c.get('name', 'Unknown') if isinstance(c, dict) else str(c) for c in
+                                               tmdb_data.production_companies[:3]])
+                    self.logger.debug(f"  - Production Companies: {companies_str}")
+
+                # Log image paths
+                self.logger.debug(f"  - Poster Path: {getattr(tmdb_data, 'poster_path', 'N/A')}")
+                self.logger.debug(f"  - Backdrop Path: {getattr(tmdb_data, 'backdrop_path', 'N/A')}")
+
+                # Log TV-specific fields if present
+                if item.item_type in ["Series", "Episode", "Season"]:
+                    self.logger.debug(f"  - First Air Date: {getattr(tmdb_data, 'first_air_date', 'N/A')}")
+                    self.logger.debug(f"  - Last Air Date: {getattr(tmdb_data, 'last_air_date', 'N/A')}")
+                    self.logger.debug(f"  - Number of Seasons: {getattr(tmdb_data, 'number_of_seasons', 'N/A')}")
+                    self.logger.debug(f"  - Number of Episodes: {getattr(tmdb_data, 'number_of_episodes', 'N/A')}")
+                    self.logger.debug(f"  - Episode Runtime: {getattr(tmdb_data, 'episode_run_time', 'N/A')}")
+
+                self.logger.debug("=" * 60)
+            else:
+                self.logger.debug(f"No TMDb metadata returned for {item.name}")
         except Exception as e:
             self.logger.error(f"Error fetching TMDb metadata: {e}")
 
