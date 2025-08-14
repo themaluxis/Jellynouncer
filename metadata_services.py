@@ -25,8 +25,9 @@ import aiohttp
 
 from config_models import MetadataServicesConfig
 from media_models import MediaItem
-from tvdb import TVDB
+from metadata_tvdb import TVDB
 from metadata_omdb import OMDbAPI
+from metadata_tmdb import TMDbAPI
 from utils import get_logger
 
 
@@ -67,7 +68,7 @@ class MetadataService:
         enabled (bool): Whether metadata service is enabled globally
         tvdb_client (TVDB): TVDb API client for TV show information
         omdb_client (OMDbAPI): OMDb API client for ratings and metadata
-        tmdb_api_key (str): TMDb API key for community ratings
+        tmdb_client (TMDbAPI): TMDb API client for ratings and metadata
     """
 
     def __init__(self, config: MetadataServicesConfig):
@@ -102,8 +103,14 @@ class MetadataService:
             )
             self.logger.info("OMDb client initialized")
 
-        # Store TMDb API key for later use
-        self.tmdb_api_key = self.tmdb_config.api_key if self.tmdb_config.enabled else None
+        # Initialize TMDb client if configured
+        self.tmdb_client = None
+        if self.tmdb_config.enabled and self.tmdb_config.api_key:
+            self.tmdb_client = TMDbAPI(
+                api_key=self.tmdb_config.api_key,
+                enabled=True
+            )
+            self.logger.info("TMDb client initialized")
 
         # Prepare TVDB API v4 client initialization if enabled
         self.tvdb_client = None
@@ -119,7 +126,7 @@ class MetadataService:
             available_services = []
             if self.omdb_client:
                 available_services.append("OMDb")
-            if self.tmdb_api_key:
+            if self.tmdb_client:
                 available_services.append("TMDb")
             if self.tvdb_config_ready:
                 access_mode = "subscriber" if self.tvdb_config.subscriber_pin else "standard"
@@ -198,7 +205,7 @@ class MetadataService:
         if self.tvdb_client and item.item_type in ["Series", "Season", "Episode"]:
             tasks.append(self._fetch_tvdb_metadata(item))
 
-        if self.tmdb_api_key:
+        if self.tmdb_client:
             tasks.append(self._fetch_tmdb_metadata(item))
 
         # Execute all API calls concurrently
@@ -280,9 +287,14 @@ class MetadataService:
         Args:
             item (MediaItem): Media item to fetch TMDb data for
         """
-        # Placeholder for future TMDb implementation
-        # This would fetch TMDb community ratings and additional metadata
-        pass
+        try:
+            tmdb_data = await self.tmdb_client.get_metadata_for_item(item)
+            if tmdb_data:
+                # Attach the TMDb metadata object to the item
+                setattr(item, 'tmdb', tmdb_data)
+                self.logger.debug(f"Added TMDb metadata for {item.name}")
+        except Exception as e:
+            self.logger.error(f"Error fetching TMDb metadata: {e}")
 
     def _create_ratings_summary(self, item: MediaItem) -> None:
         """
@@ -324,6 +336,15 @@ class MetadataService:
             ratings["tvdb"] = {
                 "value": tvdb_data.rating,
                 "count": getattr(tvdb_data, 'rating_count', None)
+            }
+
+        # Add TMDb rating if available
+        tmdb_data = getattr(item, 'tmdb', None)
+        if tmdb_data and hasattr(tmdb_data, 'vote_average'):
+            ratings["tmdb"] = {
+                "value": f"{tmdb_data.vote_average}/10",
+                "normalized": tmdb_data.vote_average,
+                "count": getattr(tmdb_data, 'vote_count', None)
             }
 
         # Set the ratings attribute on the item

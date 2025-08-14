@@ -8,12 +8,11 @@ Requires only asyncio and aiohttp. No external dependencies on project files.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Union, Tuple
+from typing import Dict, List, Optional, Any, Tuple
 from urllib.parse import urljoin
 
 import aiohttp
