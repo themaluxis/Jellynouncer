@@ -188,32 +188,6 @@ When `action` is "upgraded_item", the `changes` variable contains a list of chan
 | `provider_ids` | Metadata update | varies | External ID changes |
 </details>
 
-## 📈 Changes Structure (Upgrade Notifications)
-
-When `action` is "upgraded_item", the `changes` variable contains a list of change objects describing what was upgraded:
-
-### Change Object Properties
-
-| Property | Type | Description | Example |
-|----------|------|-------------|---------|
-| `type` | string | Type of change | "resolution", "codec", "audio_codec", "audio_channels", "hdr_status", "file_size", "provider_ids" |
-| `field` | string | Database field that changed | "video_height", "video_codec", "audio_codec" |
-| `old_value` | any | Previous value | 720, "h264", "aac", 2 |
-| `new_value` | any | New/current value | 1080, "hevc", "dts", 6 |
-| `description` | string | Human-readable description | "Resolution changed from 720p to 1080p" |
-
-### Change Types
-
-| Change Type | Description | Old/New Value Types | Example |
-|------------|-------------|-------------------|---------|
-| `resolution` | Video resolution upgrade | integer (height in pixels) | 720 → 1080 |
-| `codec` | Video codec change | string | "h264" → "hevc" |
-| `audio_codec` | Audio codec change | string | "aac" → "dts" |
-| `audio_channels` | Audio channel upgrade | integer | 2 → 6 (stereo to 5.1) |
-| `hdr_status` | HDR upgrade | string | "SDR" → "HDR10" |
-| `file_size` | File replacement | integer (bytes) | File size in bytes |
-| `provider_ids` | Metadata update | varies | External ID changes |
-
 ### Using Changes in Templates
 
 ```jinja2
