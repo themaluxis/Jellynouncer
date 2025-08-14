@@ -39,9 +39,10 @@
         Different formatting based on media type with overview included directly.
       #}
       "description": "{% if item.item_type == 'Episode' -%}
-        **{{ item.series_name | default('Unknown Series') }}**
-        S{{ '%02d' | format(item.season_number | default(0)) }}E{{ '%02d' | format(item.episode_number | default(0)) }}
-        {{ item.name | default('Unknown Episode') }}
+        {%- set series_name = item.series_name | default('Unknown Series') -%}
+        {%- set season_ep = 'S' ~ '%02d' | format(item.season_number | default(0)) ~ 'E' ~ '%02d' | format(item.episode_number | default(0)) -%}
+        {%- set episode_name = item.name | default('Unknown Episode') -%}
+        **{{ series_name }}**\n{{ season_ep }}\n{{ episode_name }}
         {%- if item.overview and item.overview | length > 0 %}\n\n{{ (item.overview[:250] + '...') if item.overview | length > 250 else item.overview }}{% endif -%}
       {%- elif item.item_type == 'Audio' -%}
         **{{ item.name | default('Unknown Song') }}**
@@ -179,7 +180,8 @@
           {%- set _ = fields_added.append('release') -%}
         {%- endif -%}
 
-        {%- if item.year is defined and item.year and item.item_type not in ['Episode', 'Audio'] and fields_added | length < 12 -%}
+        {#- Only show Year field if we don't already have a premiere_date (to avoid redundancy) -#}
+        {%- if item.year is defined and item.year and item.item_type not in ['Episode', 'Audio'] and 'release' not in fields_added and fields_added | length < 12 -%}
           {%- if fields_added | length > 0 %},{% endif -%}
         {
           "name": "📅 Year",
