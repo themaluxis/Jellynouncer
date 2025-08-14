@@ -418,13 +418,17 @@ class DiscordNotifier:
 
         self.logger = get_logger("jellynouncer.discord")
 
-        self.template_dir = config.templates.directory  # Make sure this exists
+        # Template directory will be set during initialize() when templates_config is available
+        self.template_dir = None
         self.webhooks = {}  # Make sure this is initialized
 
     async def initialize(self, session: aiohttp.ClientSession, jellyfin_config, templates_config, notifications_config=None) -> None:
         """Initialize Discord notifier with shared session and configuration dependencies."""
         self.session = session
         self.notifications_config = notifications_config
+
+        # Set template directory from templates_config
+        self.template_dir = templates_config.directory
 
         # Create thumbnail manager that will share the same session
         self.thumbnail_manager = ThumbnailManager(
@@ -437,11 +441,11 @@ class DiscordNotifier:
         # Initialize template environment
         if self.jinja_env is None:
             self.jinja_env = Environment(
-                loader=FileSystemLoader(templates_config.directory),
+                loader=FileSystemLoader(self.template_dir),
                 trim_blocks=True,
                 lstrip_blocks=True
             )
-            self.logger.debug(f"Template environment initialized with directory: {templates_config.directory}")
+            self.logger.debug(f"Template environment initialized with directory: {self.template_dir}")
 
         self.logger.info("Discord notifier initialized successfully")
 
