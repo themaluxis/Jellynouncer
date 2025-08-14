@@ -799,6 +799,82 @@ class WebhookService:
             self.logger.error(f"Error getting service stats: {e}")
             return {"error": str(e)}
 
+    async def send_server_status_notification(self, is_online: bool, error: Optional[Exception] = None) -> None:
+        """
+        Send server status notification to Discord.
+
+        Args:
+            is_online: Whether the server is currently online
+            error: Optional error that caused offline status
+        """
+        try:
+            # Gather health data
+            health_data = None
+            server_info = None
+            queue_status = None
+
+            if is_online:
+                # Get current health status
+                health_data = await self.health_check()
+
+                # Get server information
+                try:
+                    server_info = await self.jellyfin.get_system_info()
+                except Exception as e:
+                    self.logger.warning(f"Could not get server info: {e}")
+
+                # Get queue status
+                try:
+                    queue_status = {
+                        "new_items": len(self.discord.notification_queue.get("new_items", [])),
+                        "upgraded_items": len(self.discord.notification_queue.get("upgraded_items", [])),
+                        "total": len(self.discord.notification_queue.get("new_items", [])) +
+                                 len(self.discord.notification_queue.get("upgraded_items", []))
+                    }
+                except Exception as e:
+                    self.logger.warning(f"Could not get queue status: {e}")
+
+            # Calculate downtime if coming back online
+            downtime_duration = None
+            if is_online and self.server_was_offline:
+                # Calculate downtime (you'd need to track when it went offline)
+                if hasattr(self, '_offline_since'):
+                    duration_seconds = time.time() - self._offline_since
+                    hours = int(duration_seconds // 3600)
+                    minutes = int((duration_seconds % 3600) // 60)
+                    if hours > 0:
+                        downtime_duration = f"{hours}h {minutes}m"
+                    else:
+                        downtime_duration = f"{minutes} minutes"
+
+            # Prepare template data with all the enhanced fields
+            template_data = {
+                # Basic fields (existing)
+                "is_online": is_online,
+                "jellyfin_url": self.config.jellyfin.server_url,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+
+                # Enhanced fields (new)
+                "health_data": health_data,
+                "server_info": server_info,
+                "downtime_duration": downtime_duration,
+                "error_details": str(error) if error else None,
+                "error_type": type(error).__name__ if error else None,
+                "queue_status": queue_status
+            }
+
+            # Send notification using the template
+            await self.discord.send_server_status(template_data)
+
+            # Track offline state
+            if not is_online and not self.server_was_offline:
+                self._offline_since = time.time()
+            elif is_online and self.server_was_offline:
+                self._offline_since = None
+
+        except Exception as e:
+            self.logger.error(f"Failed to send server status notification: {e}")
+
     async def background_tasks(self) -> None:
         """
         Run background maintenance tasks.
@@ -870,17 +946,40 @@ class WebhookService:
                     except Exception as e:
                         self.logger.error(f"Database maintenance failed: {e}")
 
-                # Task 3: Jellyfin connectivity monitoring
+                # Task 3: Jellyfin connectivity monitoring (UPDATED)
                 try:
                     is_connected = await self.jellyfin.is_connected()
+
+                    # Server went offline
                     if not is_connected and not self.server_was_offline:
                         self.logger.warning("Jellyfin server appears to be offline")
                         self.server_was_offline = True
+
+                        # Send offline notification with enhanced data
+                        await self.send_server_status_notification(
+                            is_online=False,
+                            error=Exception("Connection timeout or refused")
+                        )
+
+                    # Server came back online
                     elif is_connected and self.server_was_offline:
                         self.logger.info("Jellyfin server is back online")
                         self.server_was_offline = False
+
+                        # Send online notification with recovery info
+                        await self.send_server_status_notification(
+                            is_online=True
+                        )
+
                 except Exception as e:
                     self.logger.debug(f"Connection check failed: {e}")
+
+                    if not self.server_was_offline:
+                        self.server_was_offline = True
+                        await self.send_server_status_notification(
+                            is_online=False,
+                            error=e
+                        )
 
                 # Wait before next iteration (5 minutes)
                 await asyncio.sleep(300)

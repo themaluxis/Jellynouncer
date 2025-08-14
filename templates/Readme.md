@@ -121,7 +121,7 @@ In addition to item properties, these variables are available in all templates:
 | `jellyfin_url` | string | Jellyfin server URL | "https://jellyfin.example.com" |
 | `server_url` | string | Same as jellyfin_url | "https://jellyfin.example.com" |
 | `action` | string | Notification action | "new_item", "upgraded_item" |
-| `changes` | list | List of changes (upgrades) | [{"type": "resolution", ...}] |
+| `changes` | list | List of change objects (upgrades only) | See Changes Structure below |
 | `thumbnail_url` | string | Thumbnail image URL | "https://..." |
 | `tvdb_attribution_needed` | boolean | Show TVDb attribution | true/false |
 | `image_quality` | integer | Image quality setting | 90 |
@@ -137,6 +137,102 @@ In addition to item properties, these variables are available in all templates:
 | `movies` | list | Movie items only |
 | `episodes` | list | TV episode items |
 | `audio_items` | list | Music/audio items |
+
+## 📈 Changes Structure (Upgrade Notifications)
+
+When `action` is "upgraded_item", the `changes` variable contains a list of change objects describing what was upgraded:
+
+### Change Object Properties
+
+| Property | Type | Description | Example |
+|----------|------|-------------|---------|
+| `type` | string | Type of change | "resolution", "codec", "audio_codec", "audio_channels", "hdr_status", "file_size", "provider_ids" |
+| `field` | string | Database field that changed | "video_height", "video_codec", "audio_codec" |
+| `old_value` | any | Previous value | 720, "h264", "aac", 2 |
+| `new_value` | any | New/current value | 1080, "hevc", "dts", 6 |
+| `description` | string | Human-readable description | "Resolution changed from 720p to 1080p" |
+
+### Change Types
+
+| Change Type | Description | Old/New Value Types | Example |
+|------------|-------------|-------------------|---------|
+| `resolution` | Video resolution upgrade | integer (height in pixels) | 720 → 1080 |
+| `codec` | Video codec change | string | "h264" → "hevc" |
+| `audio_codec` | Audio codec change | string | "aac" → "dts" |
+| `audio_channels` | Audio channel upgrade | integer | 2 → 6 (stereo to 5.1) |
+| `hdr_status` | HDR upgrade | string | "SDR" → "HDR10" |
+| `file_size` | File replacement | integer (bytes) | File size in bytes |
+| `provider_ids` | Metadata update | varies | External ID changes |
+
+### Using Changes in Templates
+
+```jinja2
+{# Check if there are any changes #}
+{% if changes and changes | length > 0 %}
+  
+  {# Loop through all changes #}
+  {% for change in changes %}
+    {% if change.type == 'resolution' %}
+      📐 Resolution: {{ change.old_value }}p → {{ change.new_value }}p
+    {% elif change.type == 'codec' %}
+      🎞️ Video Codec: {{ change.old_value }} → {{ change.new_value | upper }}
+    {% elif change.type == 'audio_codec' %}
+      🔊 Audio: {{ change.old_value }} → {{ change.new_value | upper }}
+    {% elif change.type == 'audio_channels' %}
+      🔊 Channels: {{ change.old_value }}ch → {{ change.new_value }}ch
+    {% elif change.type == 'hdr_status' %}
+      🌈 HDR: {{ change.old_value }} → {{ change.new_value }}
+    {% elif change.type == 'file_size' %}
+      💾 File replaced ({{ '%.1f' | format(change.new_value / 1073741824) }} GB)
+    {% endif %}
+  {% endfor %}
+  
+  {# Show only first 3 changes with count #}
+  {% for change in changes[:3] %}
+    <!-- Display change -->
+  {% endfor %}
+  {% if changes | length > 3 %}
+    +{{ changes | length - 3 }} more changes
+  {% endif %}
+  
+{% endif %}
+```
+
+### Formatted Change Display
+
+```jinja2
+{# Compact inline change summary #}
+"fields": [
+  {% for change in changes[:5] %}
+  {
+    "name": "{% if change.type == 'resolution' %}📐 Resolution Upgrade{% elif change.type == 'codec' %}🎞️ Video Codec{% elif change.type == 'audio_codec' %}🔊 Audio Upgrade{% elif change.type == 'audio_channels' %}🔊 Channel Upgrade{% elif change.type == 'hdr_status' %}🌈 HDR Upgrade{% else %}🔄 {{ change.type | title }}{% endif %}",
+    "value": "{{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**",
+    "inline": true
+  }{% if not loop.last %},{% endif %}
+  {% endfor %}
+]
+```
+
+### Grouped Notification Changes
+
+For grouped notifications, changes are attached to each item:
+
+```jinja2
+{% for item_data in upgraded_items %}
+  **{{ item_data.item.name }}**
+  {% if item_data.changes | length > 0 %}
+    Changes: 
+    {% for change in item_data.changes[:2] %}
+      {% if change.type == 'resolution' %}
+        {{ change.old_value }}p→{{ change.new_value }}p
+      {% elif change.type == 'codec' %}
+        {{ change.old_value }}→{{ change.new_value }}
+      {% endif %}
+      {% if not loop.last %} • {% endif %}
+    {% endfor %}
+  {% endif %}
+{% endfor %}
+```
 
 ## 🌐 External Metadata Properties (API Keys Required)
 

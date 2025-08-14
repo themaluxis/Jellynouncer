@@ -1,530 +1,95 @@
 {#
-  New Items By Event Jinja2 Discord Webhook Template for Jellynouncer
-  ==============================================================================
+  New Items By Event Template for Jellynouncer
+  =============================================
 
-  This template generates separate Discord embeds for each media type in a single webhook.
-  It dynamically creates embeds based on the item types present in the items list.
+  Groups multiple new items into a single notification.
+  Shows basic info for each item with metadata enhancement.
 
-  Required Variables:
-  ------------------
-  - items (list): List of all media items with their metadata (mixed types)
-  - jellyfin_url (str): Base URL of the Jellyfin server
-  - timestamp (str): ISO 8601 formatted timestamp of when items were added
-
-  Optional Variables:
-  ------------------
-  - tvdb_attribution_needed (bool): Whether to show TVDb attribution in footer
-
-  Item Data Structure:
-  -------------------
-  Each item in items list should contain:
-  - item: Media item object with properties:
-    - item_id (str): Jellyfin item identifier
-    - item_type (str): Type of media ('Episode', 'Movie', 'Audio', 'MusicAlbum', etc.)
-    - name (str): Item title
-    - [... rest of properties same as before ...]
-
-  Discord Limits Per Webhook:
-  --------------------------
-  - Max 10 embeds total (this template can generate up to 4)
-  - Per embed: Max 25 fields, but we limit to:
-    - Movies: 8 items
-    - TV Episodes: 10 items
-    - Music: 12 items
-    - Other: 8 items
-  - Total possible items: 38 across all categories
-
-  Output Format:
-  -------------
-  Multiple Discord embeds (0-4) based on media types present:
-  - Separate embed for each category with items
-  - Category-specific formatting and limits
-  - Dynamic poster images from Jellyfin
+  Optimized for: Multiple items added at once
+  Discord limits: Respects field count and character limits
 #}
 {
   "embeds": [
-    {#- Group items by type -#}
-    {%- set movies = items|selectattr('item.item_type', 'equalto', 'Movie')|list -%}
-    {%- set episodes = items|selectattr('item.item_type', 'equalto', 'Episode')|list -%}
-    {%- set music = items|selectattr('item.item_type', 'in', ['Audio', 'MusicAlbum'])|list -%}
-    {%- set series = items|selectattr('item.item_type', 'equalto', 'Series')|list -%}
-    {%- set other_types = ['Movie', 'Episode', 'Audio', 'MusicAlbum', 'Series'] -%}
-    {%- set other = items|rejectattr('item.item_type', 'in', other_types)|list -%}
-
-    {#- Track which embeds need commas -#}
-    {%- set has_following = [] -%}
-    {%- if episodes|length > 0 %}{% set _ = has_following.append('tv') %}{% endif -%}
-    {%- if music|length > 0 %}{% set _ = has_following.append('music') %}{% endif -%}
-    {%- if series|length > 0 %}{% set _ = has_following.append('series') %}{% endif -%}
-    {%- if other|length > 0 %}{% set _ = has_following.append('other') %}{% endif -%}
-
-    {#- ==================== MOVIES EMBED ==================== -#}
-    {%- if movies|length > 0 -%}
     {
-      "title": "🎬 New Movies Added ({{ movies|length }})",
-      "description": "The following movies have been added to Jellyfin:",
+      "title": "🆕 {{ total_items }} New Items Added",
+
+      "description": "The following items have been added to Jellyfin:",
+
       "color": 65280,
+
       "fields": [
-        {%- for item_data in movies[:8] %}
+        {% set field_count = namespace(value=0) %}
+
+        {#
+          Process each item with metadata
+          --------------------------------
+          Limit to 20 items to stay within field limits
+        #}
+        {% for item_data in new_items[:20] %}
+          {% if field_count.value > 0 %},{% endif %}
+          {% set field_count.value = field_count.value + 1 %}
         {
-          "name": "{{ (item_data.item.name[:230] + '...') if item_data.item.name|length > 230 else item_data.item.name }}
-        {%- if item_data.item.year %} ({{ item_data.item.year }}){% endif %}",
+          "name": "{{ item_data.item.item_type }}: {{ (item_data.item.name[:200] + '...')
+            if item_data.item.name|length > 200 else item_data.item.name }}",
 
           "value": "
-        {%- if item_data.item.overview -%}
-          *{{ (item_data.item.overview[:150] + '...') if item_data.item.overview|length > 150 else item_data.item.overview }}*\n
-        {%- endif -%}
-
-        {%- if item_data.item.video_height -%}
-          📐 {{ item_data.item.video_height }}p
-          {%- if item_data.item.video_range and item_data.item.video_range != 'SDR' -%}
-            {{ ' ' + item_data.item.video_range }}
-          {%- endif -%}
-        {%- endif -%}
-
-        {%- if item_data.item.video_codec -%}
-          {{ ' • 🎞️ ' + item_data.item.video_codec.upper() }}
-        {%- endif -%}
-
-        {%- if item_data.item.audio_codec -%}
-          {{ ' • 🔊 ' + item_data.item.audio_codec.upper() }}
-          {%- if item_data.item.audio_channels -%}
-            {{ ' ' + item_data.item.audio_channels|string + '.' }}
-            {%- if item_data.item.audio_channels > 2 -%}1{%- else -%}0{%- endif -%}
-          {%- endif -%}
-        {%- endif -%}
-
-        {%- if item_data.item.runtime_ticks -%}
-          {{ ' • ⏱️ ' + (item_data.item.runtime_ticks // 600000000)|string + 'm' }}
-        {%- endif -%}
-
-        {#- Ratings section -#}
-        {%- if item_data.ratings and item_data.ratings|length > 0 -%}
-          \n⭐
-          {%- for rating_key, rating_data in item_data.ratings.items() -%}
-            {%- if rating_key == 'imdb' -%}
-              IMDb: {{ rating_data.value }}
-            {%- elif rating_key == 'rotten_tomatoes' -%}
-              RT: {{ rating_data.value }}%
-            {%- elif rating_key == 'metacritic' -%}
-              MC: {{ rating_data.value }}
-            {%- elif rating_key == 'tmdb' -%}
-              TMDb: {{ rating_data.value }}
+            {%- if item_data.item.item_type == 'Episode' -%}
+              {{ item_data.item.series_name }} S{{ '%02d'|format(item_data.item.season_number or 0) }}E{{ '%02d'|format(item_data.item.episode_number or 0) }}
             {%- endif -%}
-            {%- if not loop.last %} • {% endif -%}
-          {%- endfor -%}
-        {%- endif -%}
 
-        {#- External links -#}
-        {%- if item_data.item.imdb_id or item_data.item.tmdb_id -%}
-          \n🔗
-          {%- if item_data.item.imdb_id -%}
-            [IMDb](https://www.imdb.com/title/{{ item_data.item.imdb_id }}/)
-          {%- endif -%}
-          {%- if item_data.item.tmdb_id -%}
-            {%- if item_data.item.imdb_id %} • {% endif -%}
-            [TMDb](https://www.themoviedb.org/movie/{{ item_data.item.tmdb_id }})
-          {%- endif -%}
-        {%- endif -%}",
-          "inline": false
-        }{% if not loop.last %},{% endif %}
-        {%- endfor %}
+            {%- if item_data.item.video_height -%}
+              \n📐 {{ item_data.item.video_height }}p
+              {%- if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif -%}
+            {%- endif -%}
 
-        {%- if movies|length > 8 %}
-        ,{
-          "name": "➕ Additional Movies",
-          "value": "...and {{ movies|length - 8 }} more movie
-        {%- if movies|length - 8 > 1 -%}s{%- endif %} added.",
-          "inline": false
+            {%- if item_data.item.video_codec -%}
+              • 🎞️ {{ item_data.item.video_codec | upper }}
+            {%- endif -%}
+
+            {%- if item_data.item.audio_codec -%}
+              • 🔊 {{ item_data.item.audio_codec | upper }}
+            {%- endif -%}
+
+            {#
+              Add primary rating if available
+              --------------------------------
+              Priority: IMDb → TMDb → TVDb
+            #}
+            {%- if item_data.item.omdb and item_data.item.omdb.imdb_rating and item_data.item.omdb.imdb_rating != 'N/A' -%}
+              \n⭐ IMDb: {{ item_data.item.omdb.imdb_rating }}
+            {%- elif item_data.item.tmdb and item_data.item.tmdb.vote_average -%}
+              \n⭐ TMDb: {{ item_data.item.tmdb.vote_average }}
+            {%- elif item_data.item.tvdb and item_data.item.tvdb.rating -%}
+              \n⭐ TVDb: {{ item_data.item.tvdb.rating }}
+            {%- endif %}",
+
+          "inline": true
         }
-        {%- endif %}
-      ],
-      {%- set first_movie = movies|first -%}
-      {%- if first_movie %}
-      "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ first_movie.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
-      },
-      "image": {
-        "url": "{{ jellyfin_url }}/Items/{{ first_movie.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
-      },
-      {%- else %}
-      "thumbnail": {
-        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
-      },
-      {%- endif %}
-      "footer": {
-        "text": "Added to Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.png"
-      },
-      "timestamp": "{{ timestamp }}"
-    }
-    {%- if has_following|length > 0 %},{% endif -%}
-    {%- endif -%}
+        {% endfor %}
 
-    {#- ==================== TV EPISODES EMBED ==================== -#}
-    {%- if episodes|length > 0 -%}
-    {%- if movies|length > 0 %}{% set _ = has_following.remove('tv') if 'tv' in has_following else None %}{% endif -%}
-    {
-      "title": "📺 New TV Episodes Added ({{ episodes|length }})",
-      "description": "The following TV episodes have been added to Jellyfin:",
-      "color": 65280,
-      "fields": [
-        {%- for item_data in episodes[:10] %}
+        {% if new_items|length > 20 %}
+          {% if field_count.value > 0 %},{% endif %}
         {
-          "name": "{{ item_data.item.series_name }} S{{ '%02d'|format(item_data.item.season_number|default(0)) }}E{{ '%02d'|format(item_data.item.episode_number|default(0)) }}",
-
-          "value": "**{{ item_data.item.name }}**
-        {%- if item_data.item.overview -%}
-          \n*{{ (item_data.item.overview[:120] + '...') if item_data.item.overview|length > 120 else item_data.item.overview }}*
-        {%- endif -%}
-
-        {%- if item_data.item.video_height -%}
-          \n📐 {{ item_data.item.video_height }}p
-          {%- if item_data.item.video_range and item_data.item.video_range != 'SDR' -%}
-            {{ ' ' + item_data.item.video_range }}
-          {%- endif -%}
-        {%- endif -%}
-
-        {%- if item_data.item.video_codec -%}
-          {{ ' • 🎞️ ' + item_data.item.video_codec.upper() }}
-        {%- endif -%}
-
-        {%- if item_data.item.audio_codec -%}
-          {{ ' • 🔊 ' + item_data.item.audio_codec.upper() }}
-          {%- if item_data.item.audio_channels -%}
-            {{ ' ' + item_data.item.audio_channels|string + '.' }}
-            {%- if item_data.item.audio_channels > 2 -%}1{%- else -%}0{%- endif -%}
-          {%- endif -%}
-        {%- endif -%}
-
-        {%- if item_data.item.runtime_ticks -%}
-          {{ ' • ⏱️ ' + (item_data.item.runtime_ticks // 600000000)|string + 'm' }}
-        {%- endif -%}
-
-        {#- Ratings and external links -#}
-        {%- if item_data.ratings and item_data.ratings|length > 0 -%}
-          \n⭐
-          {%- for rating_key, rating_data in item_data.ratings.items() -%}
-            {%- if rating_key == 'imdb' -%}
-              IMDb: {{ rating_data.value }}
-            {%- elif rating_key == 'tvdb' -%}
-              TVDb: {{ rating_data.value }}
-            {%- elif rating_key == 'tmdb' -%}
-              TMDb: {{ rating_data.value }}
-            {%- endif -%}
-            {%- if not loop.last %} • {% endif -%}
-          {%- endfor -%}
-        {%- endif -%}
-
-        {%- if item_data.item.imdb_id or item_data.item.tmdb_id or item_data.item.tvdb_id -%}
-          \n🔗
-          {%- if item_data.item.imdb_id -%}
-            [IMDb](https://www.imdb.com/title/{{ item_data.item.imdb_id }}/)
-          {%- endif -%}
-          {%- if item_data.item.tmdb_id -%}
-            {%- if item_data.item.imdb_id %} • {% endif -%}
-            [TMDb](https://www.themoviedb.org/tv/{{ item_data.item.tmdb_id }})
-          {%- endif -%}
-          {%- if item_data.item.tvdb_id -%}
-            {%- if item_data.item.imdb_id or item_data.item.tmdb_id %} • {% endif -%}
-            {%- if item_data.ratings and item_data.ratings.tvdb and item_data.ratings.tvdb.proper_url -%}
-              [TVDb]({{ item_data.ratings.tvdb.proper_url }})
-            {%- else -%}
-              [TVDb](https://thetvdb.com/episodes/{{ item_data.item.tvdb_id }})
-            {%- endif -%}
-          {%- endif -%}
-        {%- endif -%}",
-          "inline": false
-        }{% if not loop.last %},{% endif %}
-        {%- endfor %}
-
-        {%- if episodes|length > 10 %}
-        ,{
-          "name": "➕ Additional Episodes",
-          "value": "...and {{ episodes|length - 10 }} more episode
-        {%- if episodes|length - 10 > 1 -%}s{%- endif %} added.",
-          "inline": false
-        }
-        {%- endif %}
-      ],
-      {%- set first_episode = episodes|first -%}
-      {%- if first_episode and first_episode.item.series_id %}
-      "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ first_episode.item.series_id }}/Images/Primary?maxHeight=400&maxWidth=300"
-      },
-      {%- else %}
-      "thumbnail": {
-        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
-      },
-      {%- endif %}
-      "footer": {
-        "text": "Added to Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC
-        {%- if tvdb_attribution_needed %}\nMetadata provided by TheTVDB{% endif %}",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.png"
-      },
-      "timestamp": "{{ timestamp }}"
-    }
-    {%- if has_following|length > 0 and 'tv' not in has_following %},{% endif -%}
-    {%- endif -%}
-
-    {#- ==================== MUSIC EMBED ==================== -#}
-    {%- if music|length > 0 -%}
-    {%- if movies|length > 0 or episodes|length > 0 %}{% set _ = has_following.remove('music') if 'music' in has_following else None %}{% endif -%}
-    {
-      "title": "🎵 New Music Added ({{ music|length }})",
-      "description": "The following music has been added to Jellyfin:",
-      "color": 65280,
-      "fields": [
-        {%- for item_data in music[:12] %}
-        {
-          "name": "{{ (item_data.item.name[:250] + '...') if item_data.item.name|length > 250 else item_data.item.name }}",
-
-          "value": "
-        {%- if item_data.item.album -%}
-          📀 **{{ item_data.item.album }}**\n
-        {%- endif -%}
-
-        {%- if item_data.item.artists and item_data.item.artists|length > 0 -%}
-          🎤 {{ item_data.item.artists[:2]|join(', ') }}
-          {%- if item_data.item.artists|length > 2 -%}
-            {{ ' +' + (item_data.item.artists|length - 2)|string + ' more' }}
-          {%- endif -%}\n
-        {%- endif -%}
-
-        🔊 {{ item_data.item.audio_codec.upper() if item_data.item.audio_codec else 'Unknown' }}
-
-        {%- if item_data.item.audio_channels -%}
-          {{ ' ' + item_data.item.audio_channels|string + '.' }}
-          {%- if item_data.item.audio_channels > 2 -%}1{%- else -%}0{%- endif -%}
-        {%- endif -%}
-
-        {%- if item_data.item.audio_bitrate -%}
-          {{ ' • ' + (item_data.item.audio_bitrate / 1000)|int|string + ' kbps' }}
-        {%- endif -%}
-
-        {%- if item_data.item.runtime_ticks -%}
-          {{ ' • ⏱️ ' + (item_data.item.runtime_ticks // 600000000)|string + 'm' }}
-        {%- endif -%}
-
-        {%- if item_data.item.overview -%}
-          \n*{{ (item_data.item.overview[:100] + '...') if item_data.item.overview|length > 100 else item_data.item.overview }}*
-        {%- endif -%}",
-          "inline": false
-        }{% if not loop.last %},{% endif %}
-        {%- endfor %}
-
-        {%- if music|length > 12 %}
-        ,{
-          "name": "➕ Additional Tracks",
-          "value": "...and {{ music|length - 12 }} more track
-        {%- if music|length - 12 > 1 -%}s{%- endif %} added.",
-          "inline": false
-        }
-        {%- endif %}
-      ],
-      "thumbnail": {
-        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
-      },
-      "footer": {
-        "text": "Added to Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.png"
-      },
-      "timestamp": "{{ timestamp }}"
-    }
-    {%- if has_following|length > 0 and 'music' not in has_following %},{% endif -%}
-    {%- endif -%}
-
-    {#- ==================== TV SERIES EMBED ==================== -#}
-    {%- if series|length > 0 -%}
-    {%- if movies|length > 0 or episodes|length > 0 or music|length > 0 %}{% set _ = has_following.remove('series') if 'series' in has_following else None %}{% endif -%}
-    {
-      "title": "📺 New TV Series Added ({{ series|length }})",
-      "description": "The following TV series have been added to Jellyfin:",
-      "color": 65280,
-      "fields": [
-        {%- for item_data in series[:8] %}
-        {
-          "name": "{{ (item_data.item.name[:230] + '...') if item_data.item.name|length > 230 else item_data.item.name }}
-        {%- if item_data.item.year %} ({{ item_data.item.year }}){% endif %}",
-
-          "value": "
-        {%- if item_data.item.overview -%}
-          *{{ (item_data.item.overview[:150] + '...') if item_data.item.overview|length > 150 else item_data.item.overview }}*\n
-        {%- endif -%}
-
-        {%- if item_data.item.genres and item_data.item.genres|length > 0 -%}
-          🎭 {{ item_data.item.genres[:3]|join(', ') }}
-          {%- if item_data.item.genres|length > 3 -%}
-            {{ ' +' + (item_data.item.genres|length - 3)|string + ' more' }}
-          {%- endif -%}\n
-        {%- endif -%}
-
-        {%- if item_data.item.status -%}
-          📊 Status: {{ item_data.item.status }}\n
-        {%- endif -%}
-
-        {%- if item_data.ratings and item_data.ratings|length > 0 -%}
-          ⭐
-          {%- for rating_key, rating_data in item_data.ratings.items() -%}
-            {%- if rating_key == 'imdb' -%}
-              IMDb: {{ rating_data.value }}
-            {%- elif rating_key == 'tvdb' -%}
-              TVDb: {{ rating_data.value }}
-            {%- elif rating_key == 'tmdb' -%}
-              TMDb: {{ rating_data.value }}
-            {%- endif -%}
-            {%- if not loop.last %} • {% endif -%}
-          {%- endfor -%}\n
-        {%- endif -%}
-
-        {%- if item_data.item.imdb_id or item_data.item.tmdb_id or item_data.item.tvdb_id -%}
-          🔗
-          {%- if item_data.item.imdb_id -%}
-            [IMDb](https://www.imdb.com/title/{{ item_data.item.imdb_id }}/)
-          {%- endif -%}
-          {%- if item_data.item.tmdb_id -%}
-            {%- if item_data.item.imdb_id %} • {% endif -%}
-            [TMDb](https://www.themoviedb.org/tv/{{ item_data.item.tmdb_id }})
-          {%- endif -%}
-          {%- if item_data.item.tvdb_id -%}
-            {%- if item_data.item.imdb_id or item_data.item.tmdb_id %} • {% endif -%}
-            {%- if item_data.ratings and item_data.ratings.tvdb and item_data.ratings.tvdb.proper_url -%}
-              [TVDb]({{ item_data.ratings.tvdb.proper_url }})
-            {%- else -%}
-              [TVDb](https://thetvdb.com/series/{{ item_data.item.tvdb_id }})
-            {%- endif -%}
-          {%- endif -%}
-        {%- endif -%}",
-          "inline": false
-        }{% if not loop.last %},{% endif %}
-        {%- endfor %}
-
-        {%- if series|length > 8 %}
-        ,{
-          "name": "➕ Additional Series",
-          "value": "...and {{ series|length - 8 }} more series added.",
-          "inline": false
-        }
-        {%- endif %}
-      ],
-      {%- set first_series = series|first -%}
-      {%- if first_series %}
-      "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ first_series.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
-      },
-      "image": {
-        "url": "{{ jellyfin_url }}/Items/{{ first_series.item.item_id }}/Images/Primary?maxHeight=400&maxWidth=300"
-      },
-      {%- else %}
-      "thumbnail": {
-        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
-      },
-      {%- endif %}
-      "footer": {
-        "text": "Added to Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC
-        {%- if tvdb_attribution_needed %}\nMetadata provided by TheTVDB{% endif %}",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.png"
-      },
-      "timestamp": "{{ timestamp }}"
-    }
-    {%- if has_following|length > 0 and 'series' not in has_following %},{% endif -%}
-    {%- endif -%}
-
-    {#- ==================== OTHER CONTENT EMBED ==================== -#}
-    {%- if other|length > 0 -%}
-    {
-      "title": "📁 New Content Added ({{ other|length }})",
-      "description": "The following content has been added to Jellyfin:",
-      "color": 65280,
-      "fields": [
-        {%- for item_data in other[:8] %}
-        {
-          "name": "{{ (item_data.item.name[:250] + '...') if item_data.item.name|length > 250 else item_data.item.name }}",
-
-          "value": "📂 **{{ item_data.item.item_type }}**
-        {%- if item_data.item.overview -%}
-          \n*{{ (item_data.item.overview[:100] + '...') if item_data.item.overview|length > 100 else item_data.item.overview }}*
-        {%- endif -%}
-
-        {%- if item_data.item.video_height -%}
-          \n📐 {{ item_data.item.video_height }}p
-          {%- if item_data.item.video_codec -%}
-            {{ ' • 🎞️ ' + item_data.item.video_codec.upper() }}
-          {%- endif -%}
-        {%- endif -%}
-
-        {%- if item_data.item.audio_codec -%}
-          {{ ' • 🔊 ' + item_data.item.audio_codec.upper() }}
-          {%- if item_data.item.audio_channels -%}
-            {{ ' ' + item_data.item.audio_channels|string + '.' }}
-            {%- if item_data.item.audio_channels > 2 -%}1{%- else -%}0{%- endif -%}
-          {%- endif -%}
-        {%- endif -%}
-
-        {%- if item_data.item.runtime_ticks -%}
-          {{ ' • ⏱️ ' + (item_data.item.runtime_ticks // 600000000)|string + 'm' }}
-        {%- endif -%}
-
-        {%- if item_data.ratings and item_data.ratings|length > 0 -%}
-          \n⭐
-          {%- for rating_key, rating_data in item_data.ratings.items() -%}
-            {%- if rating_key == 'imdb' -%}
-              IMDb: {{ rating_data.value }}
-            {%- elif rating_key == 'tmdb' -%}
-              TMDb: {{ rating_data.value }}
-            {%- endif -%}
-            {%- if not loop.last %} • {% endif -%}
-          {%- endfor -%}
-        {%- endif -%}
-
-        {%- if item_data.item.imdb_id or item_data.item.tmdb_id or item_data.item.tvdb_id -%}
-          \n🔗
-          {%- if item_data.item.imdb_id -%}
-            [IMDb](https://www.imdb.com/title/{{ item_data.item.imdb_id }}/)
-          {%- endif -%}
-          {%- if item_data.item.tmdb_id -%}
-            {%- if item_data.item.imdb_id %} • {% endif -%}
-            [TMDb](https://www.themoviedb.org/
-            {%- if item_data.item.item_type == 'Movie' -%}movie
-            {%- else -%}tv
-            {%- endif -%}/{{ item_data.item.tmdb_id }})
-          {%- endif -%}
-          {%- if item_data.item.tvdb_id -%}
-            {%- if item_data.item.imdb_id or item_data.item.tmdb_id %} • {% endif -%}
-            {%- if item_data.ratings and item_data.ratings.tvdb and item_data.ratings.tvdb.proper_url -%}
-              [TVDb]({{ item_data.ratings.tvdb.proper_url }})
-            {%- elif item_data.item.item_type == 'Episode' -%}
-              [TVDb](https://thetvdb.com/episodes/{{ item_data.item.tvdb_id }})
-            {%- elif item_data.item.item_type == 'Series' -%}
-              [TVDb](https://thetvdb.com/series/{{ item_data.item.tvdb_id }})
-            {%- else -%}
-              [TVDb](https://thetvdb.com/dereferrer/series/{{ item_data.item.tvdb_id }})
-            {%- endif -%}
-          {%- endif -%}
-        {%- endif -%}",
-          "inline": false
-        }{% if not loop.last %},{% endif %}
-        {%- endfor %}
-
-        {%- if other|length > 8 %}
-        ,{
           "name": "➕ Additional Items",
-          "value": "...and {{ other|length - 8 }} more item
-        {%- if other|length - 8 > 1 -%}s{%- endif %} added.",
+          "value": "And {{ new_items|length - 20 }} more items...",
           "inline": false
         }
-        {%- endif %}
+        {% endif %}
       ],
-      "thumbnail": {
-        "url": "{{ jellyfin_url }}/web/assets/img/banner-light.png"
-      },
+
       "footer": {
-        "text": "Added to Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC
-        {%- if tvdb_attribution_needed %}\nMetadata provided by TheTVDB{% endif %}",
+        "text": "Jellyfin
+          {%- if new_items[0].item.server_name %} • {{ new_items[0].item.server_name }}{% endif %}
+          {%- set has_omdb = new_items | selectattr('item.omdb') | list | length > 0 -%}
+          {%- set has_tvdb = new_items | selectattr('item.tvdb') | list | length > 0 -%}
+          {%- set has_tmdb = new_items | selectattr('item.tmdb') | list | length > 0 -%}
+          {%- if has_omdb %} • IMDb via OMDb{% endif -%}
+          {%- if has_tvdb %} • TheTVDB{% endif -%}
+          {%- if has_tmdb %} • TMDb{% endif %}",
         "icon_url": "{{ jellyfin_url }}/web/favicon.png"
       },
+
       "timestamp": "{{ timestamp }}"
     }
-    {%- endif -%}
   ]
 }

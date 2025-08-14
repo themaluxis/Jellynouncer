@@ -1,261 +1,161 @@
 {#
-  Jellynouncer Grouped Upgraded Items Discord Embed Template
+  Upgraded Items Grouped Template for Jellynouncer
+  =================================================
 
-  This template generates Discord embed notifications for multiple upgraded media items grouped together.
-  Items are categorized by type (Movies, TV Shows, Music, Other) with detailed upgrade information.
-  Shows technical specifications and what changed for each upgraded item.
+  Comprehensive grouped upgrade notification by type.
+  Shows all upgraded items organized by category with changes.
 
-  Categories:
-  - Movies: Films with upgrade details (resolution, codec, audio improvements)
-  - TV Shows: Episodes with technical upgrades and change summaries
-  - Music: Songs, Albums, Artists with audio quality improvements
-  - Other: Photos, Books, and other content with relevant upgrade info
+  Supports: Movies, TV, Music, Other
 #}
 {
   "embeds": [
     {
-      {#
-        Title and Description
+      "title": "⬆️ {{ total_items }} Items Upgraded in Jellyfin",
 
-        Shows total count of upgraded items with upgrade-specific title.
-        Uses upgrade arrow emoji to indicate improvement/enhancement.
-      #}
-      "title": "⬆️ Jellyfin Library Upgrades ({{ total_items }})",
-      "description": "The following items have been upgraded in Jellyfin:",
+      "description": "A summary of all upgraded content organized by type:",
 
-      {#
-        Color Coding
+      "color": {{ color }},
 
-        Uses orange color (16766720) for upgrade notifications.
-        Differentiates from new item notifications which use blue/green.
-      #}
-      "color": 16766720,
-
-      {#
-        Category-Based Upgrade Fields
-
-        Each category shows detailed upgrade information.
-        Includes current technical specs and what changed.
-        Shows before/after comparisons for clarity.
-      #}
       "fields": [
-        {#
-          Movies Upgrades Category
+        {% set field_count = namespace(value=0) %}
 
-          Shows upgraded movies with detailed technical information.
-          Includes current resolution, codecs, and what improvements were made.
-          Displays change summaries to highlight the upgrade value.
+        {#
+          Movies Category with Upgrades
+          ------------------------------
         #}
         {% if 'movies' in categories and categories.movies.upgraded|length > 0 %}
+          {% set field_count.value = field_count.value + 1 %}
         {
           "name": "🎬 Movies Upgraded ({{ categories.movies.upgraded|length }})",
-          "value": "{% for item_data in categories.movies.upgraded[:8] -%}
+          "value": "{% for item_data in categories.movies.upgraded[:5] -%}
             **{{ item_data.item.name }}**
-            {%- if item_data.item.year %} ({{ item_data.item.year }}){% endif %}\n
-            📐 {{ item_data.item.video_height or 'Unknown' }}p
-            {%- if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif -%}
-            {%- if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif -%}
-            {%- if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}
-              {%- if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.
-                {%- if item_data.item.audio_channels > 2 %}1{% else %}0{% endif -%}
-              {%- endif -%}
+            {%- if item_data.item.year %} ({{ item_data.item.year }}){% endif %}
+            {%- if item_data.changes and item_data.changes|length > 0 %}\n🔄 {{ item_data.changes[0].old_value }} → **{{ item_data.changes[0].new_value }}**
+              {%- if item_data.changes|length > 1 %} (+{{ item_data.changes|length - 1 }}){% endif -%}
             {%- endif -%}
-            {%- if item_data.changes|length > 0 %}\n**Changes**:
-              {%- for change in item_data.changes[:2] -%}
-                {%- if change.type == 'resolution' -%}
-                  {{ change.old_value or 'Unknown' }}p→**{{ change.new_value or 'Unknown' }}p**
-                {%- elif change.type == 'codec' -%}
-                  {{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**
-                {%- elif change.type == 'audio_codec' -%}
-                  Audio: {{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**
-                {%- elif change.type == 'audio_channels' -%}
-                  {{ change.old_value or 0 }}ch→**{{ change.new_value or 0 }}ch**
-                {%- elif change.type == 'hdr_status' -%}
-                  {{ change.old_value or 'SDR' }}→**{{ change.new_value or 'SDR' }}**
-                {%- else -%}
-                  {{ change.description }}
-                {%- endif -%}
-                {%- if not loop.last %} • {% endif -%}
-              {%- endfor -%}
-              {%- if item_data.changes|length > 2 %} +{{ item_data.changes|length - 2 }} more{% endif -%}
+            {%- if item_data.item.video_height %}\n📐 Now: {{ item_data.item.video_height }}p
+              {%- if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif -%}
             {%- endif -%}
+            {%- set rating_parts = [] -%}
+            {%- if item_data.item.omdb and item_data.item.omdb.imdb_rating and item_data.item.omdb.imdb_rating != 'N/A' -%}
+              {%- set _ = rating_parts.append('IMDb: ' ~ item_data.item.omdb.imdb_rating) -%}
+            {%- endif -%}
+            {%- if item_data.item.tmdb and item_data.item.tmdb.vote_average -%}
+              {%- set _ = rating_parts.append('TMDb: ' ~ item_data.item.tmdb.vote_average) -%}
+            {%- endif -%}
+            {%- if rating_parts|length > 0 %}\n⭐ {{ rating_parts | join(' • ') }}{% endif -%}
             {%- if not loop.last %}\n\n{% endif -%}
           {%- endfor -%}
-          {%- if categories.movies.upgraded|length > 8 %}\n...and {{ categories.movies.upgraded|length - 8 }} more movies were upgraded.{% endif %}",
-          "inline": false
-        }{% if ('tv' in categories and categories.tv.upgraded|length > 0) or ('music' in categories and categories.music.upgraded|length > 0) or ('other' in categories and categories.other.upgraded|length > 0) %},{% endif %}
-        {% endif %}
-
-        {#
-          TV Shows Upgrades Category
-
-          Shows upgraded episodes with series info and technical details.
-          Includes episode identification (series, season, episode) and current specs.
-          Details what technical aspects were improved in each upgrade.
-        #}
-        {% if 'tv' in categories and categories.tv.upgraded|length > 0 %}
-        {
-          "name": "📺 TV Episodes Upgraded ({{ categories.tv.upgraded|length }})",
-          "value": "{% for item_data in categories.tv.upgraded[:8] -%}
-            **{{ item_data.item.series_name }}** S{{ '%02d'|format(item_data.item.season_number or 0) }}E{{ '%02d'|format(item_data.item.episode_number or 0) }} - {{ item_data.item.name }}\n
-            📐 {{ item_data.item.video_height or 'Unknown' }}p
-            {%- if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif -%}
-            {%- if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif -%}
-            {%- if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}
-              {%- if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.
-                {%- if item_data.item.audio_channels > 2 %}1{% else %}0{% endif -%}
-              {%- endif -%}
-            {%- endif -%}
-            {%- if item_data.changes|length > 0 %}\n**Changes**:
-              {%- for change in item_data.changes[:2] -%}
-                {%- if change.type == 'resolution' -%}
-                  {{ change.old_value or 'Unknown' }}p→**{{ change.new_value or 'Unknown' }}p**
-                {%- elif change.type == 'codec' -%}
-                  {{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**
-                {%- elif change.type == 'audio_codec' -%}
-                  Audio: {{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**
-                {%- elif change.type == 'audio_channels' -%}
-                  {{ change.old_value or 0 }}ch→**{{ change.new_value or 0 }}ch**
-                {%- elif change.type == 'hdr_status' -%}
-                  {{ change.old_value or 'SDR' }}→**{{ change.new_value or 'SDR' }}**
-                {%- else -%}
-                  {{ change.description }}
-                {%- endif -%}
-                {%- if not loop.last %} • {% endif -%}
-              {%- endfor -%}
-              {%- if item_data.changes|length > 2 %} +{{ item_data.changes|length - 2 }} more{% endif -%}
-            {%- endif -%}
-            {%- if not loop.last %}\n\n{% endif -%}
-          {%- endfor -%}
-          {%- if categories.tv.upgraded|length > 8 %}\n...and {{ categories.tv.upgraded|length - 8 }} more episodes were upgraded.{% endif %}",
-          "inline": false
-        }{% if ('music' in categories and categories.music.upgraded|length > 0) or ('other' in categories and categories.other.upgraded|length > 0) %},{% endif %}
-        {% endif %}
-
-        {#
-          Music Upgrades Category
-
-          Enhanced music upgrade display with artist and album information.
-          Shows audio quality improvements with detailed technical specs.
-          Includes bitrate, sample rate, and codec changes for music content.
-          Displays artist information for better music identification.
-        #}
-        {% if 'music' in categories and categories.music.upgraded|length > 0 %}
-        {
-          "name": "🎵 Music Upgraded ({{ categories.music.upgraded|length }})",
-          "value": "{% for item_data in categories.music.upgraded[:10] -%}
-            {%- if item_data.item.item_type == 'Audio' -%}
-              **🎵 {{ item_data.item.name }}**
-              {%- if item_data.item.album %} • {{ item_data.item.album }}{% endif -%}
-              {%- if item_data.item.artists and item_data.item.artists|length > 0 %}\n🎤 {{ item_data.item.artists[:2]|join(', ') }}
-                {%- if item_data.item.artists|length > 2 %} +{{ item_data.item.artists|length - 2 }} more{% endif -%}
-              {%- elif item_data.item.album_artist %}\n🎤 {{ item_data.item.album_artist }}
-              {%- endif -%}
-            {%- elif item_data.item.item_type == 'MusicAlbum' -%}
-              **💿 {{ item_data.item.name }}**
-              {%- if item_data.item.album_artist %}\n🎤 {{ item_data.item.album_artist }}
-              {%- elif item_data.item.artists and item_data.item.artists|length > 0 %}\n🎤 {{ item_data.item.artists[:2]|join(', ') }}
-                {%- if item_data.item.artists|length > 2 %} +{{ item_data.item.artists|length - 2 }} more{% endif -%}
-              {%- endif -%}
-            {%- elif item_data.item.item_type == 'MusicArtist' -%}
-              **🎤 {{ item_data.item.name }}**
-            {%- else -%}
-              **{{ item_data.item.name }}**
-            {%- endif %}\n
-            🔊 {{ item_data.item.audio_codec.upper() or 'Unknown' }}
-            {%- if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.
-              {%- if item_data.item.audio_channels > 2 %}1{% else %}0{% endif -%}
-            {%- endif -%}
-            {%- if item_data.item.audio_bitrate %} • {{ (item_data.item.audio_bitrate / 1000)|int }} kbps{% endif -%}
-            {%- if item_data.item.audio_samplerate %} • {{ (item_data.item.audio_samplerate / 1000)|round(1) }} kHz{% endif -%}
-            {%- if item_data.changes|length > 0 %}\n**Changes**:
-              {%- for change in item_data.changes -%}
-                {%- if change.type == 'audio_codec' -%}
-                  {{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**
-                {%- elif change.type == 'audio_channels' -%}
-                  {{ change.old_value or 0 }}ch→**{{ change.new_value or 0 }}ch**
-                {%- elif change.type == 'audio_bitrate' -%}
-                  {{ (change.old_value / 1000)|int if change.old_value else 'Unknown' }}→**{{ (change.new_value / 1000)|int if change.new_value else 'Unknown' }}** kbps
-                {%- elif change.type == 'audio_samplerate' -%}
-                  {{ (change.old_value / 1000)|round(1) if change.old_value else 'Unknown' }}→**{{ (change.new_value / 1000)|round(1) if change.new_value else 'Unknown' }}** kHz
-                {%- else -%}
-                  {{ change.description }}
-                {%- endif -%}
-                {%- if not loop.last %} • {% endif -%}
-              {%- endfor -%}
-            {%- endif -%}
-            {%- if not loop.last %}\n\n{% endif -%}
-          {%- endfor -%}
-          {%- if categories.music.upgraded|length > 10 %}\n...and {{ categories.music.upgraded|length - 10 }} more tracks were upgraded.{% endif %}",
-          "inline": false
-        }{% if 'other' in categories and categories.other.upgraded|length > 0 %},{% endif %}
-        {% endif %}
-
-        {#
-          Other Content Upgrades Category
-
-          Handles Photos, Books, and miscellaneous content upgrades.
-          Shows content type for identification since items vary widely.
-          Includes technical specs when relevant (e.g., resolution for photos).
-        #}
-        {% if 'other' in categories and categories.other.upgraded|length > 0 %}
-        {
-          "name": "📁 Other Content Upgraded ({{ categories.other.upgraded|length }})",
-          "value": "{% for item_data in categories.other.upgraded[:8] -%}
-            **{{ item_data.item.name }}** ({{ item_data.item.item_type }})\n
-            {%- if item_data.item.video_height -%}
-              📐 {{ item_data.item.video_height }}p
-              {%- if item_data.item.video_codec %} • 🎞️ {{ item_data.item.video_codec.upper() }}{% endif -%}
-              {%- if item_data.item.audio_codec %} • 🔊 {{ item_data.item.audio_codec.upper() }}{% endif -%}
-            {%- elif item_data.item.width and item_data.item.height -%}
-              📐 {{ item_data.item.width }}×{{ item_data.item.height }}
-            {%- elif item_data.item.audio_codec -%}
-              🔊 {{ item_data.item.audio_codec.upper() }}
-              {%- if item_data.item.audio_channels %} {{ item_data.item.audio_channels }}.
-                {%- if item_data.item.audio_channels > 2 %}1{% else %}0{% endif -%}
-              {%- endif -%}
-            {%- endif -%}
-            {%- if item_data.changes|length > 0 %}\n**Changes**:
-              {%- for change in item_data.changes[:2] -%}
-                {%- if change.type == 'resolution' -%}
-                  {{ change.old_value or 'Unknown' }}p→**{{ change.new_value or 'Unknown' }}p**
-                {%- elif change.type == 'codec' -%}
-                  {{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**
-                {%- elif change.type == 'audio_codec' -%}
-                  Audio: {{ change.old_value or 'Unknown' }}→**{{ change.new_value or 'Unknown' }}**
-                {%- else -%}
-                  {{ change.description }}
-                {%- endif -%}
-                {%- if not loop.last %} • {% endif -%}
-              {%- endfor -%}
-              {%- if item_data.changes|length > 2 %} +{{ item_data.changes|length - 2 }} more{% endif -%}
-            {%- endif -%}
-            {%- if not loop.last %}\n\n{% endif -%}
-          {%- endfor -%}
-          {%- if categories.other.upgraded|length > 8 %}\n...and {{ categories.other.upgraded|length - 8 }} more items were upgraded.{% endif %}",
+          {%- if categories.movies.upgraded|length > 5 %}\n\n...and {{ categories.movies.upgraded|length - 5 }} more{% endif %}",
           "inline": false
         }
         {% endif %}
+
+        {#
+          TV Category with Upgrades
+          --------------------------
+        #}
+        {% if 'tv' in categories and categories.tv.upgraded|length > 0 %}
+          {% if field_count.value > 0 %},{% endif %}
+          {% set field_count.value = field_count.value + 1 %}
+        {
+          "name": "📺 TV Content Upgraded ({{ categories.tv.upgraded|length }})",
+          "value": "{% for item_data in categories.tv.upgraded[:5] -%}
+            {%- if item_data.item.item_type == 'Episode' -%}
+              **{{ item_data.item.series_name }}** S{{ '%02d'|format(item_data.item.season_number or 0) }}E{{ '%02d'|format(item_data.item.episode_number or 0) }}
+            {%- else -%}
+              **{{ item_data.item.name }}**
+            {%- endif %}
+            {%- if item_data.changes and item_data.changes|length > 0 %}\n🔄 {{ item_data.changes[0].old_value }} → **{{ item_data.changes[0].new_value }}**{% endif -%}
+            {%- if item_data.item.video_height %}\n📐 Now: {{ item_data.item.video_height }}p{% endif -%}
+            {%- if item_data.item.tvdb and item_data.item.tvdb.rating %}\n⭐ TVDb: {{ item_data.item.tvdb.rating }}{% endif -%}
+            {%- if not loop.last %}\n\n{% endif -%}
+          {%- endfor -%}
+          {%- if categories.tv.upgraded|length > 5 %}\n\n...and {{ categories.tv.upgraded|length - 5 }} more{% endif %}",
+          "inline": false
+        }
+        {% endif %}
+
+        {#
+          Music Category with Upgrades
+          -----------------------------
+        #}
+        {% if 'music' in categories and categories.music.upgraded|length > 0 %}
+          {% if field_count.value > 0 %},{% endif %}
+          {% set field_count.value = field_count.value + 1 %}
+        {
+          "name": "🎵 Music Upgraded ({{ categories.music.upgraded|length }})",
+          "value": "{% for item_data in categories.music.upgraded[:6] -%}
+            **{{ item_data.item.name }}**
+            {%- if item_data.item.artists %} - {{ item_data.item.artists[0] }}{% endif -%}
+            {%- if item_data.changes and item_data.changes|length > 0 %}\n🔄 {{ item_data.changes[0].old_value }} → **{{ item_data.changes[0].new_value }}**{% endif -%}
+            {%- if not loop.last %}\n{% endif -%}
+          {%- endfor -%}
+          {%- if categories.music.upgraded|length > 6 %}\n...and {{ categories.music.upgraded|length - 6 }} more{% endif %}",
+          "inline": false
+        }
+        {% endif %}
+
+        {#
+          Other Category with Upgrades
+          -----------------------------
+        #}
+        {% if 'other' in categories and categories.other.upgraded|length > 0 %}
+          {% if field_count.value > 0 %},{% endif %}
+          {% set field_count.value = field_count.value + 1 %}
+        {
+          "name": "📁 Other Upgraded ({{ categories.other.upgraded|length }})",
+          "value": "{% for item_data in categories.other.upgraded[:6] -%}
+            **{{ item_data.item.name }}** ({{ item_data.item.item_type }})
+            {%- if item_data.changes and item_data.changes|length > 0 %}\n🔄 Upgraded{% endif -%}
+            {%- if not loop.last %}\n{% endif -%}
+          {%- endfor -%}
+          {%- if categories.other.upgraded|length > 6 %}\n...and {{ categories.other.upgraded|length - 6 }} more{% endif %}",
+          "inline": false
+        }
+        {% endif %}
+
+        {#
+          Upgrade Summary Statistics
+          ---------------------------
+        #}
+        {% if field_count.value > 0 %},{% endif %}
+        {
+          "name": "📊 Upgrade Summary",
+          "value": "**Total Upgrades:** {{ total_items }}
+            {%- if 'movies' in categories %}\n🎬 Movies: {{ categories.movies.upgraded|length }}{% endif -%}
+            {%- if 'tv' in categories %}\n📺 TV: {{ categories.tv.upgraded|length }}{% endif -%}
+            {%- if 'music' in categories %}\n🎵 Music: {{ categories.music.upgraded|length }}{% endif -%}
+            {%- if 'other' in categories %}\n📁 Other: {{ categories.other.upgraded|length }}{% endif -%}
+            \n\n**Most Common Upgrades:**
+            {%- set all_changes = [] -%}
+            {%- for category in categories.values() -%}
+              {%- for item_data in category.upgraded -%}
+                {%- for change in item_data.changes -%}
+                  {%- set _ = all_changes.append(change.type) -%}
+                {%- endfor -%}
+              {%- endfor -%}
+            {%- endfor -%}
+            {%- if 'resolution' in all_changes %}\n📐 Resolution upgrades{% endif -%}
+            {%- if 'codec' in all_changes %}\n🎞️ Video codec upgrades{% endif -%}
+            {%- if 'audio_codec' in all_changes %}\n🔊 Audio upgrades{% endif -%}
+            {%- if 'hdr_status' in all_changes %}\n🌈 HDR upgrades{% endif %}",
+          "inline": false
+        }
       ],
 
-      {#
-        Footer Information
-
-        Shows when upgrades were processed and server identification.
-        Uses consistent branding with Jellyfin favicon.
-        Includes metadata attribution when required.
-      #}
       "footer": {
-        "text": "Updated in Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC{% if tvdb_attribution_needed %}\nMetadata provided by TheTVDB{% endif %}",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.png"
+        "text": "Jellyfin
+          {%- if upgraded_items and upgraded_items[0].item.server_name %} • {{ upgraded_items[0].item.server_name }}{% endif %}
+          {%- set has_omdb = upgraded_items | selectattr('item.omdb') | list | length > 0 if upgraded_items else false -%}
+          {%- set has_tvdb = upgraded_items | selectattr('item.tvdb') | list | length > 0 if upgraded_items else false -%}
+          {%- set has_tmdb = upgraded_items | selectattr('item.tmdb') | list | length > 0 if upgraded_items else false -%}
+          {%- if has_omdb %} • IMDb via OMDb{% endif -%}
+          {%- if has_tvdb %} • TheTVDB{% endif -%}
+          {%- if has_tmdb %} • TMDb{% endif %}",
+        "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
       },
 
-      {#
-        Timestamp
-
-        ISO timestamp for Discord's "time ago" formatting.
-        Represents when the upgrade batch was processed.
-      #}
       "timestamp": "{{ timestamp }}"
     }
   ]

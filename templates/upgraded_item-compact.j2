@@ -1,18 +1,61 @@
+{#
+  Upgraded Item Compact Template for Jellynouncer
+  ================================================
+
+  Minimal upgrade notification showing only essential changes.
+  Perfect for users who want brief upgrade notifications.
+
+  Shows: Title, primary change, new quality
+  Omits: Detailed metadata, multiple ratings, full change list
+#}
 {
   "embeds": [
     {
-      "title": "⬆️ {% if item.item_type == 'Episode' %}📺{% elif item.item_type == 'Movie' %}🎬{% elif item.item_type == 'Audio' %}🎵{% elif item.item_type == 'Photo' %}📷{% else %}📁{% endif %} {{ item.item_type }}{% if changes|length == 1 %} {{ changes[0].type|title }}{% endif %} Upgrade",
-      "description": "{% if item.item_type == 'Episode' %}**{{ item.series_name }}** S{{ '%02d'|format(item.season_number or 0) }}E{{ '%02d'|format(item.episode_number or 0) }} • {{ item.name }}{% elif item.item_type == 'Audio' %}**{{ item.name }}**{% if item.artists and item.artists|length > 0 %} by {{ item.artists[0] }}{% if item.artists|length > 1 %}+{{ item.artists|length - 1 }}{% endif %}{% elif item.album_artist %} by {{ item.album_artist }}{% endif %}{% if item.album %} • {{ item.album }}{% endif %}{% else %}**{{ item.name }}**{% if item.year %} ({{ item.year }}){% endif %}{% if item.official_rating %} • {{ item.official_rating }}{% endif %}{% endif %}\n\n**Δ:** {% for change in changes[:4] %}{% if change.type == 'resolution' %}📐{{ change.old_value or '?' }}p→**{{ change.new_value or '?' }}p**{% elif change.type == 'codec' %}🎞️{{ change.old_value or '?' }}→**{{ change.new_value or '?' }}**{% elif change.type == 'audio_codec' %}🔊{{ change.old_value or '?' }}→**{{ change.new_value or '?' }}**{% elif change.type == 'audio_channels' %}🔊{{ change.old_value or 0 }}ch→**{{ change.new_value or 0 }}ch**{% elif change.type == 'hdr_status' %}🌈{{ change.old_value or 'SDR' }}→**{{ change.new_value or 'SDR' }}**{% elif change.type == 'file_size' %}💾{{ '%.1f'|format((change.old_value or 0) / 1073741824) }}→**{{ '%.1f'|format((change.new_value or 0) / 1073741824) }}GB**{% elif change.type == 'bitrate' %}📊{{ '%.1f'|format((change.old_value or 0) / 1000000) }}→**{{ '%.1f'|format((change.new_value or 0) / 1000000) }}Mbps**{% elif change.type == 'framerate' %}🎬{{ change.old_value or 0 }}→**{{ change.new_value or 0 }}fps**{% elif change.type == 'audio_language' %}🌐{{ change.old_value or '?' }}→**{{ change.new_value or '?' }}**{% elif change.type == 'subtitle_language' %}📝{{ change.old_value or '?' }}→**{{ change.new_value or '?' }}**{% elif change.type == 'provider_ids' %}🔗IDs{% else %}{{ change.type[:4] }}{% endif %}{% if not loop.last %} • {% endif %}{% endfor %}{% if changes|length > 4 %} +{{ changes|length - 4 }}{% endif %}\n{% if item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist', 'Photo'] and (item.video_height or item.video_codec or item.audio_codec) %}**Now:** {% if item.video_height %}📐{{ item.video_height }}p{% if item.video_range and item.video_range != 'SDR' %}{{ item.video_range }}{% endif %}{% endif %}{% if item.video_codec %}{% if item.video_height %} • {% endif %}🎞️{{ item.video_codec.upper() }}{% if item.video_profile and item.video_profile != 'Main' %}.{{ item.video_profile[:1] }}{% endif %}{% if item.video_bitdepth and item.video_bitdepth > 8 %}.{{ item.video_bitdepth }}b{% endif %}{% if item.video_framerate and item.video_framerate != 24 %}@{{ item.video_framerate }}fps{% endif %}{% endif %}{% if item.audio_codec %}{% if item.video_height or item.video_codec %} • {% endif %}🔊{{ item.audio_codec.upper() }}{% if item.audio_channels %}.{{ item.audio_channels }}{% if item.audio_channels > 2 %}.1{% else %}.0{% endif %}{% endif %}{% if item.audio_language and item.audio_language != 'eng' %}.{{ item.audio_language.upper() }}{% endif %}{% if item.audio_samplerate and item.audio_samplerate > 48000 %}@{{ item.audio_samplerate // 1000 }}k{% endif %}{% endif %}{% elif item.item_type == 'Audio' and (item.audio_codec or item.runtime_ticks) %}**Now:** {% if item.audio_codec %}🔊{{ item.audio_codec.upper() }}{% if item.audio_channels %}.{{ item.audio_channels }}{% if item.audio_channels > 2 %}.1{% else %}.0{% endif %}{% endif %}{% if item.audio_samplerate %}@{{ item.audio_samplerate // 1000 }}k{% endif %}{% if item.audio_bitrate %}.{{ '%.0f'|format(item.audio_bitrate / 1000) }}kbps{% endif %}{% endif %}{% if item.runtime_ticks %}{% if item.audio_codec %} • {% endif %}⏱️{{ ((item.runtime_ticks / 10000000) / 60) | round(1) }}m{% endif %}{% elif item.item_type == 'Photo' and (item.width or item.height) %}**Now:** {% if item.width and item.height %}📐{{ item.width }}×{{ item.height }}{% endif %}{% endif %}{% if item.file_size and item.item_type not in ['Audio', 'Photo'] %} • 💾{{ '%.1f'|format(item.file_size / 1073741824) }}GB{% elif item.file_size and item.item_type == 'Photo' %} • 💾{{ '%.1f'|format(item.file_size / 1048576) }}MB{% endif %}{% if item.runtime_ticks and item.item_type not in ['Audio', 'Photo'] %} • ⏱️{{ ((item.runtime_ticks / 36000000000) | int) }}h{{ (((item.runtime_ticks / 600000000) % 60) | int) }}m{% endif %}{% if item.subtitle_language %} • 📝{{ item.subtitle_language.upper() }}{% if item.subtitle_forced %}F{% endif %}{% endif %}{% if item.genres and item.genres|length > 0 and item.item_type not in ['Episode', 'Photo'] %} • {{ item.genres[0] }}{% if item.genres|length > 1 %}+{{ item.genres|length - 1 }}{% endif %}{% endif %}",
+      "title": "⬆️ {{ item.item_type }} Upgraded",
+
+      {#
+        Simplified Description
+        ----------------------
+        Just the title and main upgrade info
+      #}
+      "description": "{% if item.item_type == 'Episode' -%}
+        **{{ item.series_name }}** - {{ item.name }}
+      {%- else -%}
+        **{{ item.name }}**
+        {%- if item.year %} ({{ item.year }}){% endif -%}
+      {%- endif %}",
+
       "color": {{ color }},
-      "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=120&maxWidth=80"
-      },
-      "footer": {
-        "text": "{% if item.library_name %}{{ item.library_name }} • {% endif %}{{ timestamp[:16] | replace('T', ' ') }}",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
-      },
-      "timestamp": "{{ timestamp }}",
-      "url": "{% if item.imdb_id %}https://www.imdb.com/title/{{ item.imdb_id }}/{% elif item.tmdb_id %}https://www.themoviedb.org/{% if item.item_type == 'Movie' %}movie{% else %}tv{% endif %}/{{ item.tmdb_id }}{% else %}{{ jellyfin_url }}/web/index.html#!/details?id={{ item.item_id }}{% endif %}"
+
+      "fields": [
+        {% set fields_added = namespace(count=0) %}
+
+        {#
+          Show only the primary upgrade
+        #}
+        {% if changes and changes | length > 0 %}
+          {% set primary_change = changes[0] %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "🔄 Upgraded",
+          "value": "{{ primary_change.old_value or 'Unknown' }} → **{{ primary_change.new_value or 'Unknown' }}**
+            {%- if changes | length > 1 %} (+{{ changes | length - 1 }} more){% endif %}",
+          "inline": true
+        }
+        {% endif %}
+
+        {% if item.video_height %}
+          {% if fields_added.count > 0 %},{% endif %}
+        {
+          "name": "📐 New Quality",
+          "value": "{{ item.video_height }}p
+            {%- if item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}",
+          "inline": true
+        }
+        {% endif %}
+      ],
+
+      "timestamp": "{{ timestamp }}"
     }
   ]
 }

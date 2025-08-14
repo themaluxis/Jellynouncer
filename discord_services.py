@@ -418,6 +418,9 @@ class DiscordNotifier:
 
         self.logger = get_logger("jellynouncer.discord")
 
+        self.template_dir = config.templates.directory  # Make sure this exists
+        self.webhooks = {}  # Make sure this is initialized
+
     async def initialize(self, session: aiohttp.ClientSession, jellyfin_config, templates_config, notifications_config=None) -> None:
         """Initialize Discord notifier with shared session and configuration dependencies."""
         self.session = session
@@ -671,6 +674,81 @@ class DiscordNotifier:
                 "error": str(e),
                 "webhook_url": webhook_url
             }
+
+    async def send_server_status(self, template_data: Dict[str, Any]) -> bool:
+        """
+        Send server status notification using the template.
+
+        This method sends server online/offline status notifications to Discord
+        using the server_status.j2 template. It reuses the existing notification
+        infrastructure for consistency.
+
+        Args:
+            template_data: Data for the server_status.j2 template including:
+                - is_online: Boolean for server connectivity
+                - jellyfin_url: Server URL
+                - timestamp: ISO timestamp
+                - health_data: Optional health check data
+                - server_info: Optional server details
+                - error_details: Optional error information
+
+        Returns:
+            bool: True if notification sent successfully
+        """
+        try:
+            # Check if template exists
+            template_name = "server_status.j2"
+
+            if not self.jinja_env:
+                self.logger.error("Template environment not initialized")
+                return False
+
+            # Render the template
+            try:
+                template = self.jinja_env.get_template(template_name)
+                rendered = template.render(**template_data)
+                embed_data = json.loads(rendered)
+            except TemplateNotFound:
+                self.logger.error(f"Server status template not found: {template_name}")
+                return False
+            except Exception as e:
+                self.logger.error(f"Error rendering server status template: {e}")
+                return False
+
+            # Get the default webhook for server status notifications
+            # Server status should always go to the default/general webhook
+            webhook_url = None
+
+            # Check for default webhook in the configuration
+            default_webhook_config = self.config.webhooks.get("default")
+            if (default_webhook_config and
+                    default_webhook_config.enabled and
+                    default_webhook_config.url):
+                webhook_url = default_webhook_config.url
+
+            if not webhook_url:
+                self.logger.error("No default webhook configured for server status notification")
+                return False
+
+            # Check rate limiting
+            if await self.is_rate_limited(webhook_url):
+                self.logger.warning(f"Rate limited for server status notification")
+                return False
+
+            # Send the webhook using existing infrastructure
+            success = await self.send_webhook(webhook_url, embed_data)
+
+            if success:
+                status_type = "online" if template_data.get("is_online") else "offline"
+                self.logger.info(f"Server status notification sent: {status_type}")
+            else:
+                self.logger.error("Failed to send server status notification to Discord")
+
+            return success
+
+        except Exception as e:
+            self.logger.error(f"Error sending server status notification: {e}", exc_info=True)
+            return False
 
     def _get_notification_color(self, action: str, changes: Optional[List] = None) -> int:
         """Get the appropriate color for this notification type."""

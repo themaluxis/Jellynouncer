@@ -1,18 +1,71 @@
+{#
+  New Item Compact Template for Jellynouncer
+  ===========================================
+
+  Minimal notification with only essential information.
+  Designed for users who prefer brief notifications.
+
+  Shows: Title, basic quality info, and primary rating only
+  Omits: Detailed metadata, multiple ratings, genres
+#}
 {
   "embeds": [
     {
-      "title": "{% if item.item_type == 'Episode' %}📺{% elif item.item_type == 'Movie' %}🎬{% elif item.item_type == 'Audio' %}🎵{% elif item.item_type == 'MusicAlbum' %}💿{% elif item.item_type == 'Photo' %}📷{% elif item.item_type == 'Series' %}📺{% else %}📁{% endif %} {{ item.item_type }}{% if item.item_type == 'Episode' %}: {{ item.series_name }}{% endif %}",
-      "description": "{% if item.item_type == 'Episode' %}**{{ item.series_name }}** S{{ '%02d'|format(item.season_number or 0) }}E{{ '%02d'|format(item.episode_number or 0) }} • {{ item.name }}{% if item.air_time %} • {{ item.air_time[:10] }}{% endif %}{% elif item.item_type == 'Audio' %}**{{ item.name }}**{% if item.artists and item.artists|length > 0 %} by {{ item.artists[0] }}{% if item.artists|length > 1 %}+{{ item.artists|length - 1 }}{% endif %}{% elif item.album_artist %} by {{ item.album_artist }}{% endif %}{% if item.album %} • {{ item.album }}{% endif %}{% elif item.item_type == 'Photo' %}**{{ item.name }}**{% if item.width and item.height %} • {{ item.width }}×{{ item.height }}{% endif %}{% else %}**{{ item.name }}**{% if item.year %} ({{ item.year }}){% endif %}{% if item.official_rating %} • {{ item.official_rating }}{% endif %}{% endif %}{% if item.genres and item.genres|length > 0 and item.item_type not in ['Episode', 'Photo'] %} • {{ item.genres[0] }}{% if item.genres|length > 1 %}+{{ item.genres|length - 1 }}{% endif %}{% endif %}\n{% if item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist', 'Photo'] and (item.video_height or item.video_codec or item.audio_codec) %}{% if item.video_height %}📐{{ item.video_height }}p{% if item.video_range and item.video_range != 'SDR' %}{{ item.video_range }}{% endif %}{% endif %}{% if item.video_codec %}{% if item.video_height %} • {% endif %}🎞️{{ item.video_codec.upper() }}{% if item.video_profile and item.video_profile != 'Main' %}.{{ item.video_profile[:1] }}{% endif %}{% if item.video_bitdepth and item.video_bitdepth > 8 %}.{{ item.video_bitdepth }}b{% endif %}{% endif %}{% if item.audio_codec %}{% if item.video_height or item.video_codec %} • {% endif %}🔊{{ item.audio_codec.upper() }}{% if item.audio_channels %}.{{ item.audio_channels }}{% if item.audio_channels > 2 %}.1{% else %}.0{% endif %}{% endif %}{% if item.audio_language and item.audio_language != 'eng' %}.{{ item.audio_language.upper() }}{% endif %}{% endif %}{% elif item.item_type == 'Audio' and (item.audio_codec or item.runtime_ticks or item.audio_samplerate) %}{% if item.audio_codec %}🔊{{ item.audio_codec.upper() }}{% if item.audio_channels %}.{{ item.audio_channels }}{% if item.audio_channels > 2 %}.1{% else %}.0{% endif %}{% endif %}{% if item.audio_samplerate %}@{{ item.audio_samplerate // 1000 }}k{% endif %}{% endif %}{% if item.runtime_ticks %}{% if item.audio_codec %} • {% endif %}⏱️{{ ((item.runtime_ticks / 10000000) / 60) | round(1) }}m{% endif %}{% elif item.item_type == 'Photo' and item.file_size %}📐{{ item.width }}×{{ item.height }} • 💾{{ '%.1f'|format(item.file_size / 1048576) }}MB{% endif %}{% if item.file_size and item.item_type not in ['Audio', 'Photo'] %} • 💾{{ '%.1f'|format(item.file_size / 1073741824) }}GB{% endif %}{% if item.runtime_ticks and item.item_type not in ['Audio', 'Photo'] %} • ⏱️{{ ((item.runtime_ticks / 36000000000) | int) }}h{{ (((item.runtime_ticks / 600000000) % 60) | int) }}m{% endif %}{% if item.subtitle_language %} • 📝{{ item.subtitle_language.upper() }}{% if item.subtitle_forced %}F{% endif %}{% endif %}{% if item.server_name and item.server_name != 'Jellyfin' %} • 🖥️{{ item.server_name[:8] }}{% endif %}",
+      "title": "🆕 New {{ item.item_type }} Added",
+
+      {#
+        Simplified Description
+        ----------------------
+        Just the title and basic identifying info
+      #}
+      "description": "{% if item.item_type == 'Episode' -%}
+        **{{ item.series_name }}** - {{ item.name }}
+      {%- else -%}
+        **{{ item.name }}**
+        {%- if item.year %} ({{ item.year }}){% endif -%}
+      {%- endif %}",
+
       "color": {{ color }},
-      "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?api_key={{ api_key }}&maxHeight=120&maxWidth=80"
-      },
-      "footer": {
-        "text": "{% if item.library_name %}{{ item.library_name }} • {% endif %}{{ timestamp[:16] | replace('T', ' ') }}",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
-      },
-      "timestamp": "{{ timestamp }}",
-      "url": "{% if item.imdb_id %}https://www.imdb.com/title/{{ item.imdb_id }}/{% elif item.tmdb_id %}https://www.themoviedb.org/{% if item.item_type == 'Movie' %}movie{% else %}tv{% endif %}/{{ item.tmdb_id }}{% else %}{{ jellyfin_url }}/web/index.html#!/details?id={{ item.item_id }}{% endif %}"
+
+      {#
+        Minimal Fields
+        --------------
+        Only show quality and primary rating
+      #}
+      "fields": [
+        {% set fields_added = namespace(count=0) %}
+
+        {% if item.video_height %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "📐 Quality",
+          "value": "{{ item.video_height }}p
+            {%- if item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}",
+          "inline": true
+        }
+        {% endif %}
+
+        {#
+          Show only IMDb rating for movies/TV, no rating for music
+        #}
+        {% if item.omdb and item.omdb.imdb_rating and item.omdb.imdb_rating != 'N/A' %}
+          {% if fields_added.count > 0 %},{% endif %}
+        {
+          "name": "⭐ Rating",
+          "value": "IMDb: {{ item.omdb.imdb_rating }}/10",
+          "inline": true
+        }
+        {% elif item.tvdb and item.tvdb.rating %}
+          {% if fields_added.count > 0 %},{% endif %}
+        {
+          "name": "⭐ Rating",
+          "value": "TVDb: {{ item.tvdb.rating }}/10",
+          "inline": true
+        }
+        {% endif %}
+      ],
+
+      "timestamp": "{{ timestamp }}"
     }
   ]
 }

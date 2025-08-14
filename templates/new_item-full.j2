@@ -1,310 +1,406 @@
 {#
-  Jellynouncer New Item Full Discord Embed Template
+  New Item Full Template for Jellynouncer
+  ========================================
 
-  This template generates comprehensive Discord embed notifications for new media items added to Jellyfin.
-  Provides detailed metadata, technical specifications, and rich information display.
-  Enhanced version with extensive field coverage and professional presentation.
+  Comprehensive notification with all available metadata.
+  Uses all 25 available fields to show maximum information.
 
-  Supports all media types with specialized formatting:
-  - Episodes: Series branding, episode details, air dates
-  - Movies: Rich metadata, cast, crew, technical specs
-  - Music: Artist info, album details, audio quality
-  - Photos: Dimensions, file info, metadata
-  - Other: Generic handling with available metadata
+  Includes: All ratings, cast, crew, production info, awards, etc.
 #}
 {
   "embeds": [
     {
-      {#
-        Dynamic Title Generation
-
-        Creates context-appropriate titles with emojis based on the media type.
-        Enhanced with specific titles for music content types.
-      #}
-      "title": "{% if item.item_type == 'Episode' -%}
-        📺 New Episode Added
+      "title": "🆕 {% if item.item_type == 'Episode' -%}
+        📺 New Episode
       {%- elif item.item_type == 'Series' -%}
-        📺 New Series Added
+        📺 New Series
       {%- elif item.item_type == 'Movie' -%}
-        🎬 New Movie Added
-      {%- elif item.item_type == 'Season' -%}
-        📺 New Season Added
-      {%- elif item.item_type == 'Audio' -%}
-        🎵 New Song Added
-      {%- elif item.item_type == 'MusicAlbum' -%}
-        💿 New Album Added
-      {%- elif item.item_type == 'MusicArtist' -%}
-        🎤 New Artist Added
-      {%- elif item.item_type == 'Photo' -%}
-        📷 New Photo Added
+        🎬 New Movie
       {%- else -%}
-        📁 New {{ item.item_type }} Added
-      {%- endif %}",
+        📁 New {{ item.item_type }}
+      {%- endif %} Added",
 
       {#
-        Rich Description with Plot Summaries
-
-        Enhanced descriptions with comprehensive content information:
-        - Episodes: Series name, season/episode numbers, episode title, air date
-        - Music: Song/album name with artist information
-        - Movies/Series: Title, year, tagline, plot summary
-        - Photos: Name and dimensions
-        - Includes overview/plot summary when available (truncated to 300 chars)
+        Full Description with All Available Info
+        -----------------------------------------
+        Uses maximum description length with full plot/overview
       #}
       "description": "{% if item.item_type == 'Episode' -%}
-        **{{ item.series_name }}** S{{ '%02d'|format(item.season_number or 0) }}E{{ '%02d'|format(item.episode_number or 0) }}
-        {{ item.name }}
+        **{{ item.series_name | default('Unknown Series') }}**
+        S{{ '%02d' | format(item.season_number | default(0)) }}E{{ '%02d' | format(item.episode_number | default(0)) }}
+        {{ item.name | default('Unknown Episode') }}
         {%- if item.air_time %}\n*Originally aired: {{ item.air_time }}*{% endif -%}
-      {%- elif item.item_type == 'Audio' -%}
-        {% if item.album -%}
-          **{{ item.album }}**
-          {%- if item.album_artist %} by {{ item.album_artist }}{% endif -%}
-        {% endif %}
-        {{ item.name }}
-        {%- if item.artists and item.artists|length > 0 %} by {{ item.artists|join(', ') }}{% endif -%}
-      {%- elif item.item_type == 'MusicAlbum' -%}
-        **{{ item.name }}**
-        {%- if item.album_artist %} by {{ item.album_artist }}
-        {%- elif item.artists and item.artists|length > 0 %} by {{ item.artists|join(', ') }}{% endif -%}
-      {%- elif item.item_type == 'MusicArtist' -%}
-        **{{ item.name }}**
-      {%- elif item.item_type == 'Photo' -%}
-        **{{ item.name }}**
-        {%- if item.width and item.height %}\n{{ item.width }}×{{ item.height }} pixels{% endif -%}
-      {%- else -%}
-        **{{ item.name }}**
+        {%- if item.tvdb and item.tvdb.overview -%}
+          \n\n{{ (item.tvdb.overview[:800] + '...') if item.tvdb.overview | length > 800 else item.tvdb.overview }}
+        {%- elif item.overview -%}
+          \n\n{{ (item.overview[:800] + '...') if item.overview | length > 800 else item.overview }}
+        {%- endif -%}
+      {%- elif item.item_type == 'Movie' -%}
+        **{{ item.name | default('Unknown Title') }}**
         {%- if item.year %} ({{ item.year }}){% endif -%}
-        {%- if item.tagline %}\n*{{ item.tagline }}*{% endif -%}
-      {%- endif -%}
-      {%- if item.overview and item.overview|length > 0 %}\n\n{{ (item.overview[:300] + '...') if item.overview|length > 300 else item.overview }}{% endif %}",
+        {%- if item.tmdb and item.tmdb.tagline %}\n*"{{ item.tmdb.tagline }}"*{% endif -%}
+        {%- if item.tmdb and item.tmdb.overview -%}
+          \n\n{{ (item.tmdb.overview[:800] + '...') if item.tmdb.overview | length > 800 else item.tmdb.overview }}
+        {%- elif item.omdb and item.omdb.plot and item.omdb.plot != 'N/A' -%}
+          \n\n{{ (item.omdb.plot[:800] + '...') if item.omdb.plot | length > 800 else item.omdb.plot }}
+        {%- elif item.overview -%}
+          \n\n{{ (item.overview[:800] + '...') if item.overview | length > 800 else item.overview }}
+        {%- endif -%}
+      {%- else -%}
+        **{{ item.name | default('Unknown Title') }}**
+        {%- if item.overview -%}
+          \n\n{{ (item.overview[:800] + '...') if item.overview | length > 800 else item.overview }}
+        {%- endif -%}
+      {%- endif %}",
 
-      {#
-        Color Coding
-
-        Uses the color value passed from the application, with green as fallback.
-      #}
       "color": {{ color }},
 
       {#
-        Comprehensive Field System
-
-        Advanced field organization with extensive metadata display.
-        Prioritizes most important information first with logical grouping.
-        Uses both inline and full-width fields for optimal visual layout.
+        Maximum Fields with All Metadata
+        ---------------------------------
+        Use all 25 fields to show comprehensive information
       #}
       "fields": [
-        {#
-          Content Metadata Section (High Priority, Inline)
+        {% set fields_added = namespace(count=0) %}
 
-          Quick overview information displayed in compact format.
-          Genres, rating, and studio information for immediate context.
-        #}
-        {% if item.genres and item.genres|length > 0 %}
-        {
-          "name": "🎭 Genres",
-          "value": "{{ item.genres[:5]|join(', ') }}{% if item.genres|length > 5 %} +{{ item.genres|length - 5 }} more{% endif %}",
-          "inline": true
-        },
-        {% endif %}
-
-        {% if item.official_rating %}
-        {
-          "name": "🛡️ Content Rating",
-          "value": "{{ item.official_rating }}",
-          "inline": true
-        },
-        {% endif %}
-
-        {% if item.studios and item.studios|length > 0 %}
-        {
-          "name": "🏢 Studio",
-          "value": "{{ item.studios[0] }}{% if item.studios|length > 1 %} +{{ item.studios|length - 1 }} more{% endif %}",
-          "inline": true
-        },
-        {% endif %}
-
-        {#
-          Technical Specifications Section (Inline)
-
-          Video and audio technical details for quality assessment.
-          Enhanced audio specs for music content with bitrate and sample rate.
-          Excludes video specs for music-only content.
-        #}
-        {% if item.video_height and item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist'] %}
+        {# Technical specs - up to 6 fields #}
+        {% if item.video_height and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "📐 Quality",
-          "value": "{{ item.video_height }}p{% if item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}{% if item.video_width %} ({{ item.video_width }}×{{ item.video_height }}){% endif %}",
+          "value": "{{ item.video_height }}p
+            {%- if item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}",
           "inline": true
-        },
+        }
         {% endif %}
 
-        {% if item.video_codec and item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist'] %}
+        {% if item.video_codec and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🎞️ Video",
-          "value": "{{ item.video_codec.upper() }}{% if item.video_profile %} {{ item.video_profile }}{% endif %}{% if item.video_framerate %} @ {{ item.video_framerate }}fps{% endif %}",
+          "name": "🎞️ Video Codec",
+          "value": "{{ item.video_codec | upper }}
+            {%- if item.video_profile %} {{ item.video_profile }}{% endif %}
+            {%- if item.video_bitrate %} @ {{ (item.video_bitrate / 1000000) | round(1) }} Mbps{% endif %}",
           "inline": true
-        },
+        }
         {% endif %}
 
-        {% if item.audio_codec %}
+        {% if item.audio_codec and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "🔊 Audio",
-          "value": "{{ item.audio_codec.upper() }}{% if item.audio_channels %} {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% if item.item_type in ['Audio', 'MusicAlbum', 'MusicArtist'] %}{% if item.audio_bitrate %} • {{ (item.audio_bitrate / 1000) | int }} kbps{% endif %}{% if item.audio_samplerate %} • {{ (item.audio_samplerate / 1000) | round(1) }} kHz{% endif %}{% endif %}",
+          "value": "{{ item.audio_codec | upper }}
+            {%- if item.audio_channels %}
+              {%- if item.audio_channels == 2 %} Stereo
+              {%- elif item.audio_channels == 6 %} 5.1
+              {%- elif item.audio_channels == 8 %} 7.1
+              {%- else %} {{ item.audio_channels }}ch
+              {%- endif -%}
+            {%- endif %}
+            {%- if item.audio_bitrate %} @ {{ (item.audio_bitrate / 1000) | round(0) }} kbps{% endif %}",
           "inline": true
-        },
+        }
         {% endif %}
 
-        {#
-          Content Information Section (Inline)
-
-          Runtime, release dates, and other contextual information.
-          Smart duration formatting for music vs video content.
-        #}
-        {% if item.runtime_ticks %}
+        {# Content information - up to 6 fields #}
+        {% if (item.runtime_ticks or (item.omdb and item.omdb.runtime_minutes)) and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "⏱️ {% if item.item_type in ['Audio', 'MusicAlbum', 'MusicArtist'] %}Duration{% else %}Runtime{% endif %}",
-          "value": "{% if item.item_type in ['Audio', 'MusicAlbum', 'MusicArtist'] -%}
-            {%- set total_seconds = (item.runtime_ticks / 10000000) | int -%}
-            {%- set minutes = (total_seconds / 60) | int -%}
-            {%- set seconds = total_seconds % 60 -%}
-            {{ minutes }}:{{ '%02d' | format(seconds) }}
-          {%- else -%}
-            {%- set hours = (item.runtime_ticks / 36000000000) | int -%}
-            {%- set minutes = ((item.runtime_ticks / 600000000) % 60) | int -%}
-            {{ hours }}h {{ minutes }}m
-          {%- endif %}",
+          "name": "⏱️ Runtime",
+          "value": "
+            {%- if item.runtime_ticks -%}
+              {%- set minutes = (item.runtime_ticks / 600000000) | int -%}
+              {%- set hours = (minutes / 60) | int -%}
+              {%- set mins = minutes % 60 -%}
+              {%- if hours > 0 %}{{ hours }}h {{ mins }}m{% else %}{{ mins }} min{% endif -%}
+            {%- elif item.omdb and item.omdb.runtime_minutes -%}
+              {%- set hours = (item.omdb.runtime_minutes / 60) | int -%}
+              {%- set mins = item.omdb.runtime_minutes % 60 -%}
+              {%- if hours > 0 %}{{ hours }}h {{ mins }}m{% else %}{{ mins }} min{% endif -%}
+            {%- endif %}",
           "inline": true
-        },
+        }
         {% endif %}
 
-        {% if item.premiere_date %}
-        {
-          "name": "📅 {% if item.item_type == 'Episode' %}Air Date{% else %}Release{% endif %}",
-          "value": "{{ item.premiere_date[:10] }}",
-          "inline": true
-        },
+        {# Genres with metadata priority #}
+        {% set display_genres = null %}
+        {% if item.item_type in ['Series', 'Season', 'Episode'] %}
+          {% if item.tvdb and item.tvdb.genres %}
+            {% set display_genres = item.tvdb.genres %}
+          {% elif item.genres %}
+            {% set display_genres = item.genres %}
+          {% endif %}
+        {% elif item.item_type == 'Movie' %}
+          {% if item.tmdb and item.tmdb.genres %}
+            {% set display_genres = item.tmdb.genres | map(attribute='name') | list %}
+          {% elif item.omdb and item.omdb.genres_list %}
+            {% set display_genres = item.omdb.genres_list %}
+          {% elif item.genres %}
+            {% set display_genres = item.genres %}
+          {% endif %}
+        {% elif item.genres %}
+          {% set display_genres = item.genres %}
         {% endif %}
 
-        {% if item.year %}
+        {% if display_genres and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "📅 Year",
-          "value": "{{ item.year }}",
+          "name": "🎭 Genres",
+          "value": "{{ display_genres | join(', ') }}",
           "inline": true
-        },
+        }
         {% endif %}
 
-        {#
-          Detailed Audio Technical Information (Non-Inline)
-
-          Comprehensive audio specifications for audio enthusiasts.
-          Includes advanced technical details not shown in basic audio field.
-        #}
-        {% if item.item_type in ['Audio', 'MusicAlbum', 'MusicArtist'] and (item.audio_bitrate or item.audio_samplerate or item.audio_language or item.audio_title) %}
+        {% if item.file_size and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🔊 Audio Technical Details",
-          "value": "{% if item.audio_codec %}**Codec:** {{ item.audio_codec.upper() }}{% endif %}{% if item.audio_channels %}\n**Channels:** {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% if item.audio_bitrate %}\n**Bitrate:** {{ '%.0f'|format(item.audio_bitrate / 1000) }} kbps{% endif %}{% if item.audio_samplerate %}\n**Sample Rate:** {{ item.audio_samplerate }}Hz{% endif %}{% if item.audio_language %}\n**Language:** {{ item.audio_language.upper() }}{% endif %}{% if item.audio_title %}\n**Stream Title:** {{ item.audio_title }}{% endif %}",
+          "name": "💾 File Size",
+          "value": "{{ '%.2f' | format(item.file_size / 1073741824) }} GB",
+          "inline": true
+        }
+        {% endif %}
+
+        {# Comprehensive inline ratings display #}
+        {% set has_ratings = false %}
+        {% if (item.omdb and (item.omdb.imdb_rating or item.omdb.metascore or
+               item.omdb.ratings_dict.rotten_tomatoes)) or
+               (item.tmdb and item.tmdb.vote_average) or
+               (item.tvdb and item.tvdb.rating) %}
+          {% set has_ratings = true %}
+        {% endif %}
+
+        {% if has_ratings and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "⭐ Ratings",
+          "value": "
+            {%- set rating_parts = [] -%}
+            {%- if item.omdb and item.omdb.imdb_rating and item.omdb.imdb_rating != 'N/A' -%}
+              {%- set _ = rating_parts.append('**IMDb:** ' ~ item.omdb.imdb_rating ~ '/10') -%}
+            {%- endif -%}
+            {%- if item.omdb and item.omdb.ratings_dict.rotten_tomatoes -%}
+              {%- set _ = rating_parts.append('**RT:** ' ~ item.omdb.ratings_dict.rotten_tomatoes.value) -%}
+            {%- endif -%}
+            {%- if item.omdb and item.omdb.metascore and item.omdb.metascore != 'N/A' -%}
+              {%- set _ = rating_parts.append('**MC:** ' ~ item.omdb.metascore ~ '/100') -%}
+            {%- endif -%}
+            {%- if item.tmdb and item.tmdb.vote_average -%}
+              {%- set _ = rating_parts.append('**TMDb:** ' ~ item.tmdb.vote_average ~ '/10') -%}
+            {%- elif item.omdb and item.omdb.ratings_dict.tmdb -%}
+              {%- set _ = rating_parts.append('**TMDb:** ' ~ item.omdb.ratings_dict.tmdb.value) -%}
+            {%- endif -%}
+            {%- if item.tvdb and item.tvdb.rating -%}
+              {%- set _ = rating_parts.append('**TVDb:** ' ~ item.tvdb.rating ~ '/10') -%}
+            {%- endif -%}
+            {{ rating_parts | join(' • ') }}",
           "inline": false
-        },
+        }
         {% endif %}
 
-        {#
-          Music-Specific Information Section (Non-Inline)
-
-          Enhanced music metadata for albums and artists.
-          Shows contributing artists and release information.
-        #}
-        {% if item.item_type in ['MusicAlbum', 'MusicArtist'] %}
+        {# Cast and Crew - up to 4 fields #}
+        {% if item.omdb and item.omdb.director and item.omdb.director != 'N/A' and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🎵 {% if item.item_type == 'MusicAlbum' %}Album{% else %}Artist{% endif %} Information",
-          "value": "{% if item.item_type == 'MusicAlbum' and item.artists and item.artists|length > 0 %}**Artists:** {{ item.artists|join(', ') }}{% endif %}{% if item.year %}\n**Year:** {{ item.year }}{% endif %}{% if item.album %}\n**Album:** {{ item.album }}{% endif %}",
+          "name": "🎬 Director",
+          "value": "{{ item.omdb.director }}",
+          "inline": true
+        }
+        {% endif %}
+
+        {% if item.omdb and item.omdb.actors and item.omdb.actors != 'N/A' and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "🎭 Cast",
+          "value": "{{ (item.omdb.actors[:200] + '...') if item.omdb.actors | length > 200 else item.omdb.actors }}",
           "inline": false
-        },
+        }
         {% endif %}
 
-        {#
-          Photo-Specific Information Section (Non-Inline)
-
-          Photo metadata including dimensions and file information.
-        #}
-        {% if item.item_type == 'Photo' and (item.width or item.height) %}
+        {% if item.omdb and item.omdb.writer and item.omdb.writer != 'N/A' and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "📷 Photo Information",
-          "value": "{% if item.width and item.height %}**Dimensions:** {{ item.width }}×{{ item.height }}{% endif %}{% if item.file_size %}\n**File Size:** {{ '%.2f'|format(item.file_size / 1048576) }} MB{% endif %}",
+          "name": "✍️ Writer",
+          "value": "{{ (item.omdb.writer[:200] + '...') if item.omdb.writer | length > 200 else item.omdb.writer }}",
+          "inline": true
+        }
+        {% endif %}
+
+        {# Production information - up to 5 fields #}
+        {% if item.omdb and item.omdb.awards and item.omdb.awards != 'N/A' and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "🏆 Awards",
+          "value": "{{ item.omdb.awards }}",
           "inline": false
-        },
+        }
         {% endif %}
 
-        {#
-          File and System Information Section (Inline)
-
-          File size, library information, and system metadata.
-          Provides technical context for media management.
-        #}
-        {% if item.file_size or item.library_name or item.date_created %}
+        {% if item.tmdb and item.tmdb.budget and item.tmdb.budget > 0 and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "💾 File Information",
-          "value": "{% if item.file_size %}**Size:** {{ '%.2f'|format(item.file_size / 1073741824) }} GB{% endif %}{% if item.library_name %}\n**Library:** {{ item.library_name }}{% endif %}{% if item.date_created %}\n**Added:** {{ item.date_created[:10] }}{% endif %}",
+          "name": "💰 Budget",
+          "value": "${{ '{:,.0f}'.format(item.tmdb.budget) }}",
           "inline": true
-        },
+        }
         {% endif %}
 
-        {#
-          External References Section (Inline)
-
-          Links to external databases and information sources.
-          Provides clickable links for additional information.
-        #}
-        {% if item.imdb_id or item.tmdb_id or item.tvdb_id %}
+        {% if item.tmdb and item.tmdb.revenue and item.tmdb.revenue > 0 and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🔗 External Links",
-          "value": "{% if item.imdb_id %}**IMDb:** [{{ item.imdb_id }}](https://www.imdb.com/title/{{ item.imdb_id }}/){% endif %}{% if item.tmdb_id %}{% if item.imdb_id %}\n{% endif %}**TMDB:** [{{ item.tmdb_id }}](https://www.themoviedb.org/{% if item.item_type == 'Movie' %}movie{% else %}tv{% endif %}/{{ item.tmdb_id }}){% endif %}{% if item.tvdb_id %}{% if item.imdb_id or item.tmdb_id %}\n{% endif %}**TVDB:** [{{ item.tvdb_id }}](https://thetvdb.com/dereferrer/series/{{ item.tvdb_id }}){% endif %}",
+          "name": "📈 Revenue",
+          "value": "${{ '{:,.0f}'.format(item.tmdb.revenue) }}",
           "inline": true
-        },
+        }
+        {% elif item.omdb and item.omdb.box_office and item.omdb.box_office != 'N/A' and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "📈 Box Office",
+          "value": "{{ item.omdb.box_office }}",
+          "inline": true
+        }
         {% endif %}
 
-        {#
-          Server Information Section (Inline)
-
-          Server and path information for system administrators.
-          Useful for troubleshooting and file management.
-        #}
-        {% if item.server_name or item.file_path %}
+        {% if item.omdb and item.omdb.production and item.omdb.production != 'N/A' and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🖥️ Server Info",
-          "value": "{% if item.server_name %}**Server:** {{ item.server_name }}{% endif %}{% if item.file_path %}\n**Path:** {{ item.file_path|truncate(50) }}{% endif %}",
+          "name": "🎬 Production",
+          "value": "{{ item.omdb.production }}",
           "inline": true
+        }
+        {% endif %}
+
+        {# Release information #}
+        {% if item.omdb and item.omdb.released and item.omdb.released != 'N/A' and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "📅 Released",
+          "value": "{{ item.omdb.released }}",
+          "inline": true
+        }
+        {% endif %}
+
+        {% if item.omdb and item.omdb.rated and item.omdb.rated != 'N/A' and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "🔞 Rated",
+          "value": "{{ item.omdb.rated }}",
+          "inline": true
+        }
+        {% endif %}
+
+        {# Language and country #}
+        {% if item.omdb and item.omdb.language and item.omdb.language != 'N/A' and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "🗣️ Language",
+          "value": "{{ item.omdb.language }}",
+          "inline": true
+        }
+        {% endif %}
+
+        {% if item.omdb and item.omdb.country and item.omdb.country != 'N/A' and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "🌍 Country",
+          "value": "{{ item.omdb.country }}",
+          "inline": true
+        }
+        {% endif %}
+
+        {# TV-specific fields #}
+        {% if item.tvdb and item.tvdb.status and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "📺 Status",
+          "value": "{{ item.tvdb.status }}",
+          "inline": true
+        }
+        {% endif %}
+
+        {% if item.tvdb and item.tvdb.average_runtime and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "⏱️ Avg Runtime",
+          "value": "{{ item.tvdb.average_runtime }} min",
+          "inline": true
+        }
+        {% endif %}
+
+        {# External IDs for reference #}
+        {% if (item.imdb_id or item.tmdb_id or item.tvdb_id) and fields_added.count < 25 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "🔗 External IDs",
+          "value": "
+            {%- set id_parts = [] -%}
+            {%- if item.imdb_id %}{% set _ = id_parts.append('[IMDb](https://www.imdb.com/title/' ~ item.imdb_id ~ '/)') %}{% endif -%}
+            {%- if item.tmdb_id and item.item_type == 'Movie' %}{% set _ = id_parts.append('[TMDb](https://www.themoviedb.org/movie/' ~ item.tmdb_id ~ ')') %}{% endif -%}
+            {%- if item.tmdb_id and item.item_type in ['Series', 'Season', 'Episode'] %}{% set _ = id_parts.append('[TMDb](https://www.themoviedb.org/tv/' ~ item.tmdb_id ~ ')') %}{% endif -%}
+            {%- if item.tvdb_id %}{% set _ = id_parts.append('[TVDb](https://thetvdb.com/series/' ~ item.tvdb_id ~ ')') %}{% endif -%}
+            {{ id_parts | join(' • ') }}",
+          "inline": false
         }
         {% endif %}
       ],
 
-      {%- if thumbnail_url is defined and thumbnail_url %}
-      {#
-        Intelligent Thumbnail System
-
-        Displays verified thumbnails when available, with proper fallback handling.
-        Compatible with the ThumbnailManager's verification process.
-      #}
+      {# Image selection with priority #}
+      {% if item.item_type == 'Episode' and item.series_id %}
       "thumbnail": {
         "url": "{{ thumbnail_url }}"
       },
-      {%- endif %}
+      {% elif item.item_id %}
+      "thumbnail": {
+        "url": "{{ thumbnail_url }}"
+      },
+      {% elif item.omdb and item.omdb.poster and item.omdb.poster != 'N/A' %}
+      "thumbnail": {
+        "url": "{{ item.omdb.poster }}"
+      },
+      {% elif item.tvdb and item.tvdb.poster_url %}
+      "thumbnail": {
+        "url": "{{ item.tvdb.poster_url }}"
+      },
+      {% elif item.tmdb and item.tmdb.backdrop_url %}
+      "image": {
+        "url": "{{ item.tmdb.backdrop_url }}"
+      },
+      {% endif %}
 
-      {#
-        Footer Information
-
-        Enhanced footer with comprehensive attribution and metadata source info.
-        Includes TheTVDB attribution when metadata is sourced from there.
-      #}
       "footer": {
-        "text": "Added to Jellyfin • {{ timestamp[:19] | replace('T', ' ') }} UTC{% if tvdb_attribution_needed is defined and tvdb_attribution_needed %}\nMetadata provided by TheTVDB{% endif %}",
+        "text": "{{ item.library_name or 'Jellyfin' }}
+          {%- if item.server_name %} • {{ item.server_name }}{% endif %}
+          {%- if item.omdb %} • IMDb via OMDb{% endif %}
+          {%- if item.tvdb %} • TheTVDB{% endif %}
+          {%- if item.tmdb %} • TMDb{% endif %}",
         "icon_url": "{{ jellyfin_url }}/web/favicon.png"
       },
 
-      {#
-        Timestamp
+      {% if item.item_id %}
+      "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.item_id }}",
+      {% endif %}
 
-        ISO timestamp for Discord's "time ago" formatting.
-      #}
       "timestamp": "{{ timestamp }}"
     }
   ]

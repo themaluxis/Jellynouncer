@@ -1,41 +1,278 @@
+{#
+  Server Status Template for Jellynouncer
+  ========================================
+
+  Provides comprehensive server status notifications with health metrics.
+  Supports online/offline states, degraded performance, and recovery info.
+
+  Variables:
+  - is_online: Boolean for server connectivity
+  - jellyfin_url: Server URL
+  - timestamp: ISO timestamp
+  - server_info: Optional server details (when online)
+  - health_data: Optional health check data
+  - downtime_duration: Optional time server was down
+  - error_details: Optional error information
+#}
 {
   "embeds": [
     {
-      "title": "{% if is_online %}🟢 Jellyfin Server Online{% else %}🔴 Jellyfin Server Offline{% endif %}",
-      "description": "{% if is_online %}🎉 Jellyfin server connection has been restored and is operating normally.\n\n📊 **Service Status**: All systems operational\n🔄 **Notifications**: Resuming normal operation\n📺 **Media Access**: Available{% else %}⚠️ Unable to connect to Jellyfin server. The service will continue monitoring and attempt to reconnect automatically.\n\n🔍 **Status**: Connection lost\n⏰ **Retry Interval**: Every 60 seconds\n📱 **Notifications**: Queued until reconnection{% endif %}",
-      "color": {% if is_online %}65280{% else %}16711680{% endif %},
+      {#
+        Dynamic Title Based on Status
+        ------------------------------
+        Support more states than just online/offline
+      #}
+      "title": "{% if is_online -%}
+        {%- if health_data and health_data.status == 'degraded' -%}
+          🟡 Jellyfin Server Degraded
+        {%- else -%}
+          🟢 Jellyfin Server Online
+        {%- endif -%}
+      {%- else -%}
+        🔴 Jellyfin Server Offline
+      {%- endif %}",
+
+      {#
+        Enhanced Description with Context
+        ----------------------------------
+        Provide more detailed status information
+      #}
+      "description": "{% if is_online -%}
+        {%- if health_data and health_data.status == 'degraded' -%}
+          ⚠️ **Jellyfin server is experiencing issues but remains partially operational.**\n\n
+          🔍 **Issue Details**: Some components may not be functioning correctly\n
+          📊 **Overall Status**: Degraded Performance\n
+          🔄 **Notifications**: May be delayed or incomplete
+        {%- elif downtime_duration -%}
+          🎉 **Jellyfin server connection has been restored!**\n\n
+          ⏱️ **Downtime Duration**: {{ downtime_duration }}\n
+          📊 **Service Status**: All systems operational\n
+          🔄 **Recovery Actions**: Syncing missed items\n
+          📺 **Media Access**: Fully available
+        {%- else -%}
+          ✅ **Jellyfin server is operating normally.**\n\n
+          📊 **Service Status**: All systems operational\n
+          🔄 **Notifications**: Active and processing\n
+          📺 **Media Access**: Available
+        {%- endif -%}
+      {%- else -%}
+        ⚠️ **Unable to connect to Jellyfin server.**\n\n
+        🔍 **Status**: Connection lost
+        {%- if error_details %}\n❌ **Error**: {{ error_details }}{% endif -%}
+        \n⏰ **Retry Interval**: Every 60 seconds\n
+        📱 **Notifications**: Queued until reconnection\n
+        💾 **Data**: All notifications will be processed when connection is restored
+      {%- endif %}",
+
+      {#
+        Dynamic Color Based on Status
+        ------------------------------
+      #}
+      "color": {% if is_online -%}
+        {%- if health_data and health_data.status == 'degraded' -%}
+          16776960
+        {%- else -%}
+          65280
+        {%- endif -%}
+      {%- else -%}
+        16711680
+      {%- endif %},
+
       "fields": [
+        {#
+          Server Connection Details
+          --------------------------
+        #}
         {
           "name": "🌐 Server Details",
-          "value": "**URL**: {{ jellyfin_url }}\n**Status**: {% if is_online %}✅ Connected{% else %}❌ Disconnected{% endif %}",
+          "value": "**URL**: {{ jellyfin_url }}\n**Status**:
+            {%- if is_online -%}
+              {%- if health_data and health_data.status == 'degraded' -%}
+                ⚠️ Degraded
+              {%- else -%}
+                ✅ Connected
+              {%- endif -%}
+            {%- else -%}
+              ❌ Disconnected
+            {%- endif -%}
+            {%- if server_info and server_info.ServerName %}\n**Server**: {{ server_info.ServerName }}{% endif -%}
+            {%- if server_info and server_info.Version %}\n**Version**: {{ server_info.Version }}{% endif %}",
           "inline": true
         },
+
+        {#
+          Timestamp with Better Formatting
+          ---------------------------------
+        #}
         {
           "name": "🕐 Timestamp",
-          "value": "{{ timestamp[:19] | replace('T', ' ') }} UTC",
+          "value": "{{ timestamp[:19] | replace('T', ' ') }} UTC
+            {%- if downtime_duration %}\n**Downtime**: {{ downtime_duration }}{% endif %}",
           "inline": true
         }
+
+        {#
+          Service Components Status (when online)
+          ----------------------------------------
+        #}
+        {% if is_online and health_data and health_data.components %}
+        ,{
+          "name": "📊 Component Status",
+          "value": "
+            {%- if health_data.components.jellyfin -%}
+              **Jellyfin**:
+              {%- if health_data.components.jellyfin.status == 'healthy' %} ✅ Healthy
+              {%- elif health_data.components.jellyfin.status == 'degraded' %} ⚠️ Degraded
+              {%- else %} ❌ Unhealthy{% endif -%}
+            {%- endif -%}
+            {%- if health_data.components.database -%}
+              \n**Database**:
+              {%- if health_data.components.database.status == 'healthy' %} ✅ Healthy
+              {%- else %} ❌ Issues{% endif -%}
+              {%- if health_data.components.database.total_items %} ({{ health_data.components.database.total_items }} items){% endif -%}
+            {%- endif -%}
+            {%- if health_data.components.discord -%}
+              \n**Discord**:
+              {%- if health_data.components.discord.webhooks_configured %} ✅ {{ health_data.components.discord.webhooks_configured }} webhooks
+              {%- else %} ❌ No webhooks{% endif -%}
+            {%- endif -%}
+            {%- if health_data.components.metadata_services -%}
+              \n**Metadata**:
+              {%- if health_data.components.metadata_services.enabled %} ✅ Enabled
+              {%- else %} ⚠️ Disabled{% endif -%}
+            {%- endif %}",
+          "inline": false
+        }
+        {% endif %}
+
+        {#
+          Service Statistics (when online)
+          ---------------------------------
+        #}
+        {% if is_online and health_data and health_data.service_status %}
+        ,{
+          "name": "📈 Service Metrics",
+          "value": "
+            {%- if health_data.service_status.uptime_seconds -%}
+              **Uptime**: {{ (health_data.service_status.uptime_seconds / 3600) | round(1) }} hours
+            {%- endif -%}
+            {%- if health_data.service_status.initial_sync_complete is defined -%}
+              \n**Initial Sync**:
+              {%- if health_data.service_status.initial_sync_complete %} ✅ Complete
+              {%- else %} ⏳ In Progress{% endif -%}
+            {%- endif -%}
+            {%- if health_data.service_status.sync_in_progress is defined -%}
+              \n**Background Sync**:
+              {%- if health_data.service_status.sync_in_progress %} 🔄 Running
+              {%- else %} ⏸️ Idle{% endif -%}
+            {%- endif %}",
+          "inline": true
+        }
+        {% endif %}
+
+        {#
+          Queue Status (when available)
+          ------------------------------
+        #}
+        {% if queue_status %}
+        ,{
+          "name": "📬 Notification Queues",
+          "value": "
+            {%- if queue_status.new_items is defined -%}
+              **New Items**: {{ queue_status.new_items }} queued
+            {%- endif -%}
+            {%- if queue_status.upgraded_items is defined -%}
+              \n**Upgrades**: {{ queue_status.upgraded_items }} queued
+            {%- endif -%}
+            {%- if queue_status.total is defined -%}
+              \n**Total Pending**: {{ queue_status.total }}
+            {%- endif %}",
+          "inline": true
+        }
+        {% endif %}
+
+        {#
+          Next Steps / Actions
+          ---------------------
+        #}
         {% if is_online %}
         ,{
-          "name": "🔄 Next Steps",
-          "value": "• Resuming webhook processing\n• Checking for missed notifications\n• Performing recovery sync",
+          "name": "🔄 {% if downtime_duration %}Recovery Actions{% else %}System Actions{% endif %}",
+          "value": "
+            {%- if downtime_duration -%}
+              • Processing queued notifications\n
+              • Syncing library changes\n
+              • Verifying database integrity\n
+              • Resuming normal monitoring
+            {%- elif health_data and health_data.status == 'degraded' -%}
+              • Monitoring degraded components\n
+              • Attempting automatic recovery\n
+              • Logging diagnostic information\n
+              • May retry failed operations
+            {%- else -%}
+              • Monitoring for new content\n
+              • Processing webhooks normally\n
+              • Background sync active\n
+              • All systems operational
+            {%- endif %}",
           "inline": false
         }
         {% else %}
         ,{
-          "name": "📋 Automatic Actions",
-          "value": "• Monitoring connection status\n• Queuing notifications\n• Will notify when restored",
+          "name": "📋 Automatic Recovery",
+          "value": "• Attempting reconnection every 60 seconds\n
+            • Preserving notification queue\n
+            • Monitoring server availability\n
+            • Will auto-sync when restored\n
+            • No data will be lost",
+          "inline": false
+        }
+        {% endif %}
+
+        {#
+          Error Details (when offline)
+          -----------------------------
+        #}
+        {% if not is_online and error_details %}
+        ,{
+          "name": "❌ Error Information",
+          "value": "**Type**: {{ error_type | default('Connection Error') }}\n
+            **Details**: {{ (error_details[:500] + '...') if error_details|length > 500 else error_details }}\n
+            **Time**: {{ timestamp[:19] | replace('T', ' ') }}",
           "inline": false
         }
         {% endif %}
       ],
+
+      {#
+        Dynamic Thumbnail
+        -----------------
+      #}
       "thumbnail": {
-        "url": "{% if is_online %}{{ jellyfin_url }}/web/assets/img/banner-light.png{% else %}{{ jellyfin_url }}/web/favicon.ico{% endif %}"
+        "url": "{% if is_online -%}
+          {%- if health_data and health_data.status == 'degraded' -%}
+            {{ jellyfin_url }}/web/favicon.png
+          {%- else -%}
+            {{ jellyfin_url }}/web/assets/img/banner-light.png
+          {%- endif -%}
+        {%- else -%}
+          {{ jellyfin_url }}/web/favicon.png
+        {%- endif %}"
       },
+
+      {#
+        Enhanced Footer
+        ---------------
+      #}
       "footer": {
-        "text": "JellyNotify Monitor Service • Automated System Notification",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
+        "text": "Jellynouncer v2.0.0 • Monitoring Service
+          {%- if server_info and server_info.ServerName %} • {{ server_info.ServerName }}{% endif -%}
+          {%- if is_online and health_data -%}
+            {%- if health_data.components.metadata_services and health_data.components.metadata_services.enabled %} • Metadata Enabled{% endif -%}
+          {%- endif %}",
+        "icon_url": "{{ jellyfin_url }}/web/favicon.png"
       },
+
       "timestamp": "{{ timestamp }}"
     }
   ]
