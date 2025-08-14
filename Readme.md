@@ -140,6 +140,7 @@ docker-compose up -d
 
 ### Docker Run
 
+1. **Run the container:**
 ```bash
 docker run -d \
   --name jellynouncer \
@@ -155,6 +156,13 @@ docker run -d \
   -v ./templates:/app/templates \
   markusmcnugen/jellynouncer:latest
 ```
+
+2. **Configure Jellyfin Webhook Plugin:**
+   - Go to Jellyfin Dashboard → Plugins → Webhook
+   - Add new webhook with URL: `http://your-server:8080/webhook`
+   - Enable "Item Added" event
+   - Check "Send All Properties"
+   - Save configuration
 
 ## ⚙️ Configuration
 
@@ -221,7 +229,7 @@ Create `config/config.json` for advanced settings:
 
 ```mermaid
 graph TD
-A[Jellyfin Server] -->|Webhook Event| B[FastAPI Endpoint]
+    A[Jellyfin Server] -->|Webhook Event| B[FastAPI Endpoint]
     B --> C[WebhookService]
     
     C --> D[Media Processing]
@@ -362,11 +370,9 @@ Jellynouncer uses Jinja2 templates for complete control over Discord embed forma
 - **Individual**: `new_item.j2`, `upgraded_item.j2`
 - **Grouped by Event**: `new_items_by_event.j2`, `upgraded_items_by_event.j2`
 - **Grouped by Type**: `new_items_by_type.j2`, `upgraded_items_by_type.j2`
-- **Grouped by Both Event and Type**: `new_items_grouped.j2`, `upgraded_items_grouped.j2`
+- **Fully Grouped**: `new_items_grouped.j2`, `upgraded_items_grouped.j2`
 
-### Sample of Available Variables
-
-See the full template guide for the list of all available variables inside Jinja2 templates
+### Available Variables
 
 ```jinja2
 {{ item.name }}              # Media title
@@ -420,6 +426,13 @@ cp config/config.json.example config/config.json
 ```bash
 python main.py
 ```
+
+6. **Configure Jellyfin Webhook Plugin:**
+   - Go to Jellyfin Dashboard → Plugins → Webhook
+   - Add new webhook with URL: `http://your-server:8080/webhook`
+   - Enable "Item Added" event
+   - Check "Send All Properties"
+   - Save configuration
 
 ### Systemd Service (Linux)
 
