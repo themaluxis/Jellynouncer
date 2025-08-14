@@ -488,28 +488,20 @@ class WebhookService:
                 # Save to database (basic fields only)
                 await self.db.save_item(media_item)
 
-                # Enrich with ALL type-specific fields for notification
-                enriched_item = await self.jellyfin.enrich_media_item_for_notification(
-                    media_item,
-                    item_data,
-                    retry_on_failure=True
-                )
-
-                # Log enrichment status
-                if hasattr(enriched_item, 'is_enriched') and enriched_item.is_enriched:
-                    self.logger.info(f"New {enriched_item.item_type} enriched with all available fields")
-                else:
-                    self.logger.warning(f"Using basic item data for notification (enrichment failed)")
-
-                # Add TVDB metadata enhancement if applicable
+                # Enrich media item with metadata before rendering templates
                 if self.metadata_service and self.metadata_service.enabled:
                     try:
-                        await self.metadata_service.enhance_item_with_tvdb_metadata(enriched_item)
+                        # Add all metadata from external sources (OMDb, TVDb, TMDb)
+                        media_item = await self.metadata_service.enrich_media_item(media_item)
+                        self.logger.info(
+                            f"Added metadata from external sources for {media_item.name}"
+                        )
                     except Exception as e:
-                        self.logger.error(f"Failed to enhance with TVDB metadata: {e}")
+                        self.logger.error(f"Error enriching item with metadata: {e}")
+                        # Continue without metadata if enrichment fails
 
                 # Send new item notification with enriched item
-                await self.discord.send_notification(enriched_item, "new_item")
+                await self.discord.send_notification(media_item, "new_item")
 
                 return {
                     "status": "success",
@@ -517,7 +509,7 @@ class WebhookService:
                     "item_id": media_item.item_id,
                     "item_name": media_item.name,
                     "item_type": media_item.item_type,
-                    "enriched": getattr(enriched_item, 'is_enriched', False),
+                    "enriched": getattr(media_item, 'is_enriched', False),
                     "processing_time": round(time.time() - start_time, 3)
                 }
 
