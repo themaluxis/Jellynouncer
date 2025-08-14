@@ -880,9 +880,86 @@ class DiscordNotifier:
             # Returns Discord embed structure ready for webhook
             ```
         """
+        # Debug: Check what metadata is actually attached to the item
+        self.logger.debug("=" * 60)
+        self.logger.debug("🔍 METADATA DEBUGGING for item: %s", item.name)
+        self.logger.debug("=" * 60)
+
+        # Check for attached metadata objects
+        self.logger.debug("Checking for metadata attributes on MediaItem:")
+        self.logger.debug("  - Has 'omdb' attribute: %s", hasattr(item, 'omdb'))
+        if hasattr(item, 'omdb'):
+            omdb_data = getattr(item, 'omdb', None)
+            if omdb_data:
+                self.logger.debug("    - OMDb data present: %s", omdb_data is not None)
+                self.logger.debug("    - OMDb IMDb rating: %s", getattr(omdb_data, 'imdb_rating', 'N/A'))
+                self.logger.debug("    - OMDb Metascore: %s", getattr(omdb_data, 'metascore', 'N/A'))
+            else:
+                self.logger.debug("    - OMDb data is None")
+
+        self.logger.debug("  - Has 'tmdb' attribute: %s", hasattr(item, 'tmdb'))
+        if hasattr(item, 'tmdb'):
+            tmdb_data = getattr(item, 'tmdb', None)
+            if tmdb_data:
+                self.logger.debug("    - TMDb data present: %s", tmdb_data is not None)
+                self.logger.debug("    - TMDb vote_average: %s", getattr(tmdb_data, 'vote_average', 'N/A'))
+                self.logger.debug("    - TMDb vote_count: %s", getattr(tmdb_data, 'vote_count', 'N/A'))
+            else:
+                self.logger.debug("    - TMDb data is None")
+
+        self.logger.debug("  - Has 'tvdb' attribute: %s", hasattr(item, 'tvdb'))
+        if hasattr(item, 'tvdb'):
+            tvdb_data = getattr(item, 'tvdb', None)
+            if tvdb_data:
+                self.logger.debug("    - TVDb data present: %s", tvdb_data is not None)
+                self.logger.debug("    - TVDb rating: %s", getattr(tvdb_data, 'rating', 'N/A'))
+            else:
+                self.logger.debug("    - TVDb data is None")
+
+        self.logger.debug("  - Has 'ratings' attribute: %s", hasattr(item, 'ratings'))
+        if hasattr(item, 'ratings'):
+            ratings_data = getattr(item, 'ratings', {})
+            self.logger.debug("    - Ratings data: %s", ratings_data)
+
+        # Convert item to dictionary for template
+        item_dict = asdict(item)
+
+        # IMPORTANT: Check if metadata is preserved after asdict conversion
+        self.logger.debug("After asdict() conversion:")
+        self.logger.debug("  - 'omdb' in item_dict: %s", 'omdb' in item_dict)
+        self.logger.debug("  - 'tmdb' in item_dict: %s", 'tmdb' in item_dict)
+        self.logger.debug("  - 'tvdb' in item_dict: %s", 'tvdb' in item_dict)
+        self.logger.debug("  - 'ratings' in item_dict: %s", 'ratings' in item_dict)
+
+        # If metadata is not in dict, we need to manually add it
+        if hasattr(item, 'omdb') and 'omdb' not in item_dict:
+            self.logger.debug("⚠️ OMDb metadata lost in asdict() - manually adding")
+            omdb_data = getattr(item, 'omdb', None)
+            if omdb_data:
+                item_dict['omdb'] = omdb_data.to_dict() if hasattr(omdb_data, 'to_dict') else omdb_data
+
+        if hasattr(item, 'tmdb') and 'tmdb' not in item_dict:
+            self.logger.debug("⚠️ TMDb metadata lost in asdict() - manually adding")
+            tmdb_data = getattr(item, 'tmdb', None)
+            if tmdb_data:
+                item_dict['tmdb'] = tmdb_data.to_dict() if hasattr(tmdb_data, 'to_dict') else tmdb_data
+
+        if hasattr(item, 'tvdb') and 'tvdb' not in item_dict:
+            self.logger.debug("⚠️ TVDb metadata lost in asdict() - manually adding")
+            tvdb_data = getattr(item, 'tvdb', None)
+            if tvdb_data:
+                item_dict['tvdb'] = tvdb_data.to_dict() if hasattr(tvdb_data, 'to_dict') else tvdb_data
+
+        if hasattr(item, 'ratings') and 'ratings' not in item_dict:
+            self.logger.debug("⚠️ Ratings data lost in asdict() - manually adding")
+            item_dict['ratings'] = getattr(item, 'ratings', {})
+
+        self.logger.debug("Final item_dict keys: %s", list(item_dict.keys()))
+        self.logger.debug("=" * 60)
+
         # Prepare template variables with standardized image parameters
         template_vars = {
-            "item": asdict(item),
+            "item": item_dict,  # Use our enhanced dict
             "action": action,
             "thumbnail_url": thumbnail_url,
             "changes": changes or [],
@@ -895,7 +972,8 @@ class DiscordNotifier:
             "image_max_width": 500,
             "image_max_height": 400,
             # Additional useful template variables
-            "tvdb_attribution_needed": hasattr(item, 'has_tvdb_metadata') and getattr(item, 'has_tvdb_metadata', False),  # Set based on whether tvdb metadata was fetched
+            "tvdb_attribution_needed": hasattr(item, 'has_tvdb_metadata') and getattr(item, 'has_tvdb_metadata', False),
+            # Set based on whether tvdb metadata was fetched
         }
 
         def _get_webhook_grouping_config() -> Dict[str, Any]:

@@ -252,10 +252,6 @@ class OMDbAPI:
         if not self.enabled or not self.client:
             return None
 
-        # Add plot=full by default for comprehensive data
-        if "plot" not in kwargs:
-            kwargs["plot"] = "full"
-
         # Always request Rotten Tomatoes data
         kwargs["tomatoes"] = True
 
