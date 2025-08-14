@@ -2,6 +2,23 @@
 
 A comprehensive guide for creating and customizing Discord webhook notifications using Jinja2 templates in Jellynouncer.
 
+## Table of Contents
+
+- [🚨 Discord Webhook Limitations](#-discord-webhook-limitations)
+- [📚 Jellyfin Item Properties](#-jellyfin-item-properties)
+- [🎨 Global Template Variables](#-global-template-variables)
+- [📈 Changes Structure (Upgrade Notifications)](#-changes-structure-upgrade-notifications)
+- [🌐 External Metadata Properties (API Keys Required)](#-external-metadata-properties-api-keys-required)
+- [📖 Jinja2 Template Basics](#-jinja2-template-basics)
+- [🎯 Basic Template Examples](#-basic-template-examples)
+- [🚀 Advanced Template Techniques](#-advanced-template-techniques)
+- [📊 Using External Metadata in Templates](#-using-external-metadata-in-templates)
+- [🌟 Complete Real-World Example](#-complete-real-world-example)
+- [🔧 Troubleshooting Guide](#-troubleshooting-guide)
+- [📝 Configuration](#-configuration)
+- [🎯 Best Practices](#-best-practices)
+- [📚 Additional Resources](#-additional-resources)
+
 ## 🚨 Discord Webhook Limitations
 
 Before creating templates, understand Discord's embed limitations to avoid errors:
@@ -20,10 +37,12 @@ Before creating templates, understand Discord's embed limitations to avoid error
 | **URL Length** | 2048 characters | Any URL in the embed |
 | **File Size** | 8 MB | For attached files/images |
 
-## 📚 Quick Reference Table
+## 📚 Jellyfin Item Properties
+
+These are the base item properties that are pulled from Jellyfin via an API call when a webhook is received
 
 <details>
-<summary>Click to expand complete property reference table</summary>
+<summary>Click to expand complete Jellyfin item properties table</summary>
 
 | Property | Type | Description | Example |
 |----------|------|-------------|---------|
@@ -107,12 +126,13 @@ Before creating templates, understand Discord's embed limitations to avoid error
 | `item.video_width` | integer | Resolution width | 1920, 3840 |
 | `item.width` | integer | Image width (photos) | 1920 |
 | `item.year` | integer | Release year | 1999 |
-
 </details>
 
 ## 🎨 Global Template Variables
+These variables are available in all templates
 
-In addition to item properties, these variables are available in all templates:
+<details>
+<summary>Click to expand complete global template variables reference tables</summary>
 
 | Variable | Type | Description | Example |
 |----------|------|-------------|---------|
@@ -137,6 +157,36 @@ In addition to item properties, these variables are available in all templates:
 | `movies` | list | Movie items only |
 | `episodes` | list | TV episode items |
 | `audio_items` | list | Music/audio items |
+</details>
+
+## 📈 Changes Structure (Upgrade Notifications)
+
+When `action` is "upgraded_item", the `changes` variable contains a list of change objects describing what was upgraded
+<details>
+<summary>Click to expand complete change object reference tables</summary>
+
+### Change Object Properties
+
+| Property | Type | Description | Example |
+|----------|------|-------------|---------|
+| `type` | string | Type of change | "resolution", "codec", "audio_codec", "audio_channels", "hdr_status", "file_size", "provider_ids" |
+| `field` | string | Database field that changed | "video_height", "video_codec", "audio_codec" |
+| `old_value` | any | Previous value | 720, "h264", "aac", 2 |
+| `new_value` | any | New/current value | 1080, "hevc", "dts", 6 |
+| `description` | string | Human-readable description | "Resolution changed from 720p to 1080p" |
+
+### Change Types
+
+| Change Type | Description | Old/New Value Types | Example |
+|------------|-------------|-------------------|---------|
+| `resolution` | Video resolution upgrade | integer (height in pixels) | 720 → 1080 |
+| `codec` | Video codec change | string | "h264" → "hevc" |
+| `audio_codec` | Audio codec change | string | "aac" → "dts" |
+| `audio_channels` | Audio channel upgrade | integer | 2 → 6 (stereo to 5.1) |
+| `hdr_status` | HDR upgrade | string | "SDR" → "HDR10" |
+| `file_size` | File replacement | integer (bytes) | File size in bytes |
+| `provider_ids` | Metadata update | varies | External ID changes |
+</details>
 
 ## 📈 Changes Structure (Upgrade Notifications)
 
@@ -237,6 +287,9 @@ For grouped notifications, changes are attached to each item:
 ## 🌐 External Metadata Properties (API Keys Required)
 
 When API keys are configured, additional metadata is fetched and attached to items as nested objects:
+
+<details>
+<summary>Click to expand complete external metadata properties reference tables</summary>
 
 ### OMDb Metadata (`item.omdb`)
 
@@ -340,7 +393,7 @@ Available when TMDb API key is configured:
 
 ### Simplified Ratings Dictionary (`item.ratings`)
 
-A simplified ratings dictionary that aggregates all rating sources:
+A simplified ratings dictionary that aggregates all external API rating sources:
 
 | Property | Type | Description | Example |
 |----------|------|-------------|---------|
@@ -352,6 +405,7 @@ A simplified ratings dictionary that aggregates all rating sources:
 | `item.ratings.metascore` | string | Metacritic score | "73" |
 | `item.ratings.tvdb` | dict | TVDb rating | `{"value": 9.3, "count": 15234}` |
 | `item.ratings.tmdb` | dict | TMDb rating | `{"value": "8.7/10", "normalized": 8.7, "count": 24536}` |
+</details>
 
 ## 📖 Jinja2 Template Basics
 
@@ -528,6 +582,76 @@ Add notes that won't appear in output:
     }
   ]
 }
+```
+
+### Using Changes in Templates
+
+```jinja2
+{# Check if there are any changes #}
+{% if changes and changes | length > 0 %}
+  
+  {# Loop through all changes #}
+  {% for change in changes %}
+    {% if change.type == 'resolution' %}
+      📐 Resolution: {{ change.old_value }}p → {{ change.new_value }}p
+    {% elif change.type == 'codec' %}
+      🎞️ Video Codec: {{ change.old_value }} → {{ change.new_value | upper }}
+    {% elif change.type == 'audio_codec' %}
+      🔊 Audio: {{ change.old_value }} → {{ change.new_value | upper }}
+    {% elif change.type == 'audio_channels' %}
+      🔊 Channels: {{ change.old_value }}ch → {{ change.new_value }}ch
+    {% elif change.type == 'hdr_status' %}
+      🌈 HDR: {{ change.old_value }} → {{ change.new_value }}
+    {% elif change.type == 'file_size' %}
+      💾 File replaced ({{ '%.1f' | format(change.new_value / 1073741824) }} GB)
+    {% endif %}
+  {% endfor %}
+  
+  {# Show only first 3 changes with count #}
+  {% for change in changes[:3] %}
+    <!-- Display change -->
+  {% endfor %}
+  {% if changes | length > 3 %}
+    +{{ changes | length - 3 }} more changes
+  {% endif %}
+  
+{% endif %}
+```
+
+### Formatted Change Display
+
+```jinja2
+{# Compact inline change summary #}
+"fields": [
+  {% for change in changes[:5] %}
+  {
+    "name": "{% if change.type == 'resolution' %}📐 Resolution Upgrade{% elif change.type == 'codec' %}🎞️ Video Codec{% elif change.type == 'audio_codec' %}🔊 Audio Upgrade{% elif change.type == 'audio_channels' %}🔊 Channel Upgrade{% elif change.type == 'hdr_status' %}🌈 HDR Upgrade{% else %}🔄 {{ change.type | title }}{% endif %}",
+    "value": "{{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**",
+    "inline": true
+  }{% if not loop.last %},{% endif %}
+  {% endfor %}
+]
+```
+
+### Grouped Notification Changes
+
+For grouped notifications, changes are attached to each item:
+
+```jinja2
+{% for item_data in upgraded_items %}
+  **{{ item_data.item.name }}**
+  {% if item_data.changes | length > 0 %}
+    Changes: 
+    {% for change in item_data.changes[:2] %}
+      {% if change.type == 'resolution' %}
+        {{ change.old_value }}p→{{ change.new_value }}p
+      {% elif change.type == 'codec' %}
+        {{ change.old_value }}→{{ change.new_value }}
+      {% endif %}
+      {% if not loop.last %} • {% endif %}
+    {% endfor %}
+  {% endif %}
+{% endfor %}
 ```
 
 ## 🚀 Advanced Template Techniques
