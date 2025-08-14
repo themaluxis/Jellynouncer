@@ -242,15 +242,13 @@ class OMDbAPI:
     def _make_request(self, **kwargs) -> Optional[Dict[str, Any]]:
         """
         Make OMDb API request with error handling and retry logic.
-
-        Args:
-            **kwargs: Parameters to pass to OMDb API
-
-        Returns:
-            Optional[Dict[str, Any]]: API response or None if failed
         """
         if not self.enabled or not self.client:
             return None
+
+        # Add fullplot=True for comprehensive plot data
+        if "fullplot" not in kwargs:
+            kwargs["fullplot"] = True
 
         # Always request Rotten Tomatoes data
         kwargs["tomatoes"] = True
@@ -259,11 +257,19 @@ class OMDbAPI:
             # First attempt
             response = self.client.get(**kwargs)
 
-            if response and response.get("response") == "True":
-                return response
-            elif response and response.get("error"):
-                self.logger.warning(f"OMDb API error: {response.get('error')}")
-                return None
+            # The omdb library should return a dict
+            if response:
+                # Check for successful response
+                # The library returns dict with 'response' field set to 'True' for success
+                if isinstance(response, dict):
+                    if response.get("response", "").lower() == "true":
+                        return response
+                    elif response.get("error"):
+                        self.logger.warning(f"OMDb API error: {response.get('error')}")
+                        return None
+                else:
+                    self.logger.error(f"Unexpected response type from omdb library: {type(response)}")
+                    return None
 
         except Exception as e:
             self.logger.warning(f"OMDb API request failed: {e}")
@@ -273,8 +279,9 @@ class OMDbAPI:
                 self.logger.info("Retrying OMDb API request...")
                 response = self.client.get(**kwargs)
 
-                if response and response.get("response") == "True":
-                    return response
+                if response and isinstance(response, dict):
+                    if response.get("response", "").lower() == "true":
+                        return response
 
             except Exception as retry_error:
                 self.logger.error(f"OMDb API retry failed: {retry_error}")
@@ -285,55 +292,81 @@ class OMDbAPI:
         """
         Parse OMDb API response into OMDbMetadata dataclass.
 
+        The omdb library returns dictionaries with fields converted from
+        CamelCase to underscore_case (e.g., 'imdb_rating' not 'imdbRating')
+
         Args:
             response (Dict[str, Any]): Raw API response
 
         Returns:
             OMDbMetadata: Parsed and sanitized metadata
         """
-        # Parse ratings list
-        ratings = []
-        for rating_data in response.get("ratings", []):
-            ratings.append(OMDbRating(
-                source=rating_data.get("source", "Unknown"),
-                value=rating_data.get("value", "N/A")
-            ))
+        # If response is None or empty, return empty metadata with error
+        if not response:
+            return OMDbMetadata(
+                response=False,
+                error="No response data"
+            )
 
-        # Create metadata object with all available fields
-        metadata = OMDbMetadata(
-            imdb_id=response.get("imdb_id"),
-            type=response.get("type"),
-            title=response.get("title"),
-            year=response.get("year"),
-            rated=response.get("rated"),
-            released=response.get("released"),
-            runtime=response.get("runtime"),
-            genre=response.get("genre"),
-            director=response.get("director"),
-            writer=response.get("writer"),
-            actors=response.get("actors"),
-            plot=response.get("plot"),
-            language=response.get("language"),
-            country=response.get("country"),
-            awards=response.get("awards"),
-            poster=response.get("poster"),
-            metascore=response.get("metascore"),
-            imdb_rating=response.get("imdb_rating"),
-            imdb_votes=response.get("imdb_votes"),
-            ratings=ratings,
-            dvd=response.get("dvd"),
-            box_office=response.get("box_office"),
-            production=response.get("production"),
-            website=response.get("website"),
-            total_seasons=response.get("total_seasons"),
-            season=response.get("season"),
-            episode=response.get("episode"),
-            series_id=response.get("series_id"),
-            response=True,
-            error=None
-        )
+        try:
+            # Parse ratings list safely
+            ratings = []
+            ratings_data = response.get("ratings", [])
 
-        return metadata
+            # Ensure ratings_data is a list
+            if isinstance(ratings_data, list):
+                for rating_data in ratings_data:
+                    # Each rating should be a dict with 'source' and 'value'
+                    if isinstance(rating_data, dict):
+                        ratings.append(OMDbRating(
+                            source=rating_data.get("source", "Unknown"),
+                            value=rating_data.get("value", "N/A")
+                        ))
+
+            # The omdb library already converts field names to underscore_case
+            # So we should use the underscore versions
+            metadata = OMDbMetadata(
+                imdb_id=response.get("imdb_id"),
+                type=response.get("type"),
+                title=response.get("title"),
+                year=response.get("year"),
+                rated=response.get("rated"),
+                released=response.get("released"),
+                runtime=response.get("runtime"),
+                genre=response.get("genre"),
+                director=response.get("director"),
+                writer=response.get("writer"),
+                actors=response.get("actors"),
+                plot=response.get("plot"),
+                language=response.get("language"),
+                country=response.get("country"),
+                awards=response.get("awards"),
+                poster=response.get("poster"),
+                metascore=response.get("metascore"),
+                imdb_rating=response.get("imdb_rating"),
+                imdb_votes=response.get("imdb_votes"),
+                ratings=ratings,
+                dvd=response.get("dvd"),
+                box_office=response.get("box_office"),
+                production=response.get("production"),
+                website=response.get("website"),
+                total_seasons=response.get("total_seasons"),
+                season=response.get("season"),
+                episode=response.get("episode"),
+                series_id=response.get("series_id"),
+                response=True,
+                error=None
+            )
+
+            return metadata
+
+        except Exception as e:
+            self.logger.error(f"Error parsing OMDb response: {e}")
+            # Return empty metadata with error message
+            return OMDbMetadata(
+                response=False,
+                error=str(e)
+            )
 
     async def get_metadata_for_item(self, item: MediaItem) -> Optional[OMDbMetadata]:
         """

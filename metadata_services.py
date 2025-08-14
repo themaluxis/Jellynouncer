@@ -386,9 +386,12 @@ class MetadataService:
 
                 # Log genres if available
                 if hasattr(tmdb_data, 'genres') and tmdb_data.genres:
-                    genres_str = ', '.join(
-                        [g.get('name', 'Unknown') if isinstance(g, dict) else str(g) for g in tmdb_data.genres])
-                    self.logger.debug(f"  - Genres: {genres_str}")
+                    if isinstance(tmdb_data.genres, list):
+                        genres_str = ', '.join(
+                            [g.get('name', 'Unknown') if isinstance(g, dict) else str(g) for g in tmdb_data.genres])
+                        self.logger.debug(f"  - Genres: {genres_str}")
+                    else:
+                        self.logger.debug(f"  - Genres: {tmdb_data.genres}")
 
                 # Log production companies if available
                 if hasattr(tmdb_data, 'production_companies') and tmdb_data.production_companies:
