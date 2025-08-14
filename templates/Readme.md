@@ -1,207 +1,388 @@
-# Jellynouncer Templates
+# Jellynouncer Templates Guide
 
-This folder contains Jinja2 templates used to generate Discord embed notifications. These templates allow you to fully customize the appearance and content of your Discord notifications.
+A comprehensive guide for creating and customizing Discord webhook notifications using Jinja2 templates in Jellynouncer.
 
-## Quick Start
+## 🚨 Discord Webhook Limitations
 
-To use a custom template, simply modify the template configuration in your `config.json`:
+Before creating templates, understand Discord's embed limitations to avoid errors:
 
-```json
-{
-  "templates": {
-    "directory": "/app/templates",
-    "new_item_template": "new_item.j2",
-    "upgraded_item_template": "upgraded_item.j2"
-  }
-}
-```
+| Component | Limit | Notes |
+|-----------|-------|-------|
+| **Total Embeds** | 10 per message | Each webhook can contain up to 10 embeds |
+| **Total Characters** | 6000 per message | Combined character count of all embeds |
+| **Embed Title** | 256 characters | Title field of an embed |
+| **Embed Description** | 4096 characters | Main text body of the embed |
+| **Field Count** | 25 per embed | Maximum number of field objects |
+| **Field Name** | 256 characters | Field title text |
+| **Field Value** | 1024 characters | Field content text |
+| **Footer Text** | 2048 characters | Footer content |
+| **Author Name** | 256 characters | Author field text |
+| **URL Length** | 2048 characters | Any URL in the embed |
+| **File Size** | 8 MB | For attached files/images |
 
-## Template Types
+## 📚 Quick Reference Table
 
-Jellynouncer uses different templates depending on your notification settings:
+<details>
+<summary>Click to expand complete property reference table</summary>
 
-### Individual Notifications
-- **`new_item.j2`** - Standard template for new media items
-- **`new_item-full.j2`** - Comprehensive template with extended metadata and technical details
-- **`new_item-compact.j2`** - Compact template with essential information in minimal space
-- **`upgraded_item.j2`** - Standard template for upgraded items (better quality, codec, etc.)
-- **`upgraded_item-full.j2`** - Comprehensive template for upgrades with complete technical specifications
-- **`upgraded_item-compact.j2`** - Compact template for upgrade notifications
+| Property | Type | Description | Example |
+|----------|------|-------------|---------|
+| `item.air_time` | string | Original air time for TV episodes | "2024-03-15" |
+| `item.album` | string | Album name (music) | "Dark Side of the Moon" |
+| `item.album_artist` | string | Primary album artist | "Pink Floyd" |
+| `item.artists` | list | List of artist names | ["Artist1", "Artist2"] |
+| `item.aspect_ratio` | string | Display aspect ratio | "16:9", "2.35:1" |
+| `item.audio_bitrate` | integer | Audio bitrate in bps | 320000 |
+| `item.audio_channels` | integer | Number of audio channels | 2, 6, 8 |
+| `item.audio_codec` | string | Audio codec | "aac", "dts", "flac" |
+| `item.audio_default` | boolean | Default audio track | true/false |
+| `item.audio_language` | string | Audio language code | "eng", "spa", "fra" |
+| `item.audio_samplerate` | integer | Sample rate in Hz | 48000, 96000 |
+| `item.audio_title` | string | Audio stream title | "English 5.1" |
+| `item.audio_type` | string | Stream type identifier | "Audio" |
+| `item.date_created` | string | When added to Jellyfin | "2024-03-15T10:30:00Z" |
+| `item.date_modified` | string | Last modification date | "2024-03-16T15:45:00Z" |
+| `item.episode_number` | integer | Episode number | 5 |
+| `item.episode_number_padded` | string | Padded episode number | "05" |
+| `item.episode_number_padded_3` | string | 3-digit padded episode | "005" |
+| `item.file_path` | string | Full file path | "/media/movies/movie.mkv" |
+| `item.file_size` | integer | File size in bytes | 5368709120 |
+| `item.genres` | list | List of genres | ["Action", "Sci-Fi"] |
+| `item.height` | integer | Image height (photos) | 1080 |
+| `item.imdb_id` | string | IMDb identifier | "tt0133093" |
+| `item.item_id` | string | Jellyfin item ID | "abc123def456" |
+| `item.item_type` | string | Media type | "Movie", "Episode", "Audio" |
+| `item.library_name` | string | Jellyfin library name | "Movies", "TV Shows" |
+| `item.name` | string | Media title | "The Matrix" |
+| `item.notification_type` | string | Notification event type | "ItemAdded" |
+| `item.official_rating` | string | Content rating | "PG-13", "TV-MA" |
+| `item.overview` | string | Description/synopsis | "A computer hacker..." |
+| `item.premiere_date` | string | Original release date | "1999-03-31" |
+| `item.runtime_formatted` | string | Human-readable runtime | "2h 16m" |
+| `item.runtime_ticks` | integer | Duration in ticks | 81600000000 |
+| `item.season_id` | string | Season Jellyfin ID | "xyz789ghi123" |
+| `item.season_number` | integer | Season number | 1 |
+| `item.season_number_padded` | string | Padded season number | "01" |
+| `item.season_number_padded_3` | string | 3-digit padded season | "001" |
+| `item.series_id` | string | Series Jellyfin ID | "def456abc789" |
+| `item.series_name` | string | TV series name | "Breaking Bad" |
+| `item.series_premiere_date` | string | Series premiere date | "2008-01-20" |
+| `item.server_id` | string | Jellyfin server ID | "server123" |
+| `item.server_name` | string | Server name | "My Jellyfin" |
+| `item.server_url` | string | Server URL | "https://jellyfin.example.com" |
+| `item.server_version` | string | Jellyfin version | "10.8.13" |
+| `item.studios` | list | Production companies | ["Warner Bros", "Village Roadshow"] |
+| `item.subtitle_codec` | string | Subtitle format | "srt", "ass", "pgs" |
+| `item.subtitle_default` | boolean | Default subtitle track | true/false |
+| `item.subtitle_external` | boolean | External subtitle file | true/false |
+| `item.subtitle_forced` | boolean | Forced subtitles | true/false |
+| `item.subtitle_language` | string | Subtitle language | "eng", "spa" |
+| `item.subtitle_title` | string | Subtitle stream title | "English (SDH)" |
+| `item.subtitle_type` | string | Subtitle type | "Subtitle" |
+| `item.tagline` | string | Marketing tagline | "Welcome to the Real World" |
+| `item.tags` | list | User tags | ["favorite", "classic"] |
+| `item.timestamp` | string | Local timestamp | "2024-03-15T10:30:00-05:00" |
+| `item.timestamp_created` | string | Object creation time | "2024-03-15T10:30:00Z" |
+| `item.tmdb_id` | string | TMDb identifier | "603" |
+| `item.tvdb_id` | string | TVDb identifier | "81189" |
+| `item.tvdb_slug` | string | TVDb URL slug | "breaking-bad" |
+| `item.utc_timestamp` | string | UTC timestamp | "2024-03-15T15:30:00Z" |
+| `item.video_bitdepth` | integer | Color bit depth | 8, 10, 12 |
+| `item.video_bitrate` | integer | Video bitrate in bps | 15000000 |
+| `item.video_codec` | string | Video codec | "h264", "hevc", "av1" |
+| `item.video_colorprimaries` | string | Color primaries | "bt709", "bt2020" |
+| `item.video_colorspace` | string | Color space | "bt709", "bt2020nc" |
+| `item.video_colortransfer` | string | Color transfer | "bt709", "smpte2084" |
+| `item.video_framerate` | float | Frames per second | 23.976, 60 |
+| `item.video_height` | integer | Resolution height | 1080, 2160 |
+| `item.video_interlaced` | boolean | Interlaced video | true/false |
+| `item.video_language` | string | Video language | "eng" |
+| `item.video_level` | string | Codec level | "4.1", "5.1" |
+| `item.video_pixelformat` | string | Pixel format | "yuv420p", "yuv420p10le" |
+| `item.video_profile` | string | Codec profile | "High", "Main10" |
+| `item.video_range` | string | Dynamic range | "SDR", "HDR10", "Dolby Vision" |
+| `item.video_refframes` | integer | Reference frames | 4 |
+| `item.video_title` | string | Video stream title | "1080p HEVC" |
+| `item.video_type` | string | Stream type | "Video" |
+| `item.video_width` | integer | Resolution width | 1920, 3840 |
+| `item.width` | integer | Image width (photos) | 1920 |
+| `item.year` | integer | Release year | 1999 |
 
-### Grouped Notifications
-When grouping is enabled, different templates are used based on your grouping mode:
+</details>
 
-- **`new_items_by_event.j2`** - Groups new items together
-- **`upgraded_items_by_event.j2`** - Groups upgraded items together  
-- **`new_items_by_type.j2`** - Groups new items by media type (Movies, TV, Music)
-- **`upgraded_items_by_type.j2`** - Groups upgraded items by media type
-- **`new_items_grouped.j2`** - Complete grouping (both type and event) for new items
-- **`upgraded_items_grouped.j2`** - Complete grouping (both type and event) for upgrades
+## 🎨 Global Template Variables
 
-### Template Variants
+In addition to item properties, these variables are available in all templates:
 
-**Standard Templates**: Balanced approach with commonly used metadata and clean formatting.
+| Variable | Type | Description | Example |
+|----------|------|-------------|---------|
+| `color` | integer | Notification color | 65280 (green) |
+| `timestamp` | string | ISO 8601 timestamp | "2024-03-15T15:30:00Z" |
+| `jellyfin_url` | string | Jellyfin server URL | "https://jellyfin.example.com" |
+| `server_url` | string | Same as jellyfin_url | "https://jellyfin.example.com" |
+| `action` | string | Notification action | "new_item", "upgraded_item" |
+| `changes` | list | List of changes (upgrades) | [{"type": "resolution", ...}] |
+| `thumbnail_url` | string | Thumbnail image URL | "https://..." |
+| `tvdb_attribution_needed` | boolean | Show TVDb attribution | true/false |
+| `image_quality` | integer | Image quality setting | 90 |
+| `image_max_width` | integer | Max image width | 500 |
+| `image_max_height` | integer | Max image height | 400 |
 
-**Full Templates (`-full`)**: Comprehensive templates that include:
-- Extended technical specifications for video and audio
-- Complete metadata including genres, studios, and ratings
-- Detailed file information and timestamps
-- Enhanced visual layout with rich formatting
+### For Grouped Notifications
 
-**Compact Templates (`-compact`)**: Minimalist templates that provide:
-- Essential information only (title, basic quality, timestamps)
-- Single-line technical specs
-- Smaller embed footprint for channels with high notification volume
+| Variable | Type | Description |
+|----------|------|-------------|
+| `items` | list | List of media items |
+| `total_items` | integer | Total item count |
+| `movies` | list | Movie items only |
+| `episodes` | list | TV episode items |
+| `audio_items` | list | Music/audio items |
 
-## Available Variables
+## 🌐 External Metadata Properties (API Keys Required)
 
-All templates have access to an `item` object with the following properties, organized alphabetically by category:
+When API keys are configured, additional metadata is fetched and attached to items as nested objects:
 
-### Audio Technical Specifications
+### OMDb Metadata (`item.omdb`)
+
+Available when OMDb API key is configured:
+
+| Property | Type | Description | Example |
+|----------|------|-------------|---------|
+| `item.omdb.imdb_id` | string | IMDb identifier | "tt0133093" |
+| `item.omdb.title` | string | Movie/show title | "The Matrix" |
+| `item.omdb.year` | string | Release year | "1999" |
+| `item.omdb.rated` | string | MPAA rating | "R", "PG-13" |
+| `item.omdb.released` | string | Release date | "31 Mar 1999" |
+| `item.omdb.runtime` | string | Duration | "136 min" |
+| `item.omdb.runtime_minutes` | integer | Duration in minutes | 136 |
+| `item.omdb.genre` | string | Comma-separated genres | "Action, Sci-Fi" |
+| `item.omdb.genres_list` | list | Genres as list | ["Action", "Sci-Fi"] |
+| `item.omdb.director` | string | Director name(s) | "Lana Wachowski, Lilly Wachowski" |
+| `item.omdb.writer` | string | Writer name(s) | "Lilly Wachowski, Lana Wachowski" |
+| `item.omdb.actors` | string | Comma-separated cast | "Keanu Reeves, Laurence Fishburne" |
+| `item.omdb.actors_list` | list | Cast as list | ["Keanu Reeves", "Laurence Fishburne"] |
+| `item.omdb.plot` | string | Synopsis | "A computer hacker learns..." |
+| `item.omdb.language` | string | Languages | "English" |
+| `item.omdb.languages_list` | list | Languages as list | ["English"] |
+| `item.omdb.country` | string | Countries | "United States, Australia" |
+| `item.omdb.countries_list` | list | Countries as list | ["United States", "Australia"] |
+| `item.omdb.awards` | string | Awards won | "Won 4 Oscars. 42 wins & 51 nominations" |
+| `item.omdb.poster` | string | Poster URL | "https://m.media-amazon.com/..." |
+| `item.omdb.metascore` | string | Metacritic score | "73" |
+| `item.omdb.imdb_rating` | string | IMDb rating | "8.7" |
+| `item.omdb.imdb_votes` | string | IMDb vote count | "1,971,245" |
+| `item.omdb.box_office` | string | Box office earnings | "$171,479,930" |
+| `item.omdb.production` | string | Production company | "Warner Bros. Pictures" |
+| `item.omdb.website` | string | Official website | "http://www.whatisthematrix.com" |
+| `item.omdb.total_seasons` | string | Number of seasons (TV) | "5" |
+| `item.omdb.ratings` | list | All ratings | See ratings section |
+| `item.omdb.ratings_dict` | dict | Ratings by source | `{"imdb": ..., "rotten_tomatoes": ...}` |
+
+### TVDb Metadata (`item.tvdb`)
+
+Available when TVDb API key is configured (TV shows only):
+
+| Property | Type | Description | Example |
+|----------|------|-------------|---------|
+| `item.tvdb.tvdb_id` | integer | TVDb identifier | 81189 |
+| `item.tvdb.name` | string | Series name | "Breaking Bad" |
+| `item.tvdb.slug` | string | URL slug | "breaking-bad" |
+| `item.tvdb.overview` | string | Series synopsis | "Walter White, a struggling..." |
+| `item.tvdb.status` | string | Series status | "Ended", "Continuing" |
+| `item.tvdb.first_aired` | string | Premiere date | "2008-01-20" |
+| `item.tvdb.last_aired` | string | Last episode date | "2013-09-29" |
+| `item.tvdb.next_aired` | string | Next episode date | null |
+| `item.tvdb.rating` | float | TVDb rating | 9.3 |
+| `item.tvdb.rating_count` | integer | Number of ratings | 15234 |
+| `item.tvdb.score` | float | TVDb score | 98.5 |
+| `item.tvdb.average_runtime` | integer | Average episode runtime | 47 |
+| `item.tvdb.genres` | list | Genre names | ["Crime", "Drama", "Thriller"] |
+| `item.tvdb.tags` | list | Tag names | ["drug cartel", "cancer", "meth"] |
+| `item.tvdb.original_country` | string | Country of origin | "us" |
+| `item.tvdb.original_language` | string | Original language | "eng" |
+| `item.tvdb.poster_url` | string | Poster image URL | "https://artworks.thetvdb.com/..." |
+| `item.tvdb.banner_url` | string | Banner image URL | "https://artworks.thetvdb.com/..." |
+| `item.tvdb.fanart_url` | string | Fanart image URL | "https://artworks.thetvdb.com/..." |
+| `item.tvdb.year` | string | Year premiered | "2008" |
+| `item.tvdb.companies` | list | Production companies | List of company objects |
+| `item.tvdb.characters` | list | Character information | List of character objects |
+| `item.tvdb.artworks` | list | Available artwork | List of artwork objects |
+
+### TMDb Metadata (`item.tmdb`)
+
+Available when TMDb API key is configured:
+
+| Property | Type | Description | Example |
+|----------|------|-------------|---------|
+| `item.tmdb.tmdb_id` | integer | TMDb identifier | 603 |
+| `item.tmdb.imdb_id` | string | IMDb identifier | "tt0133093" |
+| `item.tmdb.title` | string | Title/name | "The Matrix" |
+| `item.tmdb.original_title` | string | Original language title | "The Matrix" |
+| `item.tmdb.tagline` | string | Marketing tagline | "Welcome to the Real World" |
+| `item.tmdb.overview` | string | Synopsis | "Set in the 22nd century..." |
+| `item.tmdb.status` | string | Release status | "Released" |
+| `item.tmdb.release_date` | string | Release date (movies) | "1999-03-30" |
+| `item.tmdb.first_air_date` | string | First air date (TV) | "2008-01-20" |
+| `item.tmdb.last_air_date` | string | Last air date (TV) | "2013-09-29" |
+| `item.tmdb.vote_average` | float | Average rating (0-10) | 8.7 |
+| `item.tmdb.vote_count` | integer | Number of votes | 24536 |
+| `item.tmdb.popularity` | float | Popularity score | 98.432 |
+| `item.tmdb.runtime` | integer | Runtime in minutes | 136 |
+| `item.tmdb.budget` | integer | Production budget | 63000000 |
+| `item.tmdb.revenue` | integer | Box office revenue | 467222728 |
+| `item.tmdb.genres` | list | Genre objects | [{"id": 28, "name": "Action"}] |
+| `item.tmdb.production_companies` | list | Production companies | [{"name": "Warner Bros."}] |
+| `item.tmdb.poster_path` | string | Poster path | "/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg" |
+| `item.tmdb.backdrop_path` | string | Backdrop path | "/fNG7i7RqMErkcqhohV2a6cV1Ehy.jpg" |
+| `item.tmdb.poster_url` | string | Full poster URL | "https://image.tmdb.org/t/p/w500/..." |
+| `item.tmdb.backdrop_url` | string | Full backdrop URL | "https://image.tmdb.org/t/p/original/..." |
+| `item.tmdb.number_of_seasons` | integer | Season count (TV) | 5 |
+| `item.tmdb.number_of_episodes` | integer | Episode count (TV) | 62 |
+| `item.tmdb.in_production` | boolean | Still in production (TV) | false |
+| `item.tmdb.networks` | list | TV networks | [{"name": "AMC"}] |
+| `item.tmdb.created_by` | list | Show creators (TV) | [{"name": "Vince Gilligan"}] |
+
+### Simplified Ratings Dictionary (`item.ratings`)
+
+A simplified ratings dictionary that aggregates all rating sources:
+
+| Property | Type | Description | Example |
+|----------|------|-------------|---------|
+| `item.ratings.imdb` | dict | IMDb rating info | `{"value": "8.7/10", "normalized": 8.7}` |
+| `item.ratings.rotten_tomatoes` | dict | RT rating info | `{"value": "88%", "normalized": 8.8}` |
+| `item.ratings.metacritic` | dict | Metacritic info | `{"value": "73/100", "normalized": 7.3}` |
+| `item.ratings.imdb_score` | string | Direct IMDb score | "8.7" |
+| `item.ratings.imdb_votes` | string | IMDb vote count | "1,971,245" |
+| `item.ratings.metascore` | string | Metacritic score | "73" |
+| `item.ratings.tvdb` | dict | TVDb rating | `{"value": 9.3, "count": 15234}` |
+| `item.ratings.tmdb` | dict | TMDb rating | `{"value": "8.7/10", "normalized": 8.7, "count": 24536}` |
+
+## 📖 Jinja2 Template Basics
+
+### What is Jinja2?
+
+Jinja2 is a templating engine that allows you to create dynamic content by combining templates with data. In Jellynouncer, it generates Discord webhook JSON.
+
+### Core Syntax
+
+#### Variables
+Display a variable's value:
 ```jinja2
-{{ item.audio_bitrate }}        <!-- Audio bitrate in bits per second -->
-{{ item.audio_channels }}       <!-- Number of audio channels (2, 6, 8 for stereo, 5.1, 7.1) -->
-{{ item.audio_codec }}          <!-- Audio codec (aac, ac3, dts, flac, mp3, etc.) -->
-{{ item.audio_default }}        <!-- Whether this is the default audio track (true/false) -->
-{{ item.audio_language }}       <!-- Audio language code (eng, spa, fra, etc.) -->
-{{ item.audio_samplerate }}     <!-- Sample rate in Hz (48000, 44100, 96000, etc.) -->
-{{ item.audio_title }}          <!-- Audio stream title/name from container -->
-{{ item.audio_type }}           <!-- Stream type identifier -->
+{{ item.name }}                    <!-- Output: "The Matrix" -->
+{{ item.year }}                    <!-- Output: 1999 -->
 ```
 
-### Basic Information
+#### Conditionals
+Show content based on conditions:
 ```jinja2
-{{ item.item_id }}              <!-- Unique Jellyfin ID -->
-{{ item.item_type }}            <!-- "Movie", "Episode", "Series", "Audio", etc. -->
-{{ item.name }}                 <!-- Media title -->
-{{ item.overview }}             <!-- Description/synopsis -->
-{{ item.year }}                 <!-- Release year -->
+{% if item.year %}
+  Released in {{ item.year }}
+{% endif %}
+
+{% if item.video_height >= 2160 %}
+  4K Ultra HD
+{% elif item.video_height >= 1080 %}
+  Full HD
+{% else %}
+  Standard Definition
+{% endif %}
 ```
 
-### Extended Metadata
+#### Loops
+Iterate over lists:
 ```jinja2
-{{ item.date_created }}         <!-- When item was added to Jellyfin -->
-{{ item.date_modified }}        <!-- When item was last modified -->
-{{ item.genres }}               <!-- List of genre names (Action, Comedy, Drama, etc.) -->
-{{ item.official_rating }}      <!-- MPAA rating (G, PG, R), TV rating (TV-MA), etc. -->
-{{ item.runtime_formatted }}    <!-- Human-readable runtime (1h 30m) -->
-{{ item.runtime_ticks }}        <!-- Jellyfin duration in ticks (10,000 ticks = 1ms) -->
-{{ item.studios }}              <!-- List of production companies/studios -->
-{{ item.tagline }}              <!-- Marketing tagline or promotional text -->
-{{ item.tags }}                 <!-- List of user-defined or imported tags -->
+{% for genre in item.genres %}
+  {{ genre }}{% if not loop.last %}, {% endif %}
+{% endfor %}
+<!-- Output: Action, Sci-Fi, Thriller -->
 ```
 
-### External References
+#### Filters
+Transform data using filters:
 ```jinja2
-{{ item.imdb_id }}              <!-- Internet Movie Database identifier (tt1234567) -->
-{{ item.tmdb_id }}              <!-- The Movie Database identifier -->
-{{ item.tvdb_id }}              <!-- The TV Database identifier -->
-{{ item.tvdb_slug }}            <!-- TVDB URL slug identifier -->
+{{ item.name | upper }}            <!-- THE MATRIX -->
+{{ item.name | lower }}            <!-- the matrix -->
+{{ item.name | title }}            <!-- The Matrix -->
+{{ item.overview[:100] }}          <!-- First 100 characters -->
+{{ item.genres | join(", ") }}     <!-- Action, Sci-Fi -->
+{{ item.file_size / 1073741824 | round(2) }} GB
 ```
 
-### File System Information
+#### Comments
+Add notes that won't appear in output:
 ```jinja2
-{{ item.file_path }}            <!-- Full file path on server -->
-{{ item.file_size }}            <!-- File size in bytes -->
-{{ item.library_name }}         <!-- Jellyfin library name -->
+{# This is a comment and won't be in the JSON output #}
 ```
 
-### Music-Specific Metadata
+### Important: Handling Null/Missing Values
+
+**Always check if a property exists before using it:**
+
 ```jinja2
-{{ item.album }}                <!-- Album name (for music tracks) -->
-{{ item.album_artist }}         <!-- Primary album artist -->
-{{ item.artists }}              <!-- List of artist names -->
+{# WRONG - Will cause error if property is null #}
+{{ item.video_height }}p
+
+{# CORRECT - Safe null checking #}
+{% if item.video_height %}{{ item.video_height }}p{% endif %}
+
+{# ALTERNATIVE - Using 'is defined' #}
+{% if item.video_height is defined and item.video_height %}
+  {{ item.video_height }}p
+{% endif %}
+
+{# DEFAULT VALUES - Provide fallback #}
+{{ item.year or "Unknown Year" }}
+{{ item.video_height or 0 }}
 ```
 
-### Photo-Specific Metadata
-```jinja2
-{{ item.height }}               <!-- Image height in pixels -->
-{{ item.width }}                <!-- Image width in pixels -->
-```
+## 🎯 Basic Template Examples
 
-### Server Information
-```jinja2
-{{ item.notification_type }}    <!-- Type of notification event (ItemAdded, etc.) -->
-{{ item.server_id }}            <!-- Jellyfin server unique identifier -->
-{{ item.server_name }}          <!-- Human-readable server name -->
-{{ item.server_url }}           <!-- Public URL of the Jellyfin server -->
-{{ item.server_version }}       <!-- Jellyfin server version string -->
-```
-
-### Subtitle Information
-```jinja2
-{{ item.subtitle_codec }}       <!-- Subtitle format (srt, ass, pgs, vtt, etc.) -->
-{{ item.subtitle_default }}     <!-- Whether this is the default subtitle track -->
-{{ item.subtitle_external }}    <!-- Whether subtitle is external file vs embedded -->
-{{ item.subtitle_forced }}      <!-- Whether subtitle is forced display -->
-{{ item.subtitle_language }}    <!-- Subtitle language code (eng, spa, fra, etc.) -->
-{{ item.subtitle_title }}       <!-- Subtitle stream title/name -->
-{{ item.subtitle_type }}        <!-- Subtitle stream type identifier -->
-```
-
-### Timestamps
-```jinja2
-{{ item.air_time }}             <!-- Original air time for TV episodes -->
-{{ item.premiere_date }}        <!-- Original release/air date -->
-{{ item.series_premiere_date }} <!-- When the TV series originally premiered -->
-{{ item.timestamp }}            <!-- Local timestamp with timezone from webhook -->
-{{ item.timestamp_created }}    <!-- When this MediaItem object was created -->
-{{ item.utc_timestamp }}        <!-- UTC timestamp from webhook -->
-```
-
-### TV Show Specific
-```jinja2
-{{ item.episode_number }}       <!-- Episode number -->
-{{ item.episode_number_padded }} <!-- Episode number with leading zero (01, 02, etc.) -->
-{{ item.episode_number_padded_3 }} <!-- Episode number with 3 digits (001, 002, etc.) -->
-{{ item.season_id }}            <!-- Season Jellyfin ID -->
-{{ item.season_number }}        <!-- Season number -->
-{{ item.season_number_padded }} <!-- Season number with leading zero (01, 02, etc.) -->
-{{ item.season_number_padded_3 }} <!-- Season number with 3 digits (001, 002, etc.) -->
-{{ item.series_id }}            <!-- Series Jellyfin ID -->
-{{ item.series_name }}          <!-- TV series name -->
-```
-
-### Video Technical Specifications
-```jinja2
-{{ item.aspect_ratio }}         <!-- Display aspect ratio (16:9, 4:3, 2.35:1, etc.) -->
-{{ item.video_bitdepth }}       <!-- Color bit depth (8, 10, 12) -->
-{{ item.video_bitrate }}        <!-- Video bitrate in bits per second -->
-{{ item.video_codec }}          <!-- Video codec (h264, hevc, av1, mpeg2, etc.) -->
-{{ item.video_colorprimaries }} <!-- Color primaries specification (bt709, bt2020, etc.) -->
-{{ item.video_colorspace }}     <!-- Color space specification (bt709, bt2020nc, etc.) -->
-{{ item.video_colortransfer }}  <!-- Color transfer characteristics (bt709, smpte2084, etc.) -->
-{{ item.video_framerate }}      <!-- Frames per second (23.976, 24, 25, 29.97, etc.) -->
-{{ item.video_height }}         <!-- Video resolution height in pixels (720, 1080, 2160, etc.) -->
-{{ item.video_interlaced }}     <!-- Whether video uses interlaced scanning (true/false) -->
-{{ item.video_language }}       <!-- Video stream language code (eng, spa, fra, etc.) -->
-{{ item.video_level }}          <!-- Codec level specification (3.1, 4.0, 5.1, etc.) -->
-{{ item.video_pixelformat }}    <!-- Pixel format (yuv420p, yuv420p10le, etc.) -->
-{{ item.video_profile }}        <!-- Codec profile (High, Main, Main10, etc.) -->
-{{ item.video_range }}          <!-- Video range (SDR, HDR10, HDR10+, Dolby Vision) -->
-{{ item.video_refframes }}      <!-- Number of reference frames used by codec -->
-{{ item.video_title }}          <!-- Video stream title/name from container -->
-{{ item.video_type }}           <!-- Stream type identifier -->
-{{ item.video_width }}          <!-- Video resolution width in pixels (1280, 1920, 3840, etc.) -->
-```
-
-## Template Examples
-
-### Simple Example - Basic New Item
+### Minimal New Item Template
 
 ```jinja2
 {
   "embeds": [
     {
-      "title": "🎬 New {{ item.item_type }} Added",
+      "title": "New {{ item.item_type }} Added",
+      "description": "**{{ item.name }}**",
+      "color": {{ color }}
+    }
+  ]
+}
+```
+
+### Basic Movie Template with Safe Checks
+
+```jinja2
+{
+  "embeds": [
+    {
+      "title": "🎬 New Movie Added",
       "description": "**{{ item.name }}**{% if item.year %} ({{ item.year }}){% endif %}",
       "color": {{ color }},
       "fields": [
+        {% set fields = [] %}
         {% if item.video_height %}
+          {% set _ = fields.append(1) %}
         {
           "name": "Quality",
           "value": "{{ item.video_height }}p",
           "inline": true
+        }{% if item.runtime_ticks or item.genres %},{% endif %}
+        {% endif %}
+        {% if item.runtime_ticks %}
+          {% set _ = fields.append(1) %}
+        {
+          "name": "Runtime",
+          "value": "{{ (item.runtime_ticks / 600000000) | int }} minutes",
+          "inline": true
+        }{% if item.genres %},{% endif %}
+        {% endif %}
+        {% if item.genres and item.genres | length > 0 %}
+        {
+          "name": "Genres",
+          "value": "{{ item.genres[:3] | join(', ') }}",
+          "inline": true
         }
         {% endif %}
       ]
@@ -210,104 +391,365 @@ All templates have access to an `item` object with the following properties, org
 }
 ```
 
-### Advanced Example - Technical Specifications
+### TV Episode Template
 
 ```jinja2
 {
   "embeds": [
     {
-      "title": "🎬 New {{ item.item_type }} Added",
-      "description": "**{{ item.name }}**{% if item.year %} ({{ item.year }}){% endif %}{% if item.overview %}\n\n{{ (item.overview[:200] + '...') if item.overview|length > 200 else item.overview }}{% endif %}",
+      "title": "📺 New Episode",
+      "description": "**{{ item.series_name }}**\nS{{ '%02d' | format(item.season_number or 0) }}E{{ '%02d' | format(item.episode_number or 0) }} - {{ item.name }}",
       "color": {{ color }},
       "fields": [
-        {% if item.video_height or item.video_codec %}
+        {% if item.overview %}
         {
-          "name": "🎥 Video Details",
-          "value": "{% if item.video_height %}**Resolution:** {{ item.video_height }}p{% if item.video_width %} ({{ item.video_width }}×{{ item.video_height }}){% endif %}{% endif %}{% if item.video_codec %}\n**Codec:** {{ item.video_codec.upper() }}{% if item.video_profile %} ({{ item.video_profile }}){% endif %}{% endif %}{% if item.video_range and item.video_range != 'SDR' %}\n**HDR:** {{ item.video_range }}{% endif %}{% if item.video_bitdepth and item.video_bitdepth > 8 %}\n**Bit Depth:** {{ item.video_bitdepth }}-bit{% endif %}",
+          "name": "Synopsis",
+          "value": "{{ (item.overview[:200] + '...') if item.overview | length > 200 else item.overview }}",
           "inline": false
+        },
+        {% endif %}
+        {% if item.video_height %}
+        {
+          "name": "Quality",
+          "value": "{{ item.video_height }}p{% if item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}",
+          "inline": true
         },
         {% endif %}
         {% if item.audio_codec %}
         {
-          "name": "🔊 Audio Details",
-          "value": "{% if item.audio_codec %}**Codec:** {{ item.audio_codec.upper() }}{% endif %}{% if item.audio_channels %}\n**Channels:** {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% if item.audio_samplerate %}\n**Sample Rate:** {{ item.audio_samplerate }}Hz{% endif %}{% if item.audio_language %}\n**Language:** {{ item.audio_language.upper() }}{% endif %}",
-          "inline": true
-        },
-        {% endif %}
-        {% if item.subtitle_language %}
-        {
-          "name": "📝 Subtitles",
-          "value": "{% if item.subtitle_language %}**Language:** {{ item.subtitle_language.upper() }}{% endif %}{% if item.subtitle_codec %}\n**Format:** {{ item.subtitle_codec.upper() }}{% endif %}{% if item.subtitle_forced %}\n**Type:** Forced{% elif item.subtitle_default %}\n**Type:** Default{% endif %}",
-          "inline": true
-        },
-        {% endif %}
-        {% if item.file_size %}
-        {
-          "name": "💾 File Info",
-          "value": "**Size:** {{ '%.2f'|format(item.file_size / 1073741824) }} GB{% if item.runtime_ticks %}\n**Duration:** {% set hours = (item.runtime_ticks / 36000000000) | int %}{% set minutes = ((item.runtime_ticks / 600000000) % 60) | int %}{{ hours }}h {{ minutes }}m{% endif %}",
+          "name": "Audio",
+          "value": "{{ item.audio_codec | upper }}{% if item.audio_channels %} {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}",
           "inline": true
         }
         {% endif %}
+      ],
+      {% if item.series_id %}
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/Items/{{ item.series_id }}/Images/Primary?maxHeight=300"
+      },
+      {% endif %}
+      "timestamp": "{{ timestamp }}"
+    }
+  ]
+}
+```
+
+## 🚀 Advanced Template Techniques
+
+### Dynamic Field Generation with Counter
+
+Prevent Discord's 25-field limit:
+
+```jinja2
+{
+  "embeds": [
+    {
+      "title": "New {{ item.item_type }}",
+      "description": "**{{ item.name }}**",
+      "color": {{ color }},
+      "fields": [
+        {% set field_count = namespace(value=0) %}
+        
+        {% if item.video_height and field_count.value < 20 %}
+          {% if field_count.value > 0 %},{% endif %}
+          {% set field_count.value = field_count.value + 1 %}
+        {
+          "name": "Resolution",
+          "value": "{{ item.video_height }}p",
+          "inline": true
+        }
+        {% endif %}
+        
+        {% if item.video_codec and field_count.value < 20 %}
+          {% if field_count.value > 0 %},{% endif %}
+          {% set field_count.value = field_count.value + 1 %}
+        {
+          "name": "Video Codec",
+          "value": "{{ item.video_codec | upper }}",
+          "inline": true
+        }
+        {% endif %}
+        
+        {# Continue for other fields... #}
       ]
     }
   ]
 }
 ```
 
-### Music-Specific Example
+### Smart Audio Channel Display
 
 ```jinja2
-{
-  "embeds": [
-    {
-      "title": "🎵 New {{ item.item_type }} Added",
-      "description": "**{{ item.name }}**{% if item.artists and item.artists|length > 0 %}\nby {{ item.artists|join(', ') }}{% elif item.album_artist %}\nby {{ item.album_artist }}{% endif %}{% if item.album %}\n\nAlbum: **{{ item.album }}**{% endif %}",
-      "color": {{ color }},
-      "fields": [
-        {% if item.genres and item.genres|length > 0 %}
-        {
-          "name": "🎭 Genres",
-          "value": "{{ item.genres|join(', ') }}",
-          "inline": true
-        },
-        {% endif %}
-        {% if item.audio_codec or item.audio_samplerate %}
-        {
-          "name": "🔊 Audio Quality",
-          "value": "{% if item.audio_codec %}**Codec:** {{ item.audio_codec.upper() }}{% endif %}{% if item.audio_samplerate %}\n**Sample Rate:** {{ item.audio_samplerate }}Hz{% endif %}{% if item.audio_bitrate %}\n**Bitrate:** {{ item.audio_bitrate }}bps{% endif %}",
-          "inline": true
-        },
-        {% endif %}
-        {% if item.runtime_ticks %}
-        {
-          "name": "⏱️ Duration",
-          "value": "{{ ((item.runtime_ticks / 10000000) / 60) | round(1) }} minutes",
-          "inline": true
-        }
-        {% endif %}
-      ]
-    }
-  ]
-}
+{% if item.audio_channels %}
+  {% if item.audio_channels == 2 %}
+    Stereo
+  {% elif item.audio_channels == 6 %}
+    5.1 Surround
+  {% elif item.audio_channels == 8 %}
+    7.1 Surround
+  {% else %}
+    {{ item.audio_channels }} channels
+  {% endif %}
+{% endif %}
 ```
 
-### TV Episode Example
+### File Size Formatting
+
+```jinja2
+{% if item.file_size %}
+  {% if item.file_size < 1073741824 %}
+    {{ "%.2f" | format(item.file_size / 1048576) }} MB
+  {% elif item.file_size < 1099511627776 %}
+    {{ "%.2f" | format(item.file_size / 1073741824) }} GB
+  {% else %}
+    {{ "%.2f" | format(item.file_size / 1099511627776) }} TB
+  {% endif %}
+{% endif %}
+```
+
+### Runtime Conversion
+
+```jinja2
+{% if item.runtime_ticks %}
+  {% set total_seconds = (item.runtime_ticks / 10000000) | int %}
+  {% set hours = (total_seconds / 3600) | int %}
+  {% set minutes = ((total_seconds % 3600) / 60) | int %}
+  {% if hours > 0 %}
+    {{ hours }}h {{ minutes }}m
+  {% else %}
+    {{ minutes }} minutes
+  {% endif %}
+{% endif %}
+```
+
+### Quality Badge System
+
+```jinja2
+{% if item.video_height %}
+  {% if item.video_height >= 2160 %}
+    📺 **4K UHD**
+  {% elif item.video_height >= 1440 %}
+    📺 **QHD**
+  {% elif item.video_height >= 1080 %}
+    📺 **FHD**
+  {% elif item.video_height >= 720 %}
+    📺 **HD**
+  {% else %}
+    📺 **SD**
+  {% endif %}
+  {% if item.video_range and item.video_range != 'SDR' %}
+    • 🌈 **{{ item.video_range }}**
+  {% endif %}
+{% endif %}
+```
+
+### Upgrade Change Detection
+
+For upgrade templates with change tracking:
+
+```jinja2
+{% if changes and changes | length > 0 %}
+  "fields": [
+    {
+      "name": "🔄 Upgrades",
+      "value": "{% for change in changes[:5] -%}
+        {%- if change.type == 'resolution' -%}
+          📐 {{ change.old_value or 'Unknown' }}p → **{{ change.new_value }}p**
+        {%- elif change.type == 'codec' -%}
+          🎞️ {{ change.old_value or 'Unknown' }} → **{{ change.new_value | upper }}**
+        {%- elif change.type == 'audio_codec' -%}
+          🔊 {{ change.old_value or 'Unknown' }} → **{{ change.new_value | upper }}**
+        {%- elif change.type == 'hdr_status' -%}
+          🌈 {{ change.old_value or 'SDR' }} → **{{ change.new_value }}**
+        {%- endif -%}
+        {%- if not loop.last %}
+{{ '' }}{%- endif -%}
+      {%- endfor %}",
+      "inline": false
+    }
+  ]
+{% endif %}
+```
+
+## 📊 Using External Metadata in Templates
+
+### Displaying Ratings from Multiple Sources
+
+```jinja2
+{% if item.ratings %}
+  {# Display IMDb rating if available #}
+  {% if item.ratings.imdb_score %}
+    ⭐ IMDb: {{ item.ratings.imdb_score }}/10
+    {% if item.ratings.imdb_votes %}({{ item.ratings.imdb_votes }} votes){% endif %}
+  {% endif %}
+  
+  {# Display Rotten Tomatoes if available #}
+  {% if item.ratings.rotten_tomatoes %}
+    🍅 RT: {{ item.ratings.rotten_tomatoes.value }}
+  {% endif %}
+  
+  {# Display Metacritic if available #}
+  {% if item.ratings.metascore %}
+    📊 Metacritic: {{ item.ratings.metascore }}/100
+  {% endif %}
+  
+  {# Display TVDb rating for TV shows #}
+  {% if item.ratings.tvdb %}
+    📺 TVDb: {{ item.ratings.tvdb.value }}/10 ({{ item.ratings.tvdb.count }} ratings)
+  {% endif %}
+{% endif %}
+```
+
+### Using OMDb Metadata
+
+```jinja2
+{% if item.omdb %}
+  "fields": [
+    {% if item.omdb.imdb_rating %}
+    {
+      "name": "⭐ Ratings",
+      "value": "**IMDb:** {{ item.omdb.imdb_rating }}/10{% if item.omdb.metascore %}\n**Metacritic:** {{ item.omdb.metascore }}/100{% endif %}{% if item.omdb.ratings_dict.rotten_tomatoes %}\n**Rotten Tomatoes:** {{ item.omdb.ratings_dict.rotten_tomatoes.value }}{% endif %}",
+      "inline": true
+    },
+    {% endif %}
+    {% if item.omdb.awards %}
+    {
+      "name": "🏆 Awards",
+      "value": "{{ item.omdb.awards }}",
+      "inline": false
+    },
+    {% endif %}
+    {% if item.omdb.box_office %}
+    {
+      "name": "💰 Box Office",
+      "value": "{{ item.omdb.box_office }}",
+      "inline": true
+    }
+    {% endif %}
+  ]
+{% endif %}
+```
+
+### Using TVDb Metadata
+
+```jinja2
+{% if item.tvdb %}
+  {# Series information with TVDb data #}
+  "description": "**{{ item.tvdb.name or item.name }}**\n{{ item.tvdb.overview or item.overview }}",
+  "fields": [
+    {% if item.tvdb.status %}
+    {
+      "name": "📺 Status",
+      "value": "{{ item.tvdb.status }}",
+      "inline": true
+    },
+    {% endif %}
+    {% if item.tvdb.genres %}
+    {
+      "name": "🎭 Genres",
+      "value": "{{ item.tvdb.genres[:5] | join(', ') }}",
+      "inline": true
+    },
+    {% endif %}
+    {% if item.tvdb.rating %}
+    {
+      "name": "⭐ TVDb Rating",
+      "value": "{{ item.tvdb.rating }}/10 ({{ item.tvdb.rating_count }} votes)",
+      "inline": true
+    }
+    {% endif %}
+  ],
+  {% if item.tvdb.poster_url %}
+  "thumbnail": {
+    "url": "{{ item.tvdb.poster_url }}"
+  },
+  {% endif %}
+  {% if tvdb_attribution_needed %}
+  "footer": {
+    "text": "Metadata provided by TheTVDB",
+    "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
+  }
+  {% endif %}
+{% endif %}
+```
+
+### Using TMDb Metadata
+
+```jinja2
+{% if item.tmdb %}
+  "fields": [
+    {% if item.tmdb.vote_average %}
+    {
+      "name": "⭐ TMDb Rating",
+      "value": "{{ item.tmdb.vote_average }}/10 ({{ item.tmdb.vote_count }} votes)",
+      "inline": true
+    },
+    {% endif %}
+    {% if item.tmdb.budget and item.tmdb.revenue %}
+    {
+      "name": "💰 Financial",
+      "value": "**Budget:** ${{ '{:,}'.format(item.tmdb.budget) }}\n**Revenue:** ${{ '{:,}'.format(item.tmdb.revenue) }}",
+      "inline": false
+    },
+    {% endif %}
+    {% if item.tmdb.tagline %}
+    {
+      "name": "📝 Tagline",
+      "value": "*{{ item.tmdb.tagline }}*",
+      "inline": false
+    }
+    {% endif %}
+  ],
+  {% if item.tmdb.backdrop_url %}
+  "image": {
+    "url": "{{ item.tmdb.backdrop_url }}"
+  }
+  {% endif %}
+{% endif %}
+```
+
+### Complete Example with All Metadata Sources
 
 ```jinja2
 {
   "embeds": [
     {
-      "title": "📺 New Episode Added",
-      "description": "**{{ item.series_name }}**\nS{{ '%02d'|format(item.season_number or 0) }}E{{ '%02d'|format(item.episode_number or 0) }} • {{ item.name }}{% if item.overview %}\n\n{{ (item.overview[:150] + '...') if item.overview|length > 150 else item.overview }}{% endif %}",
+      "title": "🎬 {{ item.name }}{% if item.year %} ({{ item.year }}){% endif %}",
+      
+      {# Use best available synopsis #}
+      "description": "{{ item.tmdb.overview or item.omdb.plot or item.overview or 'No description available' }}",
+      
       "color": {{ color }},
+      
       "fields": [
-        {% if item.air_time %}
+        {# Aggregated ratings field #}
+        {% if item.ratings and (item.ratings.imdb_score or item.ratings.metascore or item.ratings.rotten_tomatoes) %}
         {
-          "name": "📅 Air Date",
-          "value": "{{ item.air_time }}",
+          "name": "⭐ Ratings",
+          "value": "{% if item.ratings.imdb_score %}**IMDb:** {{ item.ratings.imdb_score }}/10{% endif %}{% if item.ratings.rotten_tomatoes %}{% if item.ratings.imdb_score %}\n{% endif %}**RT:** {{ item.ratings.rotten_tomatoes.value }}{% endif %}{% if item.ratings.metascore %}{% if item.ratings.imdb_score or item.ratings.rotten_tomatoes %}\n{% endif %}**Metacritic:** {{ item.ratings.metascore }}/100{% endif %}",
           "inline": true
         },
         {% endif %}
+        
+        {# Cast from OMDb #}
+        {% if item.omdb and item.omdb.actors_list %}
+        {
+          "name": "🎭 Cast",
+          "value": "{{ item.omdb.actors_list[:3] | join(', ') }}",
+          "inline": true
+        },
+        {% endif %}
+        
+        {# Runtime with fallback #}
+        {% if item.omdb.runtime_minutes or item.tmdb.runtime or item.runtime_ticks %}
+        {
+          "name": "⏱️ Runtime",
+          "value": "{% if item.omdb.runtime_minutes %}{{ item.omdb.runtime_minutes }} min{% elif item.tmdb.runtime %}{{ item.tmdb.runtime }} min{% elif item.runtime_ticks %}{{ (item.runtime_ticks / 600000000) | int }} min{% endif %}",
+          "inline": true
+        },
+        {% endif %}
+        
+        {# Technical specs #}
         {% if item.video_height %}
         {
           "name": "📐 Quality",
@@ -315,151 +757,222 @@ All templates have access to an `item` object with the following properties, org
           "inline": true
         },
         {% endif %}
-        {% if item.runtime_ticks %}
+        
+        {# Awards if available #}
+        {% if item.omdb and item.omdb.awards and item.omdb.awards != 'N/A' %}
         {
-          "name": "⏱️ Runtime",
-          "value": "{% set minutes = (item.runtime_ticks / 600000000) | int %}{{ minutes }} minutes",
-          "inline": true
+          "name": "🏆 Awards",
+          "value": "{{ item.omdb.awards }}",
+          "inline": false
         }
         {% endif %}
-      ]
-    }
-  ]
-}
-```
-
-### Photo Example
-
-```jinja2
-{
-  "embeds": [
-    {
-      "title": "📷 New Photo Added",
-      "description": "**{{ item.name }}**",
-      "color": {{ color }},
-      "fields": [
-        {% if item.width and item.height %}
-        {
-          "name": "📐 Dimensions",
-          "value": "{{ item.width }}×{{ item.height }} pixels",
-          "inline": true
-        },
-        {% endif %}
-        {% if item.file_size %}
-        {
-          "name": "💾 File Size",
-          "value": "{{ '%.2f'|format(item.file_size / 1048576) }} MB",
-          "inline": true
-        },
-        {% endif %}
-        {% if item.date_created %}
-        {
-          "name": "📅 Date Added",
-          "value": "{{ item.date_created[:10] }}",
-          "inline": true
-        }
-        {% endif %}
-      ]
-    }
-  ]
-}
-```
-
-### Compact Template Example
-
-```jinja2
-{
-  "embeds": [
-    {
-      "title": "{% if item.item_type == 'Movie' %}🎬{% elif item.item_type == 'Episode' %}📺{% elif item.item_type == 'Audio' %}🎵{% else %}📁{% endif %} New {{ item.item_type }}",
-      "description": "**{{ item.name }}**{% if item.year %} ({{ item.year }}){% endif %}{% if item.video_height %} • {{ item.video_height }}p{% endif %}{% if item.video_codec %} • {{ item.video_codec.upper() }}{% endif %}{% if item.audio_codec %} • {{ item.audio_codec.upper() }}{% endif %}",
-      "color": {{ color }},
+      ],
+      
+      {# Use best available image #}
+      {% if item.tmdb and item.tmdb.poster_url %}
+      "thumbnail": {
+        "url": "{{ item.tmdb.poster_url }}"
+      },
+      {% elif item.tvdb and item.tvdb.poster_url %}
+      "thumbnail": {
+        "url": "{{ item.tvdb.poster_url }}"
+      },
+      {% elif item.omdb and item.omdb.poster %}
+      "thumbnail": {
+        "url": "{{ item.omdb.poster }}"
+      },
+      {% else %}
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?maxHeight=300"
+      },
+      {% endif %}
+      
+      {# Footer with attributions #}
+      "footer": {
+        "text": "{{ item.library_name or 'Jellyfin' }}{% if tvdb_attribution_needed %} • Metadata from TheTVDB{% endif %}",
+        "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
+      },
+      
       "timestamp": "{{ timestamp }}"
     }
   ]
 }
 ```
 
-### Comprehensive Full Template Example
+## 🌟 Complete Real-World Example
+
+Here's a production-ready template with all best practices:
 
 ```jinja2
+{# 
+  Production-Ready New Item Template
+  Handles all media types with proper null checking
+#}
 {
   "embeds": [
     {
-      "title": "🎬 New {{ item.item_type }} Added",
-      "description": "**{{ item.name }}**{% if item.year %} ({{ item.year }}){% endif %}{% if item.tagline %}\n*{{ item.tagline }}*{% endif %}{% if item.overview %}\n\n{{ (item.overview[:300] + '...') if item.overview|length > 300 else item.overview }}{% endif %}",
+      {# Dynamic title based on media type #}
+      "title": "{% if item.item_type == 'Movie' %}🎬 New Movie{% elif item.item_type == 'Episode' %}📺 New Episode{% elif item.item_type == 'Audio' %}🎵 New Music{% else %}📁 New {{ item.item_type }}{% endif %}",
+      
+      {# Rich description with safe property access #}
+      "description": "{% if item.item_type == 'Episode' and item.series_name -%}
+        **{{ item.series_name }}**
+        S{{ '%02d' | format(item.season_number or 0) }}E{{ '%02d' | format(item.episode_number or 0) }} - {{ item.name }}
+      {%- else -%}
+        **{{ item.name }}**{% if item.year %} ({{ item.year }}){% endif %}
+      {%- endif -%}
+      {%- if item.tagline %}
+*{{ item.tagline }}*{% endif -%}
+      {%- if item.overview %}
+
+{{ (item.overview[:300] + '...') if item.overview | length > 300 else item.overview }}{% endif %}",
+      
       "color": {{ color }},
+      
+      {# Smart field generation with limit checking #}
       "fields": [
-        {% if item.genres and item.genres|length > 0 %}
+        {% set fields_added = namespace(count=0) %}
+        
+        {# Technical specifications row #}
+        {% if item.video_height and item.item_type not in ['Audio', 'MusicAlbum'] and fields_added.count < 20 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "📐 Quality",
+          "value": "{{ item.video_height }}p{% if item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}",
+          "inline": true
+        }
+        {% endif %}
+        
+        {% if item.video_codec and item.item_type not in ['Audio', 'MusicAlbum'] and fields_added.count < 20 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "🎞️ Video",
+          "value": "{{ item.video_codec | upper }}{% if item.video_profile %} {{ item.video_profile }}{% endif %}",
+          "inline": true
+        }
+        {% endif %}
+        
+        {% if item.audio_codec and fields_added.count < 20 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "🔊 Audio",
+          "value": "{{ item.audio_codec | upper }}{% if item.audio_channels %} {% if item.audio_channels == 2 %}Stereo{% elif item.audio_channels == 6 %}5.1{% elif item.audio_channels == 8 %}7.1{% else %}{{ item.audio_channels }}ch{% endif %}{% endif %}",
+          "inline": true
+        }
+        {% endif %}
+        
+        {# Metadata row #}
+        {% if item.runtime_ticks and fields_added.count < 20 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
+        {
+          "name": "⏱️ Runtime",
+          "value": "{% set minutes = (item.runtime_ticks / 600000000) | int %}{% set hours = (minutes / 60) | int %}{% set mins = minutes % 60 %}{% if hours > 0 %}{{ hours }}h {{ mins }}m{% else %}{{ mins }} min{% endif %}",
+          "inline": true
+        }
+        {% endif %}
+        
+        {% if item.genres and item.genres | length > 0 and fields_added.count < 20 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "🎭 Genres",
-          "value": "{{ item.genres[:5]|join(', ') }}{% if item.genres|length > 5 %} +{{ item.genres|length - 5 }} more{% endif %}",
+          "value": "{{ item.genres[:3] | join(', ') }}{% if item.genres | length > 3 %} +{{ item.genres | length - 3 }}{% endif %}",
           "inline": true
-        },
+        }
         {% endif %}
-        {% if item.official_rating %}
+        
+        {% if item.file_size and fields_added.count < 20 %}
+          {% if fields_added.count > 0 %},{% endif %}
+          {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🛡️ Rating",
-          "value": "{{ item.official_rating }}",
-          "inline": true
-        },
-        {% endif %}
-        {% if item.studios and item.studios|length > 0 %}
-        {
-          "name": "🏢 Studio",
-          "value": "{{ item.studios[0] }}{% if item.studios|length > 1 %} +{{ item.studios|length - 1 }} more{% endif %}",
-          "inline": true
-        },
-        {% endif %}
-        {
-          "name": "🎥 Video Specifications",
-          "value": "{% if item.video_height %}**Resolution:** {{ item.video_height }}p{% if item.video_width %} ({{ item.video_width }}×{{ item.video_height }}){% endif %}{% endif %}{% if item.video_codec %}\n**Codec:** {{ item.video_codec.upper() }}{% if item.video_profile %} {{ item.video_profile }}{% endif %}{% endif %}{% if item.video_range and item.video_range != 'SDR' %}\n**HDR:** {{ item.video_range }}{% endif %}{% if item.video_bitdepth and item.video_bitdepth > 8 %}\n**Bit Depth:** {{ item.video_bitdepth }}-bit{% endif %}{% if item.video_framerate %}\n**Frame Rate:** {{ item.video_framerate }}fps{% endif %}{% if item.video_colorspace %}\n**Color Space:** {{ item.video_colorspace }}{% endif %}",
-          "inline": false
-        },
-        {% if item.audio_codec %}
-        {
-          "name": "🔊 Audio Specifications",
-          "value": "{% if item.audio_codec %}**Codec:** {{ item.audio_codec.upper() }}{% endif %}{% if item.audio_channels %}\n**Channels:** {{ item.audio_channels }}.{% if item.audio_channels > 2 %}1{% else %}0{% endif %}{% endif %}{% if item.audio_samplerate %}\n**Sample Rate:** {{ item.audio_samplerate }}Hz{% endif %}{% if item.audio_bitrate %}\n**Bitrate:** {{ item.audio_bitrate }}bps{% endif %}{% if item.audio_language %}\n**Language:** {{ item.audio_language.upper() }}{% endif %}",
-          "inline": false
-        },
-        {% endif %}
-        {% if item.subtitle_language %}
-        {
-          "name": "📝 Subtitle Information",
-          "value": "{% if item.subtitle_language %}**Languages:** {{ item.subtitle_language.upper() }}{% endif %}{% if item.subtitle_codec %}\n**Format:** {{ item.subtitle_codec.upper() }}{% endif %}{% if item.subtitle_external %}{% if item.subtitle_external %}\n**Type:** External File{% else %}\n**Type:** Embedded{% endif %}{% endif %}{% if item.subtitle_forced %}\n**Forced:** Yes{% endif %}",
-          "inline": true
-        },
-        {% endif %}
-        {
-          "name": "💾 File Information",
-          "value": "{% if item.file_size %}**Size:** {{ '%.2f'|format(item.file_size / 1073741824) }} GB{% endif %}{% if item.runtime_ticks %}\n**Duration:** {% set hours = (item.runtime_ticks / 36000000000) | int %}{% set minutes = ((item.runtime_ticks / 600000000) % 60) | int %}{{ hours }}h {{ minutes }}m{% endif %}{% if item.library_name %}\n**Library:** {{ item.library_name }}{% endif %}",
-          "inline": true
-        },
-        {% if item.server_name %}
-        {
-          "name": "🖥️ Server Info",
-          "value": "{% if item.server_name %}**Server:** {{ item.server_name }}{% endif %}{% if item.server_version %}\n**Version:** {{ item.server_version }}{% endif %}",
+          "name": "💾 Size",
+          "value": "{{ '%.1f' | format(item.file_size / 1073741824) }} GB",
           "inline": true
         }
         {% endif %}
       ],
+      
+      {# Thumbnail with fallback #}
+      {% if item.item_type == 'Episode' and item.series_id %}
       "thumbnail": {
-        "url": "{{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?maxHeight=300&maxWidth=200"
+        "url": "{{ jellyfin_url }}/Items/{{ item.series_id }}/Images/Primary?maxHeight=300&quality=90"
       },
+      {% elif item.item_id %}
+      "thumbnail": {
+        "url": "{{ jellyfin_url }}/Items/{{ item.item_id }}/Images/Primary?maxHeight=300&quality=90"
+      },
+      {% endif %}
+      
+      {# Footer with attribution #}
       "footer": {
-        "text": "Added {{ item.date_created[:10] if item.date_created else timestamp[:10] }} • {{ item.server_name or 'Jellyfin' }}",
+        "text": "{{ item.library_name or 'Jellyfin' }}{% if item.server_name %} • {{ item.server_name }}{% endif %}{% if tvdb_attribution_needed %}
+Metadata from TheTVDB{% endif %}",
         "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
       },
-      "timestamp": "{{ timestamp }}",
-      "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.item_id }}"
+      
+      {# Clickable link to item #}
+      {% if item.item_id %}
+      "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.item_id }}",
+      {% endif %}
+      
+      "timestamp": "{{ timestamp }}"
     }
   ]
 }
 ```
 
-## Configuration Integration
+## 🔧 Troubleshooting Guide
 
-To use your custom templates, update your `config.json`:
+### Common Issues and Solutions
+
+#### Template Not Loading
+- **Check**: File exists at configured path
+- **Check**: File has `.j2` extension
+- **Check**: Path in `config.json` is correct
+- **Solution**: Verify `/app/templates/` directory exists and is readable
+
+#### JSON Syntax Errors
+- **Check**: All `{% %}` and `{{ }}` tags are properly closed
+- **Check**: Commas between fields (but not after the last one)
+- **Check**: Quotes around string values
+- **Solution**: Use a JSON validator to check output
+
+#### Missing Data in Notifications
+- **Check**: Property exists with `{% if item.property %}`
+- **Check**: Property name is spelled correctly
+- **Solution**: Always use conditional checks for optional properties
+
+#### Discord Webhook Errors
+- **Check**: Total embed size < 6000 characters
+- **Check**: Field count < 25
+- **Check**: Field values < 1024 characters
+- **Solution**: Add length limits and field counters
+
+#### Character Encoding Issues
+- **Check**: Special characters in text
+- **Solution**: Use `| e` filter for escaping: `{{ item.name | e }}`
+
+### Debug Mode
+
+Enable debug logging to troubleshoot template issues:
+
+```json
+{
+  "server": {
+    "log_level": "DEBUG"
+  }
+}
+```
+
+⚠️ **Warning**: Debug mode generates extensive logs. Only enable when troubleshooting, as it can quickly fill disk space and overwrite older logs.
+
+## 📝 Configuration
+
+Update your `config.json` to use custom templates:
 
 ```json
 {
@@ -477,102 +990,26 @@ To use your custom templates, update your `config.json`:
 }
 ```
 
-## Advanced Template Techniques
+## 🎯 Best Practices
 
-### Conditional Logic for Different Media Types
+1. **Always Check for Null Values**: Use `{% if item.property %}` before accessing
+2. **Limit Text Length**: Truncate long text to avoid Discord limits
+3. **Count Fields**: Track field count to stay under 25-field limit
+4. **Use Meaningful Icons**: Emojis help users quickly identify content types
+5. **Format Numbers**: Use filters for readable file sizes and durations
+6. **Provide Fallbacks**: Use default values when properties are missing
+7. **Test Templates**: Validate JSON output before deploying
+8. **Comment Complex Logic**: Help future maintainers understand your templates
+9. **Handle All Media Types**: Account for movies, TV, music, photos
+10. **Respect Discord Limits**: Stay within character and field limits
 
-```jinja2
-{% if item.item_type == 'Episode' %}
-  <!-- TV Episode specific formatting -->
-  "title": "📺 New Episode: {{ item.series_name }}",
-  "description": "S{{ '%02d'|format(item.season_number or 0) }}E{{ '%02d'|format(item.episode_number or 0) }} • {{ item.name }}"
-{% elif item.item_type == 'Movie' %}
-  <!-- Movie specific formatting -->
-  "title": "🎬 New Movie Added",
-  "description": "**{{ item.name }}**{% if item.year %} ({{ item.year }}){% endif %}"
-{% elif item.item_type in ['Audio', 'MusicAlbum'] %}
-  <!-- Music specific formatting -->
-  "title": "🎵 New Music Added",
-  "description": "**{{ item.name }}**{% if item.album_artist %} by {{ item.album_artist }}{% endif %}"
-{% endif %}
-```
+## 📚 Additional Resources
 
-### Quality Upgrade Detection
-
-```jinja2
-<!-- For upgrade templates, show what improved -->
-{% if old_item and item %}
-  {% if item.video_height > old_item.video_height %}
-    "value": "{{ old_item.video_height }}p → **{{ item.video_height }}p**"
-  {% elif item.video_range != old_item.video_range and item.video_range != 'SDR' %}
-    "value": "{{ old_item.video_range or 'SDR' }} → **{{ item.video_range }}**"
-  {% elif item.video_codec != old_item.video_codec %}
-    "value": "{{ old_item.video_codec }} → **{{ item.video_codec }}**"
-  {% endif %}
-{% endif %}
-```
-
-### Dynamic Field Counting
-
-```jinja2
-<!-- Limit fields to stay within Discord's 25 field limit -->
-{% set field_count = 0 %}
-{% if item.video_height and field_count < 20 %}
-  {% set field_count = field_count + 1 %}
-  {
-    "name": "📐 Quality",
-    "value": "{{ item.video_height }}p",
-    "inline": true
-  }{% if field_count < 20 %},{% endif %}
-{% endif %}
-```
-
-### External Link Generation
-
-```jinja2
-<!-- Generate links to external databases -->
-{% if item.imdb_id %}
-  "url": "https://www.imdb.com/title/{{ item.imdb_id }}/"
-{% elif item.tmdb_id %}
-  "url": "https://www.themoviedb.org/{% if item.item_type == 'Movie' %}movie{% else %}tv{% endif %}/{{ item.tmdb_id }}"
-{% elif item.tvdb_id %}
-  "url": "https://thetvdb.com/dereferrer/series/{{ item.tvdb_id }}"
-{% else %}
-  "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.item_id }}"
-{% endif %}
-```
-
-## Tips for Template Development
-
-1. **Test Your Templates**: Use the `/test-webhook` API endpoint to test template changes
-2. **Handle Missing Data**: Always check if variables exist before using them:
-   ```jinja2
-   {% if item.property %}{{ item.property }}{% endif %}
-   ```
-3. **Discord Limits**: Keep embed descriptions under 4096 characters
-4. **Field Limits**: Maximum 25 fields per embed, each field value under 1024 characters
-5. **Color Values**: Use integer values for colors (not hex strings)
-6. **JSON Validation**: Ensure your template outputs valid JSON
-7. **List Handling**: Use Jinja2 filters for lists:
-   ```jinja2
-   {{ item.genres|join(', ') }}                    <!-- Join list with commas -->
-   {{ item.artists[:3]|join(', ') }}              <!-- Show first 3 artists -->
-   {% if item.genres|length > 5 %}+more{% endif %} <!-- Show count if too many -->
-   ```
-
-## Troubleshooting
-
-**Template Not Loading**: Verify the file exists and the path in `config.json` is correct  
-**Syntax Errors**: Check Jinja2 syntax - all `{% %}` and `{{ }}` tags must be properly closed  
-**Missing Variables**: Use conditional checks: `{% if item.property %}{{ item.property }}{% endif %}`  
-**JSON Errors**: Validate template output with a JSON validator  
-**Discord Errors**: Check Discord webhook URL and ensure embed format is valid  
-**Field Overflow**: Monitor field count - Discord has a 25 field limit per embed
-**Character Limits**: Keep descriptions under 4096 characters and field values under 1024
-
-## Further Reading
-
-- [Jinja2 Documentation](https://jinja.palletsprojects.com/en/stable/)
-- [Discord Webhook Documentation](https://discord.com/developers/docs/resources/webhook)
+- [Jinja2 Documentation](https://jinja.palletsprojects.com/)
+- [Discord Webhook Guide](https://discord.com/developers/docs/resources/webhook)
 - [Discord Embed Limits](https://discord.com/developers/docs/resources/channel#embed-limits)
-- [Advanced Templates Guide](Readme-AdvancedTemplates.md)
+- [JSON Validator](https://jsonlint.com/)
+
+---
+
+*For more examples and advanced techniques, check the `/app/templates/` directory for the included template files.*
