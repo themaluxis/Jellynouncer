@@ -27,60 +27,48 @@
         --------------------------------
         Shows specific upgrade type when only one change occurred
       #}
-      "title": "⬆️ {% if item.item_type == 'Episode' -%}
-        📺 Episode
-      {%- elif item.item_type == 'Series' -%}
-        📺 Series
-      {%- elif item.item_type == 'Movie' -%}
-        🎬 Movie
-      {%- elif item.item_type == 'Season' -%}
-        📺 Season
-      {%- elif item.item_type == 'Audio' -%}
-        🎵 Song
-      {%- elif item.item_type == 'MusicAlbum' -%}
-        💿 Album
-      {%- else -%}
-        📁 {{ item.item_type }}
-      {%- endif %} {% if changes|length == 1 %}{{ changes[0].type|title }} {% endif %}Upgraded",
+      "title": {{ ("⬆️" ~ 
+        ("📺 " ~ (item.name | default('Unknown Episode') | truncate(180, True, '...')) if item.item_type == 'Episode' else
+         "📺 " ~ (item.name | default('Unknown Series') | truncate(180, True, '...')) if item.item_type == 'Series' else
+         "🎬 " ~ (item.name | default('Unknown Movie') | truncate(180, True, '...')) if item.item_type == 'Movie' else
+         "📺 " ~ (item.series_name | default('Unknown Series')) ~ " - Season " ~ (item.season_number | default('?') | string) if item.item_type == 'Season' else
+         "🎵 " ~ (item.name | default('Unknown Song') | truncate(180, True, '...')) if item.item_type == 'Audio' else
+         "💿 " ~ (item.name | default('Unknown Album') | truncate(180, True, '...')) if item.item_type == 'MusicAlbum' else
+         "🎤 " ~ (item.name | default('Unknown Artist') | truncate(180, True, '...')) if item.item_type == 'MusicArtist' else
+         "📷 " ~ (item.name | default('Photo') | truncate(180, True, '...')) if item.item_type == 'Photo' else
+         "📁 " ~ (item.name | default('Unknown ' ~ item.item_type) | truncate(180, True, '...'))
+        ) ~ " " ~ (changes[0].type|title ~ " " if changes|length == 1 else "") ~ "Upgraded") | tojson }},
 
       {#
         Rich Description with Metadata Priority
         ----------------------------------------
         Same metadata source priority as new_item template
       #}
-      "description": "{% if item.item_type == 'Episode' -%}
-        **{{ item.series_name | default('Unknown Series') }}**
-        S{{ '%02d' | format(item.season_number | default(0)) }}E{{ '%02d' | format(item.episode_number | default(0)) }}
-        {{ item.name | default('Unknown Episode') }}
-        {%- if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0 -%}
-          \n\n{{ (item.tvdb.overview[:200] + '...') if item.tvdb.overview | length > 200 else item.tvdb.overview }}
-        {%- elif item.overview and item.overview | length > 0 -%}
-          \n\n{{ (item.overview[:200] + '...') if item.overview | length > 200 else item.overview }}
-        {%- endif -%}
-      {%- elif item.item_type in ['Series', 'Season'] -%}
-        **{{ item.name | default('Unknown Title') }}**
-        {%- if item.year %} ({{ item.year }}){% endif -%}
-        {%- if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0 -%}
-          \n\n{{ (item.tvdb.overview[:200] + '...') if item.tvdb.overview | length > 200 else item.tvdb.overview }}
-        {%- elif item.overview and item.overview | length > 0 -%}
-          \n\n{{ (item.overview[:200] + '...') if item.overview | length > 200 else item.overview }}
-        {%- endif -%}
-      {%- elif item.item_type == 'Movie' -%}
-        **{{ item.name | default('Unknown Title') }}**
-        {%- if item.year %} ({{ item.year }}){% endif -%}
-        {%- if item.tmdb and item.tmdb.overview and item.tmdb.overview | length > 0 -%}
-          \n\n{{ (item.tmdb.overview[:200] + '...') if item.tmdb.overview | length > 200 else item.tmdb.overview }}
-        {%- elif item.omdb and item.omdb.plot and item.omdb.plot != 'N/A' -%}
-          \n\n{{ (item.omdb.plot[:200] + '...') if item.omdb.plot | length > 200 else item.omdb.plot }}
-        {%- elif item.overview and item.overview | length > 0 -%}
-          \n\n{{ (item.overview[:200] + '...') if item.overview | length > 200 else item.overview }}
-        {%- endif -%}
-      {%- else -%}
-        **{{ item.name | default('Unknown Title') }}**
-        {%- if item.overview and item.overview | length > 0 -%}
-          \n\n{{ (item.overview[:200] + '...') if item.overview | length > 200 else item.overview }}
-        {%- endif -%}
-      {%- endif %}",
+      "description": {{ (
+        ("**" ~ (item.series_name | default('Unknown Series')) ~ "**\n" ~
+         "S" ~ ('%02d' | format(item.season_number | default(0))) ~ "E" ~ ('%02d' | format(item.episode_number | default(0))) ~ "\n" ~
+         (item.name | default('Unknown Episode')) ~
+         ("\n\n" ~ ((item.tvdb.overview[:200] + '...') if item.tvdb.overview | length > 200 else item.tvdb.overview) if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0
+          else "\n\n" ~ ((item.overview[:200] + '...') if item.overview | length > 200 else item.overview) if item.overview and item.overview | length > 0
+          else "")
+        ) if item.item_type == 'Episode' else
+        ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
+         (" (" ~ item.year ~ ")" if item.year else "") ~
+         ("\n\n" ~ ((item.tvdb.overview[:200] + '...') if item.tvdb.overview | length > 200 else item.tvdb.overview) if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0
+          else "\n\n" ~ ((item.overview[:200] + '...') if item.overview | length > 200 else item.overview) if item.overview and item.overview | length > 0
+          else "")
+        ) if item.item_type in ['Series', 'Season'] else
+        ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
+         (" (" ~ item.year ~ ")" if item.year else "") ~
+         ("\n\n" ~ ((item.tmdb.overview[:200] + '...') if item.tmdb.overview | length > 200 else item.tmdb.overview) if item.tmdb and item.tmdb.overview and item.tmdb.overview | length > 0
+          else "\n\n" ~ ((item.omdb.plot[:200] + '...') if item.omdb.plot | length > 200 else item.omdb.plot) if item.omdb and item.omdb.plot and item.omdb.plot != 'N/A'
+          else "\n\n" ~ ((item.overview[:200] + '...') if item.overview | length > 200 else item.overview) if item.overview and item.overview | length > 0
+          else "")
+        ) if item.item_type == 'Movie' else
+        ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
+         ("\n\n" ~ ((item.overview[:200] + '...') if item.overview | length > 200 else item.overview) if item.overview and item.overview | length > 0 else "")
+        )
+      ) | tojson }},
 
       "color": {{ color }},
 
@@ -112,7 +100,7 @@
             {%- else -%}
               🔄 {{ change.type | title }}
             {%- endif %}",
-            "value": "{{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**",
+            "value": {{ ((change.old_value or 'Unknown') ~ " → **" ~ (change.new_value or 'Unknown') ~ "**") | tojson }},
             "inline": true
           }
           {% endfor %}
@@ -121,7 +109,7 @@
             {% set fields_added.count = fields_added.count + 1 %}
           {
             "name": "➕ Additional Changes",
-            "value": "+{{ changes | length - 3 }} more upgrades",
+            "value": {{ ("+" ~ ((changes | length - 3) | string) ~ " more upgrades") | tojson }},
             "inline": true
           }
           {% endif %}
@@ -137,8 +125,9 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "📐 Current Quality",
-          "value": "{{ item.video_height }}p
-            {%- if item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}",
+          "value": {{ ((item.video_height | string) ~ "p" ~
+            (" " ~ item.video_range if item.video_range and item.video_range != 'SDR' else "")
+          ) | tojson }},
           "inline": true
         }
         {% endif %}
@@ -148,8 +137,9 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "🎞️ Video",
-          "value": "{{ item.video_codec | upper }}
-            {%- if item.video_profile %} {{ item.video_profile }}{% endif %}",
+          "value": {{ ((item.video_codec | upper) ~
+            (" " ~ item.video_profile if item.video_profile else "")
+          ) | tojson }},
           "inline": true
         }
         {% endif %}
@@ -159,14 +149,13 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "🔊 Audio",
-          "value": "{{ item.audio_codec | upper }}
-            {%- if item.audio_channels %}
-              {%- if item.audio_channels == 2 %} Stereo
-              {%- elif item.audio_channels == 6 %} 5.1
-              {%- elif item.audio_channels == 8 %} 7.1
-              {%- else %} {{ item.audio_channels }}ch
-              {%- endif -%}
-            {%- endif %}",
+          "value": {{ ((item.audio_codec | upper) ~
+            (" Stereo" if item.audio_channels == 2
+             else " 5.1" if item.audio_channels == 6
+             else " 7.1" if item.audio_channels == 8
+             else " " ~ (item.audio_channels | string) ~ "ch" if item.audio_channels
+             else "")
+          ) | tojson }},
           "inline": true
         }
         {% endif %}
@@ -176,7 +165,7 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "💾 New Size",
-          "value": "{{ '%.1f' | format(item.file_size / 1073741824) }} GB",
+          "value": {{ (('%.1f' | format(item.file_size / 1073741824)) ~ " GB") | tojson }},
           "inline": true
         }
         {% endif %}
@@ -199,7 +188,7 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "⭐ Ratings",
-          "value": "
+          "value": {{ (
             {%- set rating_parts = [] -%}
             {%- if item.omdb and item.omdb.imdb_rating and item.omdb.imdb_rating != 'N/A' -%}
               {%- set _ = rating_parts.append('**IMDb:** ' ~ item.omdb.imdb_rating) -%}
@@ -218,7 +207,8 @@
             {%- if item.tvdb and item.tvdb.rating -%}
               {%- set _ = rating_parts.append('**TVDb:** ' ~ item.tvdb.rating) -%}
             {%- endif -%}
-            {{ rating_parts | join(' • ') }}",
+            rating_parts | join(' • ')
+          ) | tojson }},
           "inline": false
         }
         {% endif %}
@@ -227,40 +217,41 @@
       {# Image selection with priority #}
       {% if item.item_type == 'Episode' and item.series_id %}
       "thumbnail": {
-        "url": "{{ thumbnail_url }}"
+        "url": {{ thumbnail_url | tojson }}
       },
       {% elif item.item_id %}
       "thumbnail": {
-        "url": "{{ thumbnail_url }}"
+        "url": {{ thumbnail_url | tojson }}
       },
       {% elif item.omdb and item.omdb.poster and item.omdb.poster != 'N/A' %}
       "thumbnail": {
-        "url": "{{ item.omdb.poster }}"
+        "url": {{ item.omdb.poster | tojson }}
       },
       {% elif item.tvdb and item.tvdb.poster_url %}
       "thumbnail": {
-        "url": "{{ item.tvdb.poster_url }}"
+        "url": {{ item.tvdb.poster_url | tojson }}
       },
       {% elif item.tmdb and item.tmdb.backdrop_url %}
       "image": {
-        "url": "{{ item.tmdb.backdrop_url }}"
+        "url": {{ item.tmdb.backdrop_url | tojson }}
       },
       {% endif %}
 
       "footer": {
-        "text": "{{ item.library_name or 'Jellyfin' }}
-          {%- if item.server_name %} • {{ item.server_name }}{% endif %}
-          {%- if item.omdb %} • IMDb via OMDb{% endif %}
-          {%- if item.tvdb %} • TheTVDB{% endif %}
-          {%- if item.tmdb %} • TMDb{% endif %}",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.png"
+        "text": {{ ((item.library_name or 'Jellyfin') ~
+          (" • " ~ item.server_name if item.server_name else "") ~
+          (" • IMDb via OMDb" if item.omdb else "") ~
+          (" • TheTVDB" if item.tvdb else "") ~
+          (" • TMDb" if item.tmdb else "")
+        ) | tojson }},
+        "icon_url": {{ (jellyfin_url ~ "/web/favicon.png") | tojson }}
       },
 
       {% if item.item_id %}
-      "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.item_id }}",
+      "url": {{ (jellyfin_url ~ "/web/index.html#!/details?id=" ~ item.item_id) | tojson }},
       {% endif %}
 
-      "timestamp": "{{ timestamp }}"
+      "timestamp": {{ timestamp | tojson }}
     }
   ]
 }

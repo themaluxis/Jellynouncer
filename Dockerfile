@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.13.7-slim
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -24,18 +24,15 @@ RUN rm -f *.bak 2>/dev/null || true
 COPY docker-entrypoint.sh /usr/local/bin/
 
 # Create defaults directory structure
-RUN mkdir -p /app/defaults/templates /app/defaults/config /app/defaults/scripts
+RUN mkdir -p /app/defaults/templates /app/defaults/config
 
 # Copy default files to the correct locations
 COPY templates/ /app/defaults/templates/
 COPY config/config.json /app/defaults/config.json
-COPY scripts/ /app/defaults/scripts/
 
 # Create required directories
-RUN mkdir -p /app/data /app/logs /app/config /app/templates /app/scripts && \
-    chmod 755 /app/data /app/logs /app/config /app/templates /app/scripts && \
-    chmod +x /app/defaults/scripts/*.sh 2>/dev/null || true && \
-    chmod +x /app/defaults/scripts/*.py 2>/dev/null || true && \
+RUN mkdir -p /app/data /app/logs /app/config /app/templates && \
+    chmod 755 /app/data /app/logs /app/config /app/templates && \
     chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Set default environment variables

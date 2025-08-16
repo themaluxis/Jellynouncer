@@ -22,15 +22,11 @@
         ------------------------------
         Support more states than just online/offline
       #}
-      "title": "{% if is_online -%}
-        {%- if health_data and health_data.status == 'degraded' -%}
-          🟡 Jellyfin Server Degraded
-        {%- else -%}
-          🟢 Jellyfin Server Online
-        {%- endif -%}
-      {%- else -%}
-        🔴 Jellyfin Server Offline
-      {%- endif %}",
+      "title": {{ (
+        ("🟡 Jellyfin Server Degraded" if health_data and health_data.status == 'degraded'
+         else "🟢 Jellyfin Server Online") if is_online
+        else "🔴 Jellyfin Server Offline"
+      ) | tojson }},
 
       {#
         Enhanced Description with Context
@@ -85,18 +81,13 @@
         #}
         {
           "name": "🌐 Server Details",
-          "value": "**URL**: {{ jellyfin_url }}\n**Status**:
-            {%- if is_online -%}
-              {%- if health_data and health_data.status == 'degraded' -%}
-                ⚠️ Degraded
-              {%- else -%}
-                ✅ Connected
-              {%- endif -%}
-            {%- else -%}
-              ❌ Disconnected
-            {%- endif -%}
-            {%- if server_info and server_info.ServerName %}\n**Server**: {{ server_info.ServerName }}{% endif -%}
-            {%- if server_info and server_info.Version %}\n**Version**: {{ server_info.Version }}{% endif %}",
+          "value": {{ ("**URL**: " ~ jellyfin_url ~ "\n**Status**: " ~
+            ("⚠️ Degraded" if is_online and health_data and health_data.status == 'degraded'
+             else "✅ Connected" if is_online
+             else "❌ Disconnected") ~
+            ("\n**Server**: " ~ server_info.ServerName if server_info and server_info.ServerName else "") ~
+            ("\n**Version**: " ~ server_info.Version if server_info and server_info.Version else "")
+          ) | tojson }},
           "inline": true
         },
 
@@ -106,8 +97,9 @@
         #}
         {
           "name": "🕐 Timestamp",
-          "value": "{{ timestamp[:19] | replace('T', ' ') }} UTC
-            {%- if downtime_duration %}\n**Downtime**: {{ downtime_duration }}{% endif %}",
+          "value": {{ ((timestamp[:19] | replace('T', ' ')) ~ " UTC" ~
+            ("\n**Downtime**: " ~ downtime_duration if downtime_duration else "")
+          ) | tojson }},
           "inline": true
         }
 
@@ -236,9 +228,10 @@
         {% if not is_online and error_details %}
         ,{
           "name": "❌ Error Information",
-          "value": "**Type**: {{ error_type | default('Connection Error') }}\n
-            **Details**: {{ (error_details[:500] + '...') if error_details|length > 500 else error_details }}\n
-            **Time**: {{ timestamp[:19] | replace('T', ' ') }}",
+          "value": {{ ("**Type**: " ~ (error_type | default('Connection Error')) ~ "\n" ~
+            "**Details**: " ~ ((error_details[:500] + '...') if error_details|length > 500 else error_details) ~ "\n" ~
+            "**Time**: " ~ (timestamp[:19] | replace('T', ' '))
+          ) | tojson }},
           "inline": false
         }
         {% endif %}
@@ -249,15 +242,11 @@
         -----------------
       #}
       "thumbnail": {
-        "url": "{% if is_online -%}
-          {%- if health_data and health_data.status == 'degraded' -%}
-            {{ jellyfin_url }}/web/favicon.png
-          {%- else -%}
-            {{ jellyfin_url }}/web/assets/img/banner-light.png
-          {%- endif -%}
-        {%- else -%}
-          {{ jellyfin_url }}/web/favicon.png
-        {%- endif %}"
+        "url": {{ (
+          (jellyfin_url ~ "/web/favicon.png" if health_data and health_data.status == 'degraded'
+           else jellyfin_url ~ "/web/assets/img/banner-light.png") if is_online
+          else jellyfin_url ~ "/web/favicon.png"
+        ) | tojson }}
       },
 
       {#
@@ -265,15 +254,14 @@
         ---------------
       #}
       "footer": {
-        "text": "Jellynouncer v2.0.0 • Monitoring Service
-          {%- if server_info and server_info.ServerName %} • {{ server_info.ServerName }}{% endif -%}
-          {%- if is_online and health_data -%}
-            {%- if health_data.components.metadata_services and health_data.components.metadata_services.enabled %} • Metadata Enabled{% endif -%}
-          {%- endif %}",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.png"
+        "text": {{ ("Jellynouncer v2.0.0 • Monitoring Service" ~
+          (" • " ~ server_info.ServerName if server_info and server_info.ServerName else "") ~
+          (" • Metadata Enabled" if is_online and health_data and health_data.components.metadata_services and health_data.components.metadata_services.enabled else "")
+        ) | tojson }},
+        "icon_url": {{ (jellyfin_url ~ "/web/favicon.png") | tojson }}
       },
 
-      "timestamp": "{{ timestamp }}"
+      "timestamp": {{ timestamp | tojson }}
     }
   ]
 }

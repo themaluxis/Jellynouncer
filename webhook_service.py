@@ -429,6 +429,13 @@ class WebhookService:
             # Convert to our internal MediaItem format (for database storage)
             media_item = await self.jellyfin.convert_to_media_item(item_data)
             self.logger.debug(f"Converted to MediaItem: {media_item.name}")
+            
+            # Add server information from webhook payload (not available in Jellyfin API)
+            media_item.server_id = payload.ServerId
+            media_item.server_name = payload.ServerName
+            media_item.server_version = payload.ServerVersion
+            media_item.server_url = payload.ServerUrl
+            self.logger.debug(f"Added server info: {media_item.server_name}")
 
             # Check if this is a new item or an update
             existing_item = await self.db.get_item(media_item.item_id)

@@ -249,9 +249,9 @@
         {%- if has_omdb %} • IMDb via OMDb{% endif -%}
         {%- if has_tvdb %} • TheTVDB{% endif -%}
         {%- if has_tmdb %} • TMDb{% endif %}",
-      "icon_url": "{{ jellyfin_url }}/web/favicon.ico"
+      "icon_url": {{ (jellyfin_url ~ "/web/favicon.ico") | tojson }}
     },
 
-    "timestamp": "{{ timestamp }}"
+    "timestamp": {{ timestamp | tojson }}
   ]
 }

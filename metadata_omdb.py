@@ -324,10 +324,10 @@ class OMDbAPI:
                             value=getattr(rating_data, 'value', 'N/A')
                         ))
                     elif isinstance(rating_data, dict):
-                        # It's a dictionary
+                        # It's a dictionary - OMDb API uses capitalized keys
                         ratings.append(OMDbRating(
-                            source=rating_data.get("source", "Unknown"),
-                            value=rating_data.get("value", "N/A")
+                            source=rating_data.get("Source") or rating_data.get("source", "Unknown"),
+                            value=rating_data.get("Value") or rating_data.get("value", "N/A")
                         ))
                     else:
                         # Log unexpected type
@@ -453,7 +453,7 @@ class OMDbAPI:
                 self.logger.info(
                     f"Successfully fetched OMDb metadata for: {item.name} "
                     f"(IMDb: {metadata.imdb_rating}, RT: "
-                    f"{metadata.ratings_dict.get('rotten_tomatoes', {}).get('value', 'N/A')})"
+                    f"{metadata.ratings_dict.get('rotten_tomatoes', OMDbRating('Unknown', 'N/A')).value})"
                 )
                 return metadata
             else:

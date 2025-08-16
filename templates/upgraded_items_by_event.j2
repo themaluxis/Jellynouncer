@@ -10,7 +10,7 @@
 {
   "embeds": [
     {
-      "title": "⬆️ {{ total_items }} Items Upgraded",
+      "title": {{ ("⬆️ " ~ (total_items | string) ~ " Items Upgraded") | tojson }},
 
       "description": "The following items have been upgraded in Jellyfin:",
 
@@ -83,10 +83,10 @@
           {%- if has_omdb %} • IMDb via OMDb{% endif -%}
           {%- if has_tvdb %} • TheTVDB{% endif -%}
           {%- if has_tmdb %} • TMDb{% endif %}",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.png"
+        "icon_url": {{ (jellyfin_url ~ "/web/favicon.png") | tojson }}
       },
 
-      "timestamp": "{{ timestamp }}"
+      "timestamp": {{ timestamp | tojson }}
     }
   ]
 }

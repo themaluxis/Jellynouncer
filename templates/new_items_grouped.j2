@@ -11,7 +11,7 @@
 {
   "embeds": [
     {
-      "title": "🆕 {{ total_items }} New Items Added to Jellyfin",
+      "title": {{ ("🆕 " ~ (total_items | string) ~ " New Items Added to Jellyfin") | tojson }},
 
       "description": "A summary of all newly added content organized by type:",
 
@@ -28,21 +28,23 @@
           {% set field_count.value = field_count.value + 1 %}
         {
           "name": "🎬 Movies ({{ categories.movies.new|length }})",
-          "value": "{% for item_data in categories.movies.new[:5] -%}
-            **{{ item_data.item.name }}**
-            {%- if item_data.item.year %} ({{ item_data.item.year }}){% endif %}
-            {%- if item_data.item.video_height %} • {{ item_data.item.video_height }}p{% endif -%}
-            {%- set rating_parts = [] -%}
-            {%- if item_data.item.omdb and item_data.item.omdb.imdb_rating and item_data.item.omdb.imdb_rating != 'N/A' -%}
-              {%- set _ = rating_parts.append('IMDb: ' ~ item_data.item.omdb.imdb_rating) -%}
-            {%- endif -%}
-            {%- if item_data.item.tmdb and item_data.item.tmdb.vote_average -%}
-              {%- set _ = rating_parts.append('TMDb: ' ~ item_data.item.tmdb.vote_average) -%}
-            {%- endif -%}
-            {%- if rating_parts|length > 0 %}\n⭐ {{ rating_parts | join(' • ') }}{% endif -%}
-            {%- if not loop.last %}\n{% endif -%}
-          {%- endfor -%}
-          {%- if categories.movies.new|length > 5 %}\n...and {{ categories.movies.new|length - 5 }} more{% endif %}",
+          "value": {{ (
+            {%- for item_data in categories.movies.new[:5] -%}
+              "**" ~ item_data.item.name ~ "**" ~
+              (" (" ~ item_data.item.year ~ ")" if item_data.item.year else "") ~
+              (" • " ~ item_data.item.video_height ~ "p" if item_data.item.video_height else "") ~
+              {%- set rating_parts = [] -%}
+              {%- if item_data.item.omdb and item_data.item.omdb.imdb_rating and item_data.item.omdb.imdb_rating != 'N/A' -%}
+                {%- set _ = rating_parts.append('IMDb: ' ~ item_data.item.omdb.imdb_rating) -%}
+              {%- endif -%}
+              {%- if item_data.item.tmdb and item_data.item.tmdb.vote_average -%}
+                {%- set _ = rating_parts.append('TMDb: ' ~ item_data.item.tmdb.vote_average) -%}
+              {%- endif -%}
+              ("\n⭐ " ~ (rating_parts | join(' • ')) if rating_parts|length > 0 else "") ~
+              ("\n" if not loop.last else "")
+            {%- endfor -%}
+            {%- if categories.movies.new|length > 5 %}\n...and {{ categories.movies.new|length - 5 }} more{% endif %}
+          ) | tojson }},
           "inline": false
         }
         {% endif %}
@@ -56,17 +58,19 @@
           {% set field_count.value = field_count.value + 1 %}
         {
           "name": "📺 TV Content ({{ categories.tv.new|length }})",
-          "value": "{% for item_data in categories.tv.new[:5] -%}
-            {%- if item_data.item.item_type == 'Episode' -%}
-              **{{ item_data.item.series_name }}** S{{ '%02d'|format(item_data.item.season_number or 0) }}E{{ '%02d'|format(item_data.item.episode_number or 0) }}
-            {%- else -%}
-              **{{ item_data.item.name }}**
-            {%- endif %}
-            {%- if item_data.item.video_height %} • {{ item_data.item.video_height }}p{% endif -%}
-            {%- if item_data.item.tvdb and item_data.item.tvdb.rating %}\n⭐ TVDb: {{ item_data.item.tvdb.rating }}{% endif -%}
-            {%- if not loop.last %}\n{% endif -%}
-          {%- endfor -%}
-          {%- if categories.tv.new|length > 5 %}\n...and {{ categories.tv.new|length - 5 }} more{% endif %}",
+          "value": {{ (
+            {%- for item_data in categories.tv.new[:5] -%}
+              {%- if item_data.item.item_type == 'Episode' -%}
+                \"**\" ~ item_data.item.series_name ~ \"** S\" ~ ('%02d'|format(item_data.item.season_number or 0)) ~ \"E\" ~ ('%02d'|format(item_data.item.episode_number or 0))
+              {%- else -%}
+                \"**\" ~ item_data.item.name ~ \"**\"
+              {%- endif %} ~
+              (\" • \" ~ item_data.item.video_height ~ \"p\" if item_data.item.video_height else \"\") ~
+              (\"\\n⭐ TVDb: \" ~ item_data.item.tvdb.rating if item_data.item.tvdb and item_data.item.tvdb.rating else \"\") ~
+              (\"\\n\" if not loop.last else \"\")
+            {%- endfor -%}
+            {%- if categories.tv.new|length > 5 %}\\n...and {{ categories.tv.new|length - 5 }} more{% endif %}
+          ) | tojson }},
           "inline": false
         }
         {% endif %}
@@ -80,19 +84,21 @@
           {% set field_count.value = field_count.value + 1 %}
         {
           "name": "🎵 Music ({{ categories.music.new|length }})",
-          "value": "{% for item_data in categories.music.new[:6] -%}
-            {%- if item_data.item.item_type == 'Audio' -%}
-              🎵 **{{ item_data.item.name }}**
-              {%- if item_data.item.artists %} - {{ item_data.item.artists[0] }}{% endif -%}
-            {%- elif item_data.item.item_type == 'MusicAlbum' -%}
-              💿 **{{ item_data.item.name }}**
-              {%- if item_data.item.album_artist %} - {{ item_data.item.album_artist }}{% endif -%}
-            {%- else -%}
-              **{{ item_data.item.name }}**
-            {%- endif -%}
-            {%- if not loop.last %}\n{% endif -%}
-          {%- endfor -%}
-          {%- if categories.music.new|length > 6 %}\n...and {{ categories.music.new|length - 6 }} more{% endif %}",
+          "value": {{ (
+            {%- for item_data in categories.music.new[:6] -%}
+              {%- if item_data.item.item_type == 'Audio' -%}
+                \"🎵 **\" ~ item_data.item.name ~ \"**\" ~
+                (\" - \" ~ item_data.item.artists[0] if item_data.item.artists else \"\")
+              {%- elif item_data.item.item_type == 'MusicAlbum' -%}
+                \"💿 **\" ~ item_data.item.name ~ \"**\" ~
+                (\" - \" ~ item_data.item.album_artist if item_data.item.album_artist else \"\")
+              {%- else -%}
+                \"**\" ~ item_data.item.name ~ \"**\"
+              {%- endif %} ~
+              (\"\\n\" if not loop.last else \"\")
+            {%- endfor -%}
+            {%- if categories.music.new|length > 6 %}\\n...and {{ categories.music.new|length - 6 }} more{% endif %}
+          ) | tojson }},
           "inline": false
         }
         {% endif %}
@@ -106,11 +112,13 @@
           {% set field_count.value = field_count.value + 1 %}
         {
           "name": "📁 Other ({{ categories.other.new|length }})",
-          "value": "{% for item_data in categories.other.new[:6] -%}
-            **{{ item_data.item.name }}** ({{ item_data.item.item_type }})
-            {%- if not loop.last %}\n{% endif -%}
-          {%- endfor -%}
-          {%- if categories.other.new|length > 6 %}\n...and {{ categories.other.new|length - 6 }} more{% endif %}",
+          "value": {{ (
+            {%- for item_data in categories.other.new[:6] -%}
+              "**" ~ item_data.item.name ~ "** (" ~ item_data.item.item_type ~ ")" ~
+              ("\n" if not loop.last else "")
+            {%- endfor -%}
+            {%- if categories.other.new|length > 6 %}\n...and {{ categories.other.new|length - 6 }} more{% endif %}
+          ) | tojson }},
           "inline": false
         }
         {% endif %}
@@ -122,28 +130,30 @@
         {% if field_count.value > 0 %},{% endif %}
         {
           "name": "📊 Summary",
-          "value": "**Total Items:** {{ total_items }}
-            {%- if 'movies' in categories %}\n🎬 Movies: {{ categories.movies.new|length }}{% endif -%}
-            {%- if 'tv' in categories %}\n📺 TV: {{ categories.tv.new|length }}{% endif -%}
-            {%- if 'music' in categories %}\n🎵 Music: {{ categories.music.new|length }}{% endif -%}
-            {%- if 'other' in categories %}\n📁 Other: {{ categories.other.new|length }}{% endif %}",
+          "value": {{ ("**Total Items:** " ~ total_items ~
+            ("\n🎬 Movies: " ~ categories.movies.new|length if 'movies' in categories else "") ~
+            ("\n📺 TV: " ~ categories.tv.new|length if 'tv' in categories else "") ~
+            ("\n🎵 Music: " ~ categories.music.new|length if 'music' in categories else "") ~
+            ("\n📁 Other: " ~ categories.other.new|length if 'other' in categories else "")
+          ) | tojson }},
           "inline": false
         }
       ],
 
       "footer": {
-        "text": "Jellyfin
-          {%- if new_items and new_items[0].item.server_name %} • {{ new_items[0].item.server_name }}{% endif %}
+        "text": {{ ("Jellyfin" ~
+          (" • " ~ new_items[0].item.server_name if new_items and new_items[0].item.server_name else "") ~
           {%- set has_omdb = new_items | selectattr('item.omdb') | list | length > 0 if new_items else false -%}
           {%- set has_tvdb = new_items | selectattr('item.tvdb') | list | length > 0 if new_items else false -%}
           {%- set has_tmdb = new_items | selectattr('item.tmdb') | list | length > 0 if new_items else false -%}
-          {%- if has_omdb %} • IMDb via OMDb{% endif -%}
-          {%- if has_tvdb %} • TheTVDB{% endif -%}
-          {%- if has_tmdb %} • TMDb{% endif %}",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.png"
+          (" • IMDb via OMDb" if has_omdb else "") ~
+          (" • TheTVDB" if has_tvdb else "") ~
+          (" • TMDb" if has_tmdb else "")
+        ) | tojson }},
+        "icon_url": {{ (jellyfin_url ~ "/web/favicon.png") | tojson }}
       },
 
-      "timestamp": "{{ timestamp }}"
+      "timestamp": {{ timestamp | tojson }}
     }
   ]
 }

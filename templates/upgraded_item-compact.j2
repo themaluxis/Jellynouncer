@@ -11,19 +11,27 @@
 {
   "embeds": [
     {
-      "title": "⬆️ {{ item.item_type }} Upgraded",
+      "title": {{ ("⬆️" ~ 
+        ("📺 " ~ (item.name | default('Unknown Episode') | truncate(200, True, '...')) if item.item_type == 'Episode' else
+         "📺 " ~ (item.name | default('Unknown Series') | truncate(200, True, '...')) if item.item_type == 'Series' else
+         "🎬 " ~ (item.name | default('Unknown Movie') | truncate(200, True, '...')) if item.item_type == 'Movie' else
+         "📺 " ~ (item.series_name | default('Unknown Series')) ~ " - Season " ~ (item.season_number | default('?') | string) if item.item_type == 'Season' else
+         "🎵 " ~ (item.name | default('Unknown Song') | truncate(200, True, '...')) if item.item_type == 'Audio' else
+         "💿 " ~ (item.name | default('Unknown Album') | truncate(200, True, '...')) if item.item_type == 'MusicAlbum' else
+         "🎤 " ~ (item.name | default('Unknown Artist') | truncate(200, True, '...')) if item.item_type == 'MusicArtist' else
+         "📷 " ~ (item.name | default('Photo') | truncate(200, True, '...')) if item.item_type == 'Photo' else
+         "📁 " ~ (item.name | default('Unknown ' ~ item.item_type) | truncate(200, True, '...'))
+        ) ~ " Upgraded") | tojson }},
 
       {#
         Simplified Description
         ----------------------
         Just the title and main upgrade info
       #}
-      "description": "{% if item.item_type == 'Episode' -%}
-        **{{ item.series_name }}** - {{ item.name }}
-      {%- else -%}
-        **{{ item.name }}**
-        {%- if item.year %} ({{ item.year }}){% endif -%}
-      {%- endif %}",
+      "description": {{ (
+        ("**" ~ item.series_name ~ "** - " ~ item.name) if item.item_type == 'Episode'
+        else ("**" ~ item.name ~ "**" ~ (" (" ~ item.year ~ ")" if item.year else ""))
+      ) | tojson }},
 
       "color": {{ color }},
 
@@ -38,8 +46,9 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "🔄 Upgraded",
-          "value": "{{ primary_change.old_value or 'Unknown' }} → **{{ primary_change.new_value or 'Unknown' }}**
-            {%- if changes | length > 1 %} (+{{ changes | length - 1 }} more){% endif %}",
+          "value": {{ ((primary_change.old_value or 'Unknown') ~ " → **" ~ (primary_change.new_value or 'Unknown') ~ "**" ~
+            (" (+" ~ ((changes | length - 1) | string) ~ " more)" if changes | length > 1 else "")
+          ) | tojson }},
           "inline": true
         }
         {% endif %}
@@ -48,14 +57,15 @@
           {% if fields_added.count > 0 %},{% endif %}
         {
           "name": "📐 New Quality",
-          "value": "{{ item.video_height }}p
-            {%- if item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}",
+          "value": {{ ((item.video_height | string) ~ "p" ~
+            (" " ~ item.video_range if item.video_range and item.video_range != 'SDR' else "")
+          ) | tojson }},
           "inline": true
         }
         {% endif %}
       ],
 
-      "timestamp": "{{ timestamp }}"
+      "timestamp": {{ timestamp | tojson }}
     }
   ]
 }

@@ -242,7 +242,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI application with lifespan management
 app = FastAPI(
     title="Jellynouncer",
-    description="Advanced Discord webhook service for Jellyfin media notifications",
+    description="Intermediary Discord webhook service for Jellyfin media notifications",
     version="2.0.0",
     lifespan=lifespan
 )

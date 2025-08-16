@@ -27,25 +27,25 @@
         ---------------------------------
         Shows appropriate emoji and type label for each media category
       #}
-      "title": "🆕 {% if item.item_type == 'Episode' -%}
-        📺 New Episode
+      "title": {{ "🆕" ~ ({% if item.item_type == 'Episode' -%}
+        "📺 " ~ (item.name | default('Unknown Episode') | truncate(200, True, '...'))
       {%- elif item.item_type == 'Series' -%}
-        📺 New Series
+        "📺 " ~ (item.name | default('Unknown Series') | truncate(200, True, '...'))
       {%- elif item.item_type == 'Movie' -%}
-        🎬 New Movie
+        "🎬 " ~ (item.name | default('Unknown Movie') | truncate(200, True, '...'))
       {%- elif item.item_type == 'Season' -%}
-        📺 New Season
+        "📺 " ~ (item.series_name | default('Unknown Series')) ~ " - Season " ~ (item.season_number | default('?'))
       {%- elif item.item_type == 'Audio' -%}
-        🎵 New Song
+        "🎵 " ~ (item.name | default('Unknown Song') | truncate(200, True, '...'))
       {%- elif item.item_type == 'MusicAlbum' -%}
-        💿 New Album
+        "💿 " ~ (item.name | default('Unknown Album') | truncate(200, True, '...'))
       {%- elif item.item_type == 'MusicArtist' -%}
-        🎤 New Artist
+        "🎤 " ~ (item.name | default('Unknown Artist') | truncate(200, True, '...'))
       {%- elif item.item_type == 'Photo' -%}
-        📷 New Photo
+        "📷 " ~ (item.name | default('New Photo') | truncate(200, True, '...'))
       {%- else -%}
-        📁 New {{ item.item_type }}
-      {%- endif %} Added",
+        "📁 " ~ (item.name | default('Unknown ' ~ item.item_type) | truncate(200, True, '...'))
+      {%- endif %}) | tojson }},
 
       {#
         Rich Description with Metadata Priority
@@ -54,56 +54,70 @@
         Movies: TMDb overview → OMDb plot → Jellyfin overview
         Music: Artist/album info from Jellyfin
       #}
-      "description": "{% if item.item_type == 'Episode' -%}
-        **{{ item.series_name | default('Unknown Series') }}**
-        S{{ '%02d' | format(item.season_number | default(0)) }}E{{ '%02d' | format(item.episode_number | default(0)) }}
-        {{ item.name | default('Unknown Episode') }}
-        {%- if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0 -%}
-          \n\n{{ (item.tvdb.overview[:250] + '...') if item.tvdb.overview | length > 250 else item.tvdb.overview }}
+      "description": {{ ({% if item.item_type == 'Episode' -%}
+        "**" ~ (item.series_name | default('Unknown Series')) ~ "**\n" ~
+        "S" ~ ('%02d' | format(item.season_number | default(0))) ~ "E" ~ ('%02d' | format(item.episode_number | default(0))) ~ "\n" ~
+        (item.name | default('Unknown Episode')) ~
+        ({% if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0 -%}
+          "\n\n" ~ ((item.tvdb.overview[:250] ~ '...') if item.tvdb.overview | length > 250 else item.tvdb.overview)
         {%- elif item.overview and item.overview | length > 0 -%}
-          \n\n{{ (item.overview[:250] + '...') if item.overview | length > 250 else item.overview }}
-        {%- endif -%}
+          "\n\n" ~ ((item.overview[:250] ~ '...') if item.overview | length > 250 else item.overview)
+        {%- else -%}
+          ""
+        {%- endif %})
       {%- elif item.item_type in ['Series', 'Season'] -%}
-        **{{ item.name | default('Unknown Title') }}**
-        {%- if item.year %} ({{ item.year }}){% endif -%}
-        {%- if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0 -%}
-          \n\n{{ (item.tvdb.overview[:250] + '...') if item.tvdb.overview | length > 250 else item.tvdb.overview }}
+        "**" ~ (item.name | default('Unknown Title')) ~ "**" ~
+        ({% if item.year %} " (" ~ item.year ~ ")" {% else %} "" {% endif %}) ~
+        ({% if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0 -%}
+          "\n\n" ~ ((item.tvdb.overview[:250] ~ '...') if item.tvdb.overview | length > 250 else item.tvdb.overview)
         {%- elif item.overview and item.overview | length > 0 -%}
-          \n\n{{ (item.overview[:250] + '...') if item.overview | length > 250 else item.overview }}
-        {%- endif -%}
+          "\n\n" ~ ((item.overview[:250] ~ '...') if item.overview | length > 250 else item.overview)
+        {%- else -%}
+          ""
+        {%- endif %})
       {%- elif item.item_type == 'Movie' -%}
-        **{{ item.name | default('Unknown Title') }}**
-        {%- if item.year %} ({{ item.year }}){% endif -%}
-        {%- if item.tmdb and item.tmdb.overview and item.tmdb.overview | length > 0 -%}
-          \n\n{{ (item.tmdb.overview[:250] + '...') if item.tmdb.overview | length > 250 else item.tmdb.overview }}
+        "**" ~ (item.name | default('Unknown Title')) ~ "**" ~
+        ({% if item.year %} " (" ~ item.year ~ ")" {% else %} "" {% endif %}) ~
+        ({% if item.tmdb and item.tmdb.overview and item.tmdb.overview | length > 0 -%}
+          "\n\n" ~ ((item.tmdb.overview[:250] ~ '...') if item.tmdb.overview | length > 250 else item.tmdb.overview)
         {%- elif item.omdb and item.omdb.plot and item.omdb.plot != 'N/A' -%}
-          \n\n{{ (item.omdb.plot[:250] + '...') if item.omdb.plot | length > 250 else item.omdb.plot }}
+          "\n\n" ~ ((item.omdb.plot[:250] ~ '...') if item.omdb.plot | length > 250 else item.omdb.plot)
         {%- elif item.overview and item.overview | length > 0 -%}
-          \n\n{{ (item.overview[:250] + '...') if item.overview | length > 250 else item.overview }}
-        {%- endif -%}
+          "\n\n" ~ ((item.overview[:250] ~ '...') if item.overview | length > 250 else item.overview)
+        {%- else -%}
+          ""
+        {%- endif %})
       {%- elif item.item_type == 'Audio' -%}
-        **{{ item.name | default('Unknown Song') }}**
-        {%- if item.artists is defined and item.artists and item.artists | length > 0 %}
-          by {{ item.artists | join(', ') }}
+        "**" ~ (item.name | default('Unknown Song')) ~ "**" ~
+        ({% if item.artists is defined and item.artists and item.artists | length > 0 %}
+          " by " ~ (item.artists | join(', '))
         {%- elif item.album_artist is defined and item.album_artist %}
-          by {{ item.album_artist }}
-        {%- endif -%}
-        {%- if item.album is defined and item.album %}
-          from **{{ item.album }}**
-        {%- endif -%}
+          " by " ~ item.album_artist
+        {%- else -%}
+          ""
+        {%- endif %}) ~
+        ({% if item.album is defined and item.album %}
+          " from **" ~ item.album ~ "**"
+        {%- else -%}
+          ""
+        {%- endif %})
       {%- elif item.item_type == 'MusicAlbum' -%}
-        **{{ item.name | default('Unknown Album') }}**
-        {%- if item.album_artist is defined and item.album_artist %}
-          by {{ item.album_artist }}
+        "**" ~ (item.name | default('Unknown Album')) ~ "**" ~
+        ({% if item.album_artist is defined and item.album_artist %}
+          " by " ~ item.album_artist
         {%- elif item.artists is defined and item.artists and item.artists | length > 0 %}
-          by {{ item.artists | join(', ') }}
-        {%- endif -%}
+          " by " ~ (item.artists | join(', '))
+        {%- else -%}
+          ""
+        {%- endif %})
       {%- else -%}
-        **{{ item.name | default('Unknown Title') }}**
-        {%- if item.overview and item.overview | length > 0 -%}
-          \n\n{{ (item.overview[:250] + '...') if item.overview | length > 250 else item.overview }}
-        {%- endif -%}
-      {%- endif %}",
+        "**" ~ (item.name | default('Unknown Title')) ~ "**" ~
+        ({% if item.overview and item.overview | length > 0 -%}
+          "\n\n" ~ ((item.overview[:250] ~ '...') if item.overview | length > 250 else item.overview)
+        {%- else -%}
+          ""
+        {%- endif %})
+      {%- endif %}) | tojson }},
 
       "color": {{ color }},
 
@@ -126,8 +140,8 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "📐 Quality",
-          "value": "{{ item.video_height }}p
-            {%- if item.video_range and item.video_range != 'SDR' %} {{ item.video_range }}{% endif %}",
+          "value": {{ (item.video_height ~ "p" ~ 
+            ({% if item.video_range and item.video_range != 'SDR' %} " " ~ item.video_range {% else %} "" {% endif %})) | tojson }},
           "inline": true
         }
         {%- endif %}
@@ -137,8 +151,8 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "🎞️ Video",
-          "value": "{{ item.video_codec | upper }}
-            {%- if item.video_profile %} {{ item.video_profile }}{% endif %}",
+          "value": {{ ((item.video_codec | upper) ~ 
+            ({% if item.video_profile %} " " ~ item.video_profile {% else %} "" {% endif %})) | tojson }},
           "inline": true
         }
         {%- endif %}
@@ -148,14 +162,14 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "🔊 Audio",
-          "value": "{{ item.audio_codec | upper }}
-            {%- if item.audio_channels %}
-              {%- if item.audio_channels == 2 %} Stereo
-              {%- elif item.audio_channels == 6 %} 5.1
-              {%- elif item.audio_channels == 8 %} 7.1
-              {%- else %} {{ item.audio_channels }}ch
+          "value": {{ ((item.audio_codec | upper) ~
+            ({% if item.audio_channels %}
+              {%- if item.audio_channels == 2 %} " Stereo"
+              {%- elif item.audio_channels == 6 %} " 5.1"
+              {%- elif item.audio_channels == 8 %} " 7.1"
+              {%- else %} " " ~ item.audio_channels ~ "ch"
               {%- endif -%}
-            {%- endif %}",
+            {%- else %} "" {% endif %})) | tojson }},
           "inline": true
         }
         {%- endif %}
@@ -170,17 +184,18 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "⏱️ Runtime",
-          "value": "
-            {%- if item.runtime_ticks -%}
+          "value": {% if item.runtime_ticks -%}
               {%- set minutes = (item.runtime_ticks / 600000000) | int -%}
               {%- set hours = (minutes / 60) | int -%}
               {%- set mins = minutes % 60 -%}
-              {%- if hours > 0 %}{{ hours }}h {{ mins }}m{% else %}{{ mins }} min{% endif -%}
+              {{ (hours ~ "h " ~ mins ~ "m" if hours > 0 else mins ~ " min") | tojson }}
             {%- elif item.omdb and item.omdb.runtime_minutes -%}
               {%- set hours = (item.omdb.runtime_minutes / 60) | int -%}
               {%- set mins = item.omdb.runtime_minutes % 60 -%}
-              {%- if hours > 0 %}{{ hours }}h {{ mins }}m{% else %}{{ mins }} min{% endif -%}
-            {%- endif %}",
+              {{ (hours ~ "h " ~ mins ~ "m" if hours > 0 else mins ~ " min") | tojson }}
+            {%- else -%}
+              "N/A"
+            {%- endif %},
           "inline": true
         }
         {%- endif %}
@@ -215,8 +230,8 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "🎭 Genres",
-          "value": "{{ display_genres[:3] | join(', ') }}
-            {%- if display_genres | length > 3 %} +{{ display_genres | length - 3 }}{% endif %}",
+          "value": {{ ((display_genres[:3] | join(', ')) ~
+            ({% if display_genres | length > 3 %} " +" ~ (display_genres | length - 3) {% else %} "" {% endif %})) | tojson }},
           "inline": true
         }
         {%- endif %}
@@ -226,7 +241,7 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "💾 Size",
-          "value": "{{ '%.1f' | format(item.file_size / 1073741824) }} GB",
+          "value": {{ (('%.1f' | format(item.file_size / 1073741824)) ~ " GB") | tojson }},
           "inline": true
         }
         {%- endif %}
@@ -250,8 +265,7 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "⭐ Ratings",
-          "value": "
-            {%- set rating_parts = [] -%}
+          "value": {%- set rating_parts = [] -%}
             {%- if item.omdb and item.omdb.imdb_rating and item.omdb.imdb_rating != 'N/A' -%}
               {%- set _ = rating_parts.append('**IMDb:** ' ~ item.omdb.imdb_rating) -%}
             {%- endif -%}
@@ -269,7 +283,7 @@
             {%- if item.tvdb and item.tvdb.rating -%}
               {%- set _ = rating_parts.append('**TVDb:** ' ~ item.tvdb.rating) -%}
             {%- endif -%}
-            {{ rating_parts | join(' • ') }}",
+            {{ (rating_parts | join(' • ')) | tojson }},
           "inline": false
         }
         {% endif %}
@@ -281,25 +295,25 @@
         Priority: Jellyfin → OMDb poster → TVDb artwork → TMDb backdrop
       #}
       {% if item.item_type == 'Episode' and item.series_id %}
-      "thumbnail": {
-        "url": "{{ thumbnail_url }}"
-      },
+      ,"thumbnail": {
+        "url": {{ thumbnail_url | tojson }}
+      }
       {% elif item.item_id %}
-      "thumbnail": {
-        "url": "{{ thumbnail_url }}"
-      },
+      ,"thumbnail": {
+        "url": {{ thumbnail_url | tojson }}
+      }
       {% elif item.omdb and item.omdb.poster and item.omdb.poster != 'N/A' %}
-      "thumbnail": {
-        "url": "{{ item.omdb.poster }}"
-      },
+      ,"thumbnail": {
+        "url": {{ item.omdb.poster | tojson }}
+      }
       {% elif item.tvdb and item.tvdb.poster_url %}
-      "thumbnail": {
-        "url": "{{ item.tvdb.poster_url }}"
-      },
+      ,"thumbnail": {
+        "url": {{ item.tvdb.poster_url | tojson }}
+      }
       {% elif item.tmdb and item.tmdb.backdrop_url %}
-      "image": {
-        "url": "{{ item.tmdb.backdrop_url }}"
-      },
+      ,"image": {
+        "url": {{ item.tmdb.backdrop_url | tojson }}
+      }
       {% endif %}
 
       {#
@@ -307,20 +321,20 @@
         ---------------------------------
         Shows data sources and server info
       #}
-      "footer": {
-        "text": "{{ item.library_name or 'Jellyfin' }}
-          {%- if item.server_name %} • {{ item.server_name }}{% endif %}
-          {%- if item.omdb %} • IMDb via OMDb{% endif %}
-          {%- if item.tvdb %} • TheTVDB{% endif %}
-          {%- if item.tmdb %} • TMDb{% endif %}",
-        "icon_url": "{{ jellyfin_url }}/web/favicon.png"
-      },
+      ,"footer": {
+        "text": {{ ((item.library_name or 'Jellyfin') ~
+          ({% if item.server_name %} " • " ~ item.server_name {% else %} "" {% endif %}) ~
+          ({% if item.omdb %} " • IMDb via OMDb" {% else %} "" {% endif %}) ~
+          ({% if item.tvdb %} " • TheTVDB" {% else %} "" {% endif %}) ~
+          ({% if item.tmdb %} " • TMDb" {% else %} "" {% endif %})) | tojson }},
+        "icon_url": {{ (jellyfin_url ~ "/web/favicon.png") | tojson }}
+      }
 
       {% if item.item_id %}
-      "url": "{{ jellyfin_url }}/web/index.html#!/details?id={{ item.item_id }}",
+      ,"url": {{ (jellyfin_url ~ "/web/index.html#!/details?id=" ~ item.item_id) | tojson }}
       {% endif %}
 
-      "timestamp": "{{ timestamp }}"
+      ,"timestamp": {{ timestamp | tojson }}
     }
   ]
 }
