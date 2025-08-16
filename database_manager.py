@@ -533,6 +533,13 @@ class DatabaseManager:
 
                 # Convert MediaItem to dictionary for database insertion
                 item_dict = asdict(item)
+                
+                # Remove private fields that shouldn't be saved to database
+                # _content_hash is internal storage, we need to use the content_hash property
+                if '_content_hash' in item_dict:
+                    del item_dict['_content_hash']
+                    # Add the actual content hash from the property
+                    item_dict['content_hash'] = item.content_hash
 
                 # Serialize list fields to JSON strings
                 for field in ['genres', 'studios', 'tags', 'artists']:
@@ -686,6 +693,13 @@ class DatabaseManager:
                             try:
                                 # Convert to dictionary and serialize JSON fields efficiently
                                 item_dict = asdict(item)
+                                
+                                # Remove private fields that shouldn't be saved to database
+                                # _content_hash is internal storage, we need to use the content_hash property
+                                if '_content_hash' in item_dict:
+                                    del item_dict['_content_hash']
+                                    # Add the actual content hash from the property
+                                    item_dict['content_hash'] = item.content_hash
                                 
                                 # Optimize JSON serialization with set lookup
                                 json_fields = {'genres', 'studios', 'tags', 'artists'}
