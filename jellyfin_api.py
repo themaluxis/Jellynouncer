@@ -138,8 +138,10 @@ class JellyfinAPI:
         self.logger = get_logger("jellynouncer.jellyfin")
         self.client = None
 
-        # Cache for server information
+        # Cache for server information with TTL
         self._cached_server_info = None
+        self._server_info_cache_time = 0
+        self._server_info_cache_ttl = 3600  # Cache server info for 1 hour
 
         # Connection management
         self.last_connection_check = 0
@@ -300,7 +302,7 @@ class JellyfinAPI:
 
     async def get_system_info(self) -> Optional[Dict[str, Any]]:
         """
-        Get Jellyfin server system information.
+        Get Jellyfin server system information with caching.
 
         This method retrieves basic system information from the Jellyfin server,
         including server name, version, and operational status. It's used for
@@ -311,6 +313,11 @@ class JellyfinAPI:
         - Server identification in logs
         - Version compatibility checking
         - Diagnostic and monitoring data
+
+        **Caching Strategy:**
+        - Results cached for 1 hour to reduce API calls
+        - Cache automatically refreshed after TTL expires
+        - Significantly improves batch sync performance
 
         Returns:
             Optional[Dict[str, Any]]: System information dictionary if successful, None otherwise
@@ -326,7 +333,14 @@ class JellyfinAPI:
         Note:
             This method is used internally for connection verification but
             can also be called directly for diagnostic purposes.
+            Results are cached for 1 hour to reduce API calls during batch operations.
         """
+        # Return cached info if still valid
+        if (self._cached_server_info and 
+            time.time() - self._server_info_cache_time < self._server_info_cache_ttl):
+            self.logger.debug("Returning cached server info")
+            return self._cached_server_info
+        
         if not self.client:
             return None
 
@@ -345,6 +359,9 @@ class JellyfinAPI:
                         self.logger.debug(f"ProductName: {public_info.get('ProductName', 'Not found')}")
                         self.logger.debug(f"LocalAddress: {public_info.get('LocalAddress', 'Not found')}")
                         self.logger.debug(f"Id: {public_info.get('Id', 'Not found')}")
+                        # Cache the server info
+                        self._cached_server_info = public_info
+                        self._server_info_cache_time = time.time()
                     
                     return public_info
             except Exception as e:
@@ -355,6 +372,10 @@ class JellyfinAPI:
             if response:
                 self.logger.debug("Successfully retrieved system configuration")
                 self.logger.debug(f"System config response type: {type(response)}")
+                
+                # Cache the server info
+                self._cached_server_info = response
+                self._server_info_cache_time = time.time()
                 
                 # This endpoint doesn't have version, but return it anyway
                 return response
@@ -822,15 +843,14 @@ class JellyfinAPI:
             server_version = None
             server_url = self.config.server_url
 
-            # Try to get server info if not already fetched
+            # Try to get server info (using cached version if available)
             try:
-                if not hasattr(self, '_cached_server_info'):
-                    self._cached_server_info = await self.get_system_info()
-
-                if self._cached_server_info:
-                    server_id = self._cached_server_info.get('Id')
-                    server_name = self._cached_server_info.get('ServerName')
-                    server_version = self._cached_server_info.get('Version')
+                # get_system_info now handles caching internally
+                server_info = await self.get_system_info()
+                if server_info:
+                    server_id = server_info.get('Id')
+                    server_name = server_info.get('ServerName')
+                    server_version = server_info.get('Version')
             except Exception as e:
                 self.logger.debug(f"Could not fetch server info: {e}")
 

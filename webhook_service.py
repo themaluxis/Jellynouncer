@@ -31,6 +31,7 @@ import aiosqlite
 
 from config_models import AppConfig, ConfigurationValidator
 from webhook_models import WebhookPayload
+from media_models import MediaItem
 from database_manager import DatabaseManager
 from jellyfin_api import JellyfinAPI
 from discord_services import DiscordNotifier
@@ -1012,6 +1013,33 @@ class WebhookService:
                 await asyncio.sleep(60)  # Wait 1 minute before retrying
 
         self.logger.info("Background tasks stopped - service is shutting down")
+    
+    async def _convert_item_safe(self, item_data: Dict[str, Any]) -> Optional[MediaItem]:
+        """
+        Safely convert Jellyfin API item to MediaItem with error handling.
+        
+        This wrapper method ensures that conversion errors don't crash the batch
+        processing and provides detailed error information for debugging.
+        
+        Args:
+            item_data: Raw item data from Jellyfin API
+            
+        Returns:
+            MediaItem if conversion successful, None if failed
+        """
+        try:
+            # Use the Jellyfin API's conversion method
+            return await self.jellyfin.convert_to_media_item(item_data)
+        except Exception as e:
+            # Log the error with item details for debugging
+            item_id = item_data.get('Id', 'unknown')
+            item_name = item_data.get('Name', 'unknown')
+            item_type = item_data.get('Type', 'unknown')
+            
+            self.logger.debug(
+                f"Failed to convert item {item_name} (ID: {item_id}, Type: {item_type}): {e}"
+            )
+            return None
 
     async def sync_jellyfin_library(self, background: bool = False) -> Dict[str, Any]:
         """
@@ -1114,8 +1142,13 @@ class WebhookService:
                 'total_individual_errors': 0,
                 'producer_done': False,
                 'consumer_done': False,
-                'fatal_error': ''  # Empty string instead of None for type consistency
+                'fatal_error': '',  # Empty string instead of None for type consistency
+                'should_stop': False  # Early exit flag for high error rates
             }
+            
+            # Error threshold for early exit (stop if more than 10% of items fail)
+            error_threshold_percent = 10
+            consecutive_batch_error_limit = 3
             
             async def producer():
                 """Fetch batches from Jellyfin API and queue them for processing."""
@@ -1131,6 +1164,11 @@ class WebhookService:
                             f"Fetched batch {batch_num} from API: {len(batch_items)} items "
                             f"(total fetched: {sync_state['items_fetched']}/{total_count})"
                         )
+                        
+                        # Check if we should stop due to high error rate
+                        if sync_state['should_stop']:
+                            self.logger.warning("Producer stopping early due to high error rate")
+                            break
                         
                         # Queue the batch for processing
                         await batch_queue.put((batch_num, batch_items))
@@ -1149,6 +1187,7 @@ class WebhookService:
             
             async def consumer():
                 """Process batches from queue and save to database."""
+                consecutive_batch_errors = 0
                 try:
                     while True:
                         # Get batch from queue
@@ -1167,21 +1206,31 @@ class WebhookService:
                         )
                         
                         try:
-                            # Convert API data to MediaItem objects
+                            # Convert API data to MediaItem objects in parallel for speed
                             media_items = []
                             conversion_errors = 0
                             failed_items = []
                             
+                            # Create conversion tasks for parallel processing
+                            conversion_tasks = []
                             for item_data in batch_items:
-                                try:
-                                    media_item = await self.jellyfin.convert_to_media_item(item_data)
-                                    media_items.append(media_item)
-                                except Exception as e:
+                                # Create task with item data for error tracking
+                                task = asyncio.create_task(self._convert_item_safe(item_data))
+                                conversion_tasks.append((task, item_data))
+                            
+                            # Wait for all conversions to complete
+                            results = await asyncio.gather(*[task for task, _ in conversion_tasks], return_exceptions=True)
+                            
+                            # Process results
+                            for (task, item_data), result in zip(conversion_tasks, results):
+                                if isinstance(result, Exception):
                                     item_id = item_data.get('Id', 'unknown')
                                     item_name = item_data.get('Name', 'unknown')
-                                    failed_items.append((item_id, item_name, str(e)))
+                                    failed_items.append((item_id, item_name, str(result)))
                                     conversion_errors += 1
                                     sync_state['total_individual_errors'] += 1
+                                elif result is not None:
+                                    media_items.append(result)
                             
                             # Log conversion errors if any
                             if failed_items:
@@ -1204,13 +1253,27 @@ class WebhookService:
                                 if batch_results['failed'] == len(media_items) and batch_results['successful'] == 0:
                                     sync_state['batch_errors'] += 1
                                     sync_state['total_individual_errors'] += batch_results['failed']
+                                    consecutive_batch_errors += 1
                                     
                                     self.logger.error(
                                         f"Batch {batch_num}: ENTIRE BATCH FAILED - "
                                         f"likely schema mismatch or database issue. "
                                         f"{batch_results['failed']} items could not be saved."
                                     )
+                                    
+                                    # Check for consecutive batch failures
+                                    if consecutive_batch_errors >= consecutive_batch_error_limit:
+                                        self.logger.error(
+                                            f"Stopping sync: {consecutive_batch_errors} consecutive batches failed completely"
+                                        )
+                                        sync_state['should_stop'] = True
+                                        sync_state['fatal_error'] = f"Too many consecutive batch failures: {consecutive_batch_errors}"
+                                        break
                                 else:
+                                    # Reset consecutive error counter on successful batch
+                                    if batch_results['successful'] > 0:
+                                        consecutive_batch_errors = 0
+                                    
                                     # Update progress
                                     sync_state['items_processed'] += batch_results['successful']
                                     sync_state['total_individual_errors'] += batch_results['failed']
@@ -1233,6 +1296,16 @@ class WebhookService:
                                 # All items in batch failed conversion
                                 self.logger.warning(f"Batch {batch_num}: All {len(batch_items)} items failed conversion")
                                 sync_state['batch_errors'] += 1
+                                consecutive_batch_errors += 1
+                                
+                                # Check for consecutive failures
+                                if consecutive_batch_errors >= consecutive_batch_error_limit:
+                                    self.logger.error(
+                                        f"Stopping sync: {consecutive_batch_errors} consecutive batches failed completely"
+                                    )
+                                    sync_state['should_stop'] = True
+                                    sync_state['fatal_error'] = f"Too many consecutive batch failures: {consecutive_batch_errors}"
+                                    break
                             
                             # Log overall progress periodically
                             if batch_num % 5 == 0 and sync_state['total_items'] > 0:
@@ -1247,6 +1320,17 @@ class WebhookService:
                                     f"Rate: {items_per_sec:.1f} items/sec - "
                                     f"ETA: {eta:.1f}s"
                                 )
+                                
+                                # Check error rate and stop if too high
+                                if sync_state['items_processed'] > 100:  # Only check after processing some items
+                                    error_rate = (sync_state['total_individual_errors'] / sync_state['items_processed']) * 100
+                                    if error_rate > error_threshold_percent:
+                                        self.logger.error(
+                                            f"Stopping sync: Error rate {error_rate:.1f}% exceeds threshold {error_threshold_percent}%"
+                                        )
+                                        sync_state['should_stop'] = True
+                                        sync_state['fatal_error'] = f"Error rate too high: {error_rate:.1f}%"
+                                        break
                             
                         except Exception as e:
                             self.logger.error(f"Error processing batch {batch_num}: {e}")
