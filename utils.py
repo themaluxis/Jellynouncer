@@ -240,26 +240,34 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
 
     # Initialize colorama if available - colors on by default in Docker
     use_colors = False
-    force_no_color = False
-    force_color_off = False
     
     if COLORAMA_AVAILABLE:
-        # Check if colors are explicitly disabled
+        # Check if colors are explicitly disabled via NO_COLOR environment variable
         force_no_color = os.environ.get('NO_COLOR', '').lower() in ('1', 'true', 'yes')
-        force_color_off = os.environ.get('FORCE_COLOR', '').lower() in ('0', 'false', 'no')
         
-        # Check if we're in Docker or have a TTY
-        in_docker = os.path.exists('/.dockerenv') or os.environ.get('DOCKER_CONTAINER', False)
+        # Check if we're in Docker (by checking for /.dockerenv file)
+        in_docker = os.path.exists('/.dockerenv')
+        
+        # Check if we have a TTY
         has_tty = hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()
         
-        # Enable colors by default in Docker, or if we have TTY, unless explicitly disabled
-        if not (force_no_color or force_color_off):
-            if in_docker or has_tty:
-                colorama.init(autoreset=True)
-                use_colors = True
-        # Allow forcing colors on even without Docker/TTY
-        elif os.environ.get('FORCE_COLOR', '').lower() in ('1', 'true', 'yes'):
+        # Determine if we should use colors
+        if force_no_color:
+            # User explicitly disabled colors
+            use_colors = False
+        elif in_docker:
+            # Always force colors in Docker environments
+            # Use strip=False to keep colors even without TTY
+            # Use convert=False to prevent colorama from converting/stripping codes
+            colorama.init(autoreset=True, strip=False, convert=False)
+            use_colors = True
+        elif has_tty:
+            # Normal TTY environment (not Docker)
             colorama.init(autoreset=True)
+            use_colors = True
+        elif os.environ.get('FORCE_COLOR', '').lower() in ('1', 'true', 'yes'):
+            # Allow forcing colors even in non-Docker, non-TTY environments if needed
+            colorama.init(autoreset=True, strip=False, convert=False)
             use_colors = True
     
     class BracketFormatter(logging.Formatter):
@@ -272,20 +280,39 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
         and we're in a suitable environment, it adds color coding by log level.
         """
         
-        # Color mappings for different log levels
-        LEVEL_COLORS = {
-            'DEBUG': Fore.CYAN if COLORAMA_AVAILABLE else '',
-            'INFO': Fore.GREEN if COLORAMA_AVAILABLE else '',
-            'WARNING': Fore.YELLOW if COLORAMA_AVAILABLE else '',
-            'ERROR': Fore.RED if COLORAMA_AVAILABLE else '',
-            'CRITICAL': Fore.RED + Style.BRIGHT if COLORAMA_AVAILABLE else ''
-        }
-        
-        # Component colors for better visual separation
-        COMPONENT_COLOR = Fore.BLUE if COLORAMA_AVAILABLE else ''
-        TIMESTAMP_COLOR = Fore.WHITE + Style.DIM if COLORAMA_AVAILABLE else ''
-        USER_COLOR = Fore.MAGENTA if COLORAMA_AVAILABLE else ''
-        RESET = Style.RESET_ALL if COLORAMA_AVAILABLE else ''
+        def __init__(self, use_colors=False):
+            """Initialize formatter with color support option."""
+            super().__init__()
+            self.use_colors = use_colors
+            
+            # Only set up colors if requested
+            if self.use_colors and COLORAMA_AVAILABLE:
+                # Color mappings for different log levels
+                self.LEVEL_COLORS = {
+                    'DEBUG': Fore.CYAN,
+                    'INFO': Fore.GREEN,
+                    'WARNING': Fore.YELLOW,
+                    'ERROR': Fore.RED,
+                    'CRITICAL': Fore.RED + Style.BRIGHT
+                }
+                # Component colors for better visual separation
+                self.COMPONENT_COLOR = Fore.BLUE
+                self.TIMESTAMP_COLOR = Fore.WHITE + Style.DIM
+                self.USER_COLOR = Fore.MAGENTA
+                self.RESET = Style.RESET_ALL
+            else:
+                # No colors for file output or when disabled
+                self.LEVEL_COLORS = {
+                    'DEBUG': '',
+                    'INFO': '',
+                    'WARNING': '',
+                    'ERROR': '',
+                    'CRITICAL': ''
+                }
+                self.COMPONENT_COLOR = ''
+                self.TIMESTAMP_COLOR = ''
+                self.USER_COLOR = ''
+                self.RESET = ''
 
         def format(self, record: logging.LogRecord) -> str:
             """
@@ -321,7 +348,7 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
             gradient_color = None
             message_text = record.getMessage()
             
-            if use_colors and record.name in ['jellynouncer.webhook', 'jellynouncer', 'jellynouncer.logo']:
+            if self.use_colors and record.name in ['jellynouncer.webhook', 'jellynouncer', 'jellynouncer.logo']:
                 # Check webhook initialization messages
                 if record.name == 'jellynouncer.webhook':
                     for i, msg in enumerate(gradient_message_tracker['webhook_init']['messages']):
@@ -379,7 +406,7 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
                 level_color = gradient_color  # Use gradient color for the message
 
             # Format the complete log message with structured brackets
-            if use_colors:
+            if self.use_colors:
                 if is_gradient_message:
                     # Special gradient formatting
                     formatted = (
@@ -416,7 +443,8 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
     # Shows messages on the terminal/console for real-time monitoring
     console_handler = logging.StreamHandler()
     console_handler.setLevel(numeric_level)  # Use specified log level instead of hardcoded INFO
-    console_handler.setFormatter(BracketFormatter())
+    # Use colored formatter for console output
+    console_handler.setFormatter(BracketFormatter(use_colors=use_colors))
     logger.addHandler(console_handler)
 
     # Rotating file handler to prevent logs from consuming unlimited disk space
@@ -431,7 +459,8 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
             mode='a'  # Append mode - preserves logs across service restarts
         )
         file_handler.setLevel(numeric_level)  # Use specified log level for files
-        file_handler.setFormatter(BracketFormatter())
+        # Use plain formatter for file output (no color codes)
+        file_handler.setFormatter(BracketFormatter(use_colors=False))
         logger.addHandler(file_handler)
     except PermissionError as e:
         # If we can't create file handler, log to console only
