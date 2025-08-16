@@ -209,8 +209,15 @@ class JellyfinAPI:
                 # Test connection with system info call
                 system_info = await self.get_system_info()
                 if system_info:
+                    # Try different possible field names for version
                     server_name = system_info.get('ServerName', 'Unknown')
-                    server_version = system_info.get('Version', 'Unknown')
+                    server_version = (
+                        system_info.get('Version') or 
+                        system_info.get('version') or 
+                        system_info.get('ServerVersion') or 
+                        system_info.get('serverVersion') or
+                        'Unknown'
+                    )
 
                     self.logger.info(f"Connected to Jellyfin server: {server_name} v{server_version}")
                     self.last_connection_check = time.time()
@@ -324,9 +331,32 @@ class JellyfinAPI:
             return None
 
         try:
+            # First try to get public system info which contains version
+            try:
+                public_info = self.client.jellyfin.try_server()
+                if public_info:
+                    self.logger.debug("Successfully retrieved public system information")
+                    self.logger.debug(f"Public system info response type: {type(public_info)}")
+                    self.logger.debug(f"Public system info keys: {list(public_info.keys()) if isinstance(public_info, dict) else 'Not a dict'}")
+                    
+                    if isinstance(public_info, dict):
+                        self.logger.debug(f"ServerName: {public_info.get('ServerName', 'Not found')}")
+                        self.logger.debug(f"Version: {public_info.get('Version', 'Not found')}")
+                        self.logger.debug(f"ProductName: {public_info.get('ProductName', 'Not found')}")
+                        self.logger.debug(f"LocalAddress: {public_info.get('LocalAddress', 'Not found')}")
+                        self.logger.debug(f"Id: {public_info.get('Id', 'Not found')}")
+                    
+                    return public_info
+            except Exception as e:
+                self.logger.debug(f"Could not get public system info: {e}")
+            
+            # Fallback to configuration endpoint (doesn't have version but better than nothing)
             response = self.client.jellyfin.get_system_info()
             if response:
-                self.logger.debug("Successfully retrieved system information")
+                self.logger.debug("Successfully retrieved system configuration")
+                self.logger.debug(f"System config response type: {type(response)}")
+                
+                # This endpoint doesn't have version, but return it anyway
                 return response
             else:
                 self.logger.warning("Empty response from system info API")
