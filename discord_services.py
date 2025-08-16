@@ -639,6 +639,13 @@ class DiscordNotifier:
 
             # Render Discord embed using templates
             embed_data = await self.render_embed(item, action, thumbnail_url, changes)
+            
+            # Log the embed data for debugging
+            self.logger.debug(f"Embed data returned from render_embed:")
+            self.logger.debug(f"  Type: {type(embed_data)}")
+            self.logger.debug(f"  Keys: {list(embed_data.keys()) if isinstance(embed_data, dict) else 'Not a dict'}")
+            if isinstance(embed_data, dict) and 'embeds' not in embed_data:
+                self.logger.error(f"ERROR: embed_data missing 'embeds' key! Data: {embed_data}")
 
             # Check rate limits before sending
             if await self.is_rate_limited(webhook_url):
@@ -651,7 +658,7 @@ class DiscordNotifier:
 
             # Send the webhook
             webhook_data = {
-                "embeds": embed_data["embeds"],
+                "embeds": embed_data.get("embeds", [embed_data]) if isinstance(embed_data, dict) else [],
                 "username": "Jellynouncer"
             }
 
@@ -1129,17 +1136,44 @@ class DiscordNotifier:
         else:
             embed_color = 65280  # Green for new items
 
+        # Return in the same format as templates (with embeds array)
         return {
-            "title": title,
-            "description": description,
-            "color": embed_color,
-            "image": {"url": thumbnail_url} if thumbnail_url else {},
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "footer": {
-                "text": f"{item.server_name or 'Jellyfin'} • {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
-            }
+            "embeds": [{
+                "title": title,
+                "description": description,
+                "color": embed_color,
+                "image": {"url": thumbnail_url} if thumbnail_url else {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "footer": {
+                    "text": f"{item.server_name or 'Jellyfin'} • {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+                }
+            }]
         }
 
+    def _make_serializable(self, obj):
+        """
+        Convert objects to JSON-serializable format.
+        
+        Handles common non-serializable types like dataclasses, datetime objects, etc.
+        """
+        import dataclasses
+        from datetime import datetime, date
+        
+        if dataclasses.is_dataclass(obj):
+            return dataclasses.asdict(obj)
+        elif isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        elif isinstance(obj, dict):
+            return {k: self._make_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_serializable(item) for item in obj]
+        elif isinstance(obj, tuple):
+            return tuple(self._make_serializable(item) for item in obj)
+        elif hasattr(obj, '__dict__'):
+            return self._make_serializable(obj.__dict__)
+        else:
+            return obj
+    
     def _log_discord_payload_debug(self, webhook_url: str, payload: Dict[str, Any],
                                    item_name: str = "Unknown") -> None:
         """
@@ -1180,11 +1214,18 @@ class DiscordNotifier:
         # Log complete JSON payload with pretty formatting
         self.logger.debug("\n📦 COMPLETE JSON PAYLOAD:")
         try:
-            formatted_json = json.dumps(payload, indent=2, ensure_ascii=False)
+            # Create a serializable copy of the payload
+            serializable_payload = self._make_serializable(payload)
+            formatted_json = json.dumps(serializable_payload, indent=2, ensure_ascii=False)
             self.logger.debug(formatted_json)
         except Exception as e:
             self.logger.error(f"❌ Failed to serialize payload to JSON: {e}")
             self.logger.debug(f"Raw payload: {payload}")
+            # Try to at least show the structure
+            try:
+                self.logger.debug(f"Payload structure: {repr(payload)[:1000]}")
+            except:
+                self.logger.debug("Could not even repr() the payload")
 
         # Detailed embed analysis if embeds exist
         if isinstance(payload, dict) and 'embeds' in payload and isinstance(payload['embeds'], list):
