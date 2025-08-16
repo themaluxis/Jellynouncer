@@ -37,6 +37,27 @@ try:
     COLORAMA_AVAILABLE = True
 except ImportError:
     COLORAMA_AVAILABLE = False
+    # Define dummy classes to prevent reference errors
+    colorama = None
+    
+    class Fore:
+        """Dummy Fore class when colorama is not available."""
+        BLACK = ''
+        RED = ''
+        GREEN = ''
+        YELLOW = ''
+        BLUE = ''
+        MAGENTA = ''
+        CYAN = ''
+        WHITE = ''
+        RESET = ''
+    
+    class Style:
+        """Dummy Style class when colorama is not available."""
+        DIM = ''
+        NORMAL = ''
+        BRIGHT = ''
+        RESET_ALL = ''
 
 
 def interpolate_color(start_rgb, end_rgb, position):
@@ -255,6 +276,11 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
     init_logger.debug("Color initialization starting...")
     init_logger.debug(f"Colorama available: {COLORAMA_AVAILABLE}")
     
+    # Initialize variables with defaults to avoid "referenced before assignment" warnings
+    in_docker = False
+    has_tty = False
+    force_no_color = False
+    
     if COLORAMA_AVAILABLE:
         # Check if colors are explicitly disabled via NO_COLOR environment variable
         force_no_color = os.environ.get('NO_COLOR', '').lower() in ('1', 'true', 'yes')
@@ -371,7 +397,7 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
 
             Example:
                 Input LogRecord with message "Database connected"
-                Output: "[2025-01-15 10:30:45 UTC] [system] [INFO] [jellynouncer.db] Database connected"
+                Output: "[2025-01-15 10:30:45 UTC][system][INFO][jellynouncer.db] Database connected"
                 (with green coloring for INFO level when colors are enabled)
             """
             # Get UTC timestamp for consistency across time zones and deployments
@@ -467,8 +493,10 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
                         f"{level_color}{message_text}{self.RESET}"
                     )
             else:
-                # Plain format for non-TTY environments or when colors are disabled
-                formatted = f"[{timestamp}] [{user}] [{record.levelname}] [{record.name}] {message_text}"
+                # Format the log line with the info we'd prefer to display
+                # formatted = f"[{timestamp}][{user}][{record.levelname}][{record.name}] {message_text}"
+                # Format the log line to exclude the user bracket.
+                formatted = f"[{timestamp}][{record.levelname}][{record.name}] {message_text}"
             
             return formatted
 
