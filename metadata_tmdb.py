@@ -32,7 +32,7 @@ from media_models import MediaItem
 from utils import get_logger
 
 
-@dataclass
+@dataclass(slots=True)
 class TMDbMetadata:
     """
     Complete TMDb API response data with all available fields.

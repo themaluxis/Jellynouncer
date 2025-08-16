@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # TVDB Data Models
 
-@dataclass
+@dataclass(slots=True)
 class TVDBArtwork:
     """TVDB artwork metadata."""
 
@@ -38,7 +38,7 @@ class TVDBArtwork:
     score: Optional[float] = None
 
 
-@dataclass
+@dataclass(slots=True)
 class TVDBCharacter:
     """TVDB character information."""
 
@@ -54,7 +54,7 @@ class TVDBCharacter:
     role: Optional[str] = None
 
 
-@dataclass
+@dataclass(slots=True)
 class TVDBCompany:
     """TVDB company/network information."""
 
@@ -71,7 +71,7 @@ class TVDBCompany:
     tags: List[str] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(slots=True)
 class TVDBSeasonType:
     """TVDB season type information."""
 
@@ -81,7 +81,7 @@ class TVDBSeasonType:
     alt_name: Optional[str] = None
 
 
-@dataclass
+@dataclass(slots=True)
 class TVDBRemoteId:
     """TVDB remote ID mappings."""
 
@@ -90,7 +90,7 @@ class TVDBRemoteId:
     source_name: Optional[str] = None
 
 
-@dataclass
+@dataclass(slots=True)
 class TVDBSeriesMetadata:
     """TVDB series metadata."""
 
@@ -126,7 +126,7 @@ class TVDBSeriesMetadata:
     year: Optional[str] = None
 
 
-@dataclass
+@dataclass(slots=True)
 class TVDBSeasonMetadata:
     """TVDB season metadata."""
 
@@ -146,7 +146,7 @@ class TVDBSeasonMetadata:
     last_updated: Optional[str] = None
 
 
-@dataclass
+@dataclass(slots=True)
 class TVDBEpisodeMetadata:
     """TVDB episode metadata."""
 

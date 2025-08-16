@@ -20,6 +20,10 @@ License: MIT
 
 import asyncio
 import logging
+from functools import lru_cache
+from typing import Optional, Dict, Any
+import hashlib
+import json
 
 import aiohttp
 
@@ -119,6 +123,14 @@ class MetadataService:
         # Rate limiting state for external APIs
         self.last_request_times = {}
         self.min_request_interval = 1.0  # Minimum seconds between API requests
+        
+        # LRU cache for metadata results
+        self._metadata_cache = {}
+        self._cache_max_size = 1000
+        
+        # Semaphores for API rate limiting
+        self._api_semaphore = None  # Will be created during initialize
+        self._api_semaphore_limit = 3  # Max concurrent API requests
 
     async def initialize(self, session: aiohttp.ClientSession, db_manager) -> None:
         """
@@ -130,6 +142,9 @@ class MetadataService:
         """
         self.session = session
         self.db_manager = db_manager
+        
+        # Initialize semaphore for API rate limiting
+        self._api_semaphore = asyncio.Semaphore(self._api_semaphore_limit)
 
         if not self.enabled:
             self.logger.info("Metadata services disabled in configuration")
@@ -194,19 +209,24 @@ class MetadataService:
         setattr(item, 'tmdb', None)
         setattr(item, 'ratings', {})
 
-        # Fetch metadata from all available sources concurrently
+        # Fetch metadata from all available sources concurrently with semaphore control
         tasks = []
 
+        async def rate_limited_fetch(fetch_func, item):
+            """Wrap fetch function with semaphore for rate limiting."""
+            async with self._api_semaphore:
+                return await fetch_func(item)
+
         if self.omdb_client:
-            tasks.append(self._fetch_omdb_metadata(item))
+            tasks.append(rate_limited_fetch(self._fetch_omdb_metadata, item))
 
         if self.tvdb_client and item.item_type in ["Series", "Season", "Episode"]:
-            tasks.append(self._fetch_tvdb_metadata(item))
+            tasks.append(rate_limited_fetch(self._fetch_tvdb_metadata, item))
 
         if self.tmdb_client:
-            tasks.append(self._fetch_tmdb_metadata(item))
+            tasks.append(rate_limited_fetch(self._fetch_tmdb_metadata, item))
 
-        # Execute all API calls concurrently
+        # Execute all API calls concurrently with controlled concurrency
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -234,16 +254,85 @@ class MetadataService:
 
         return item
 
+    def _get_cache_key(self, provider: str, item: MediaItem) -> str:
+        """
+        Generate a cache key for metadata lookups.
+        
+        Args:
+            provider: Name of the metadata provider (omdb, tmdb, tvdb)
+            item: MediaItem to generate key for
+            
+        Returns:
+            str: Cache key for the item and provider
+        """
+        # Use relevant IDs based on provider
+        if provider == "omdb" and item.imdb_id:
+            return f"omdb:{item.imdb_id}"
+        elif provider == "tmdb" and item.tmdb_id:
+            return f"tmdb:{item.tmdb_id}"
+        elif provider == "tvdb" and item.tvdb_id:
+            return f"tvdb:{item.tvdb_id}"
+        else:
+            # Fallback to item ID and name
+            return f"{provider}:{item.item_id}:{item.name}"
+    
+    @lru_cache(maxsize=1000)
+    def _get_cached_metadata(self, cache_key: str) -> Optional[Any]:
+        """
+        Get cached metadata if available.
+        
+        This uses LRU cache to store the most recently used metadata,
+        reducing API calls for frequently accessed items.
+        
+        Args:
+            cache_key: Cache key for the metadata
+            
+        Returns:
+            Optional[Any]: Cached metadata or None
+        """
+        return self._metadata_cache.get(cache_key)
+    
+    def _set_cached_metadata(self, cache_key: str, metadata: Any) -> None:
+        """
+        Store metadata in cache.
+        
+        Args:
+            cache_key: Cache key for the metadata
+            metadata: Metadata to cache
+        """
+        # Implement simple size limit
+        if len(self._metadata_cache) >= self._cache_max_size:
+            # Remove oldest items (simple FIFO for now)
+            oldest_key = next(iter(self._metadata_cache))
+            del self._metadata_cache[oldest_key]
+        
+        self._metadata_cache[cache_key] = metadata
+        # Clear the LRU cache to force refresh
+        self._get_cached_metadata.cache_clear()
+
     async def _fetch_omdb_metadata(self, item: MediaItem) -> None:
         """
-        Fetch and attach OMDb metadata to the media item.
+        Fetch and attach OMDb metadata to the media item with caching.
 
         Args:
             item (MediaItem): Media item to fetch OMDb data for
         """
         try:
+            # Check cache first
+            cache_key = self._get_cache_key("omdb", item)
+            cached_data = self._get_cached_metadata(cache_key)
+            
+            if cached_data is not None:
+                self.logger.debug(f"Using cached OMDb metadata for {item.name}")
+                setattr(item, 'omdb', cached_data)
+                return
+            
+            # Fetch from API if not cached
             omdb_data = await self.omdb_client.get_metadata_for_item(item)
             if omdb_data:
+                # Cache the fetched data
+                self._set_cached_metadata(cache_key, omdb_data)
+                
                 # Use setattr to add the dynamic attribute
                 setattr(item, 'omdb', omdb_data)
 
@@ -311,13 +400,22 @@ class MetadataService:
 
     async def _fetch_tvdb_metadata(self, item: MediaItem) -> None:
         """
-        Fetch and attach TVDb metadata to the media item.
+        Fetch and attach TVDb metadata to the media item with caching.
 
         Args:
             item (MediaItem): Media item to fetch TVDB data for
         """
         try:
             if not self.tvdb_client or not item.tvdb_id:
+                return
+            
+            # Check cache first
+            cache_key = self._get_cache_key("tvdb", item)
+            cached_data = self._get_cached_metadata(cache_key)
+            
+            if cached_data is not None:
+                self.logger.debug(f"Using cached TVDb metadata for {item.name}")
+                setattr(item, 'tvdb', cached_data)
                 return
 
             tvdb_data = None
@@ -330,6 +428,9 @@ class MetadataService:
                     tvdb_data = series_data
 
             if tvdb_data:
+                # Cache the fetched data
+                self._set_cached_metadata(cache_key, tvdb_data)
+                
                 # Use setattr to add the dynamic attribute
                 setattr(item, 'tvdb', tvdb_data)
 
@@ -384,14 +485,26 @@ class MetadataService:
 
     async def _fetch_tmdb_metadata(self, item: MediaItem) -> None:
         """
-        Fetch and attach TMDb metadata to the media item.
+        Fetch and attach TMDb metadata to the media item with caching.
 
         Args:
             item (MediaItem): Media item to fetch TMDb data for
         """
         try:
+            # Check cache first
+            cache_key = self._get_cache_key("tmdb", item)
+            cached_data = self._get_cached_metadata(cache_key)
+            
+            if cached_data is not None:
+                self.logger.debug(f"Using cached TMDb metadata for {item.name}")
+                setattr(item, 'tmdb', cached_data)
+                return
+            
             tmdb_data = await self.tmdb_client.get_metadata_for_item(item)
             if tmdb_data:
+                # Cache the fetched data
+                self._set_cached_metadata(cache_key, tmdb_data)
+                
                 # Attach the TMDb metadata object to the item
                 setattr(item, 'tmdb', tmdb_data)
 

@@ -712,14 +712,20 @@ def format_bytes(bytes_value: int) -> str:
     # Define units in order from smallest to largest
     units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
 
-    # Find the appropriate unit by repeatedly dividing by 1024
-    size = float(bytes_value)
-    unit_index = 0
-
-    while size >= 1024.0 and unit_index < len(units) - 1:
-        size /= 1024.0
-        unit_index += 1
-
+    # Use bit operations for faster unit calculation
+    # Each unit is 1024 (2^10) times larger than the previous
+    # So we can use bit length to determine the appropriate unit
+    if bytes_value == 0:
+        return "0 B"
+    
+    # Calculate unit index using bit operations (faster than loops)
+    # bit_length() - 1 gives us the highest set bit position
+    # Dividing by 10 gives us the unit index (since 1024 = 2^10)
+    unit_index = min((bytes_value.bit_length() - 1) // 10, len(units) - 1)
+    
+    # Calculate size using bit shifting for power of 2
+    size = bytes_value / (1 << (unit_index * 10))
+    
     # Format with one decimal place, but remove trailing zeros
     if size == int(size):
         return f"{int(size)} {units[unit_index]}"
@@ -783,13 +789,14 @@ def sanitize_filename(filename: str, replacement: str = "_") -> str:
         raise ValueError("Filename cannot be empty")
 
     # Define characters that are invalid on any major filesystem
-    invalid_chars = r'<>:"/\|?*'
-
-    # Add control characters (ASCII 0-31) to invalid characters
-    invalid_pattern = f'[{re.escape(invalid_chars)}\x00-\x1f]'
-
-    # Replace invalid characters with the replacement string
-    sanitized = re.sub(invalid_pattern, replacement, filename)
+    invalid_chars = '<>:"/\\|?*' + ''.join(chr(i) for i in range(32))
+    
+    # Create translation table for faster character replacement
+    # This is more efficient than regex for simple character replacement
+    translation_table = str.maketrans(invalid_chars, replacement * len(invalid_chars))
+    
+    # Replace invalid characters using translate (faster than regex)
+    sanitized = filename.translate(translation_table)
 
     # Remove leading/trailing whitespace and dots (Windows requirement)
     sanitized = sanitized.strip(' .')

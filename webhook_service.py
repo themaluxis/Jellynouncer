@@ -249,8 +249,24 @@ class WebhookService:
             # Step 4: Initialize Discord notification manager
             self.logger.debug("Setting up Discord notification manager...")
             try:
-                # Create aiohttp session for Discord
-                session = aiohttp.ClientSession()
+                # Create optimized aiohttp session with connection pooling
+                connector = aiohttp.TCPConnector(
+                    limit=200,  # Total connection pool limit
+                    limit_per_host=50,  # Per-host connection limit
+                    ttl_dns_cache=300,  # DNS cache timeout in seconds
+                    enable_cleanup_closed=True,  # Clean up closed connections
+                    force_close=False,  # Keep connections alive for reuse
+                    keepalive_timeout=30  # Keep connections alive for 30 seconds
+                )
+                timeout = aiohttp.ClientTimeout(
+                    total=30,  # Total timeout
+                    connect=5,  # Connection timeout
+                    sock_read=10  # Socket read timeout
+                )
+                session = aiohttp.ClientSession(
+                    connector=connector,
+                    timeout=timeout
+                )
                 self.discord = DiscordNotifier(self.config.discord)
                 await self.discord.initialize(session, self.config.jellyfin, self.config.templates, self.config.notifications)
                 self.logger.info("Discord notification manager initialized")

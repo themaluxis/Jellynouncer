@@ -32,7 +32,7 @@ from media_models import MediaItem
 from utils import get_logger
 
 
-@dataclass
+@dataclass(slots=True)
 class OMDbRating:
     """
     Individual rating from a specific source.
@@ -73,7 +73,7 @@ class OMDbRating:
             return None
 
 
-@dataclass
+@dataclass(slots=True)
 class OMDbMetadata:
     """
     Complete OMDb API response data with all available fields.

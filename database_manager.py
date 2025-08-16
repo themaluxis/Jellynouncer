@@ -25,7 +25,7 @@ import logging
 import time
 from datetime import datetime, timezone
 from dataclasses import asdict
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union, Tuple, TypedDict
 
 import aiosqlite
 
@@ -670,27 +670,76 @@ class DatabaseManager:
                 # Begin transaction for all items
                 await db.execute("BEGIN TRANSACTION")
 
-                for item in items:
+                # Process items in chunks to avoid SQL parameter limits
+                chunk_size = 500  # SQLite limit on number of parameters
+                
+                for chunk_start in range(0, len(items), chunk_size):
+                    chunk = items[chunk_start:chunk_start + chunk_size]
+                    
                     try:
-                        # Convert to dictionary and serialize JSON fields
-                        item_dict = asdict(item)
-                        for field in ['genres', 'studios', 'tags', 'artists']:
-                            if item_dict[field] is not None:
-                                item_dict[field] = json.dumps(item_dict[field])
-
-                        # Insert or replace the item
-                        placeholders = ', '.join(['?' for _ in item_dict])
-                        columns = ', '.join(item_dict.keys())
-
-                        await db.execute(
-                            f"INSERT OR REPLACE INTO media_items ({columns}) VALUES ({placeholders})",
-                            list(item_dict.values())
-                        )
-                        successful += 1
-
+                        # Prepare all items in chunk
+                        all_values = []
+                        columns = None
+                        items_to_insert = []
+                        
+                        for item in chunk:
+                            try:
+                                # Convert to dictionary and serialize JSON fields efficiently
+                                item_dict = asdict(item)
+                                
+                                # Optimize JSON serialization with set lookup
+                                json_fields = {'genres', 'studios', 'tags', 'artists'}
+                                for field in json_fields:
+                                    if field in item_dict and item_dict[field] is not None:
+                                        item_dict[field] = json.dumps(item_dict[field])
+                                
+                                if columns is None:
+                                    columns = list(item_dict.keys())
+                                
+                                items_to_insert.append(list(item_dict.values()))
+                                
+                            except Exception as e:
+                                self.logger.warning(f"Failed to prepare item {item.item_id}: {e}")
+                                failed += 1
+                        
+                        if items_to_insert and columns:
+                            # Build optimized batch INSERT with multiple VALUES
+                            placeholders_per_item = f"({','.join('?' * len(columns))})"
+                            all_placeholders = ','.join([placeholders_per_item] * len(items_to_insert))
+                            columns_str = ','.join(columns)
+                            
+                            # Flatten values list
+                            all_values = [val for item_values in items_to_insert for val in item_values]
+                            
+                            sql = f"INSERT OR REPLACE INTO media_items ({columns_str}) VALUES {all_placeholders}"
+                            
+                            await db.execute(sql, all_values)
+                            successful += len(items_to_insert)
+                            
                     except Exception as e:
-                        self.logger.warning(f"Failed to save item {item.item_id} in batch: {e}")
-                        failed += 1
+                        # Fall back to individual inserts for this chunk if batch fails
+                        self.logger.warning(f"Batch insert failed, using fallback: {e}")
+                        
+                        for item in chunk:
+                            try:
+                                item_dict = asdict(item)
+                                json_fields = {'genres', 'studios', 'tags', 'artists'}
+                                for field in json_fields:
+                                    if field in item_dict and item_dict[field] is not None:
+                                        item_dict[field] = json.dumps(item_dict[field])
+                                
+                                placeholders = ','.join('?' * len(item_dict))
+                                columns = ','.join(item_dict.keys())
+                                
+                                await db.execute(
+                                    f"INSERT OR REPLACE INTO media_items ({columns}) VALUES ({placeholders})",
+                                    list(item_dict.values())
+                                )
+                                successful += 1
+                                
+                            except Exception as e:
+                                self.logger.warning(f"Failed to save item {item.item_id}: {e}")
+                                failed += 1
 
                 # Commit the entire transaction
                 await db.commit()

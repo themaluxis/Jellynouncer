@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from typing import Optional, List
 
 
-@dataclass
+@dataclass(slots=True)
 class MediaItem:
     """
     Internal representation of a media item with comprehensive metadata.
