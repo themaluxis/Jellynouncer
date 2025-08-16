@@ -477,18 +477,18 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
                 if is_gradient_message:
                     # Special gradient formatting
                     formatted = (
-                        f"{self.TIMESTAMP_COLOR}[{timestamp}]{self.RESET} "
-                        f"{self.USER_COLOR}[{user}]{self.RESET} "
-                        f"{gradient_color}[{record.levelname}]{self.RESET} "
+                        f"{self.TIMESTAMP_COLOR}[{timestamp}]{self.RESET}"
+                        #f"{self.USER_COLOR}[{user}]{self.RESET}"
+                        f"{gradient_color}[{record.levelname}]{self.RESET}"
                         f"{self.COMPONENT_COLOR}[{record.name}]{self.RESET} "
                         f"{gradient_color}{message_text}{self.RESET}"
                     )
                 else:
                     # Regular colored format for Docker/TTY environments
                     formatted = (
-                        f"{self.TIMESTAMP_COLOR}[{timestamp}]{self.RESET} "
-                        f"{self.USER_COLOR}[{user}]{self.RESET} "
-                        f"{level_color}[{record.levelname}]{self.RESET} "
+                        f"{self.TIMESTAMP_COLOR}[{timestamp}]{self.RESET}"
+                        #f"{self.USER_COLOR}[{user}]{self.RESET}"
+                        f"{level_color}[{record.levelname}]{self.RESET}"
                         f"{self.COMPONENT_COLOR}[{record.name}]{self.RESET} "
                         f"{level_color}{message_text}{self.RESET}"
                     )
