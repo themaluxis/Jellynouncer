@@ -1571,37 +1571,195 @@ class DiscordNotifier:
         Validate all available templates for JSON syntax errors.
         
         This method renders each template with sample data and checks for JSON validity.
-        Useful for catching template errors during development.
+        Uses real movie data (Demon Slayer: Infinity Castle) with full metadata.
         
         Returns:
             Dict with validation results for each template
         """
         import os
         from media_models import MediaItem
+        from metadata_omdb import OMDbMetadata, OMDbRating
+        from metadata_tmdb import TMDbMetadata
         
         results = {}
         
-        # Create sample media item with all possible fields
-        sample_item = MediaItem(
-            item_id="test123",
-            name="Test Movie: The Testing",
-            item_type="Movie",
-            year=2024,
-            overview="This is a test movie with special characters: \"quotes\", 'apostrophes', \n newlines",
-            video_height=1080,
-            video_codec="h264",
-            audio_codec="aac",
-            file_size=1073741824,
-            runtime_ticks=72000000000,
-            genres=["Action", "Sci-Fi"],
-            imdb_id="tt1234567"
+        # Create sample OMDb metadata based on actual API response
+        sample_omdb = OMDbMetadata(
+            imdb_id="tt32820897",
+            type="movie",
+            title="Demon Slayer -Kimetsu no Yaiba- The Movie: Infinity Castle",
+            year="2025",
+            rated=None,
+            released="12 Sep 2025",
+            runtime="150 min",
+            genre="Animation, Action, Adventure",
+            director="Haruo Sotozaki, Hikaru Kondô",
+            writer="Koyoharu Gotouge, Hikaru Kondô",
+            actors="Natsuki Hanae, Saori Hayami, Akari Kitô",
+            plot="The Demon Slayer Corps are drawn into the Infinity Castle, where Tanjiro, Nezuko, and the Hashira face terrifying Upper Rank demons in a desperate fight as the final battle against Muzan Kibutsuji begins.",
+            language="Japanese",
+            country="Japan, United States",
+            poster="https://m.media-amazon.com/images/M/MV5BOGQ3YWUzYjEtMTJiYy00ZjQ0LWI0YjktYjhiNGVhNGExYTM3XkEyXkFqcGc@._V1_SX300.jpg",
+            metascore=None,
+            imdb_rating="9.0",
+            imdb_votes="5,044",
+            ratings=[
+                OMDbRating(source="Internet Movie Database", value="9.0/10", normalized_value=9.0)
+            ],
+            runtime_minutes=150,
+            genres_list=["Animation", "Action", "Adventure"],
+            actors_list=["Natsuki Hanae", "Saori Hayami", "Akari Kitô"],
+            languages_list=["Japanese"],
+            countries_list=["Japan", "United States"]
+        )
+        # Set up ratings_dict for OMDb
+        sample_omdb.ratings_dict = {
+            "imdb": sample_omdb.ratings[0] if sample_omdb.ratings else None
+        }
+        
+        # Create sample TMDb metadata based on actual API response
+        sample_tmdb = TMDbMetadata(
+            tmdb_id=1311031,
+            imdb_id="tt32820897",
+            media_type="movie",
+            title="Demon Slayer: Kimetsu no Yaiba Infinity Castle",
+            original_title="劇場版「鬼滅の刃」無限城編 第一章 猗窩座再来",
+            tagline="It's time to have some fun.",
+            overview="The Demon Slayer Corps are drawn into the Infinity Castle, where Tanjiro, Nezuko, and the Hashira face terrifying Upper Rank demons in a desperate fight as the final battle against Muzan Kibutsuji begins.",
+            status="Released",
+            release_date="2025-07-18",
+            vote_average=7.2,
+            vote_count=73,
+            popularity=309.9512,
+            runtime=155,
+            budget=68000000,
+            revenue=148000000,
+            original_language="ja",
+            genres_list=["Animation", "Action", "Fantasy", "Thriller"],
+            production_companies_list=["ufotable", "Aniplex", "Shueisha"],
+            production_countries_list=["Japan"],
+            spoken_languages_list=["Japanese"],
+            poster_path="/aFRDH3P7TX61FVGpaLhKr6QiOC1.jpg",
+            backdrop_path="/1RgPyOhN4DRs225BGTlHJqCudII.jpg",
+            poster_url="https://image.tmdb.org/t/p/w500/aFRDH3P7TX61FVGpaLhKr6QiOC1.jpg",
+            backdrop_url="https://image.tmdb.org/t/p/w1280/1RgPyOhN4DRs225BGTlHJqCudII.jpg"
         )
         
-        # Sample template variables
+        # Create Demon Slayer movie MediaItem with all fields from the webhook
+        sample_item = MediaItem(
+            item_id="fd94413771cbe2b735da55e82d613f26",
+            name="Demon Slayer: Infinity Castle",
+            item_type="Movie",
+            year=2025,
+            overview="Based on an action fantasy shounen manga by Gotouge Koyoharu.",
+            tagline="It's time to have some fun.",
+            runtime_ticks=77628390000,
+            runtime_formatted="02:09:22",
+            premiere_date="2025-07-18",
+            
+            # Video specs
+            video_height=1008,
+            video_width=1920,
+            video_codec="h264",
+            video_profile="High",
+            video_level="40",
+            video_range="SDR",
+            video_framerate=23.976025,
+            aspect_ratio="40:21",
+            video_interlaced=False,
+            video_bitrate=None,
+            video_bitdepth=None,
+            video_colorspace="bt709",
+            video_colortransfer="bt709",
+            video_colorprimaries="bt709",
+            video_pixelformat="yuv420p",
+            video_refframes=1,
+            video_title="1080p H264 SDR",
+            video_type="Video",
+            
+            # Audio specs
+            audio_codec="eac3",
+            audio_channels=6,
+            audio_language="eng",
+            audio_bitrate=768000,
+            audio_samplerate=48000,
+            audio_default=True,
+            audio_title="English - Dolby Digital Plus + Dolby Atmos - 5.1 - Default",
+            audio_type="Audio",
+            
+            # Subtitles (just first one for testing)
+            subtitle_title="English (forced) - Default - SUBRIP",
+            subtitle_type="Subtitle",
+            subtitle_language="eng",
+            subtitle_codec="subrip",
+            subtitle_default=True,
+            subtitle_forced=True,
+            subtitle_external=False,
+            
+            # External IDs
+            imdb_id="tt32820897",
+            tmdb_id="1311031",
+            tvdb_id="357928",
+            tvdb_slug="ju-chang-ban-gui-mie-noren-wu-xian-cheng-bian",
+            
+            # Server info
+            server_id="example_server_id_12345",
+            server_name="Example Jellyfin Server",
+            server_version="10.10.7",
+            server_url="http://jellyfin.example.com",
+            notification_type="ItemAdded",
+            
+            # File info
+            file_size=10737418240,  # 10GB for testing
+            library_name="Movies",
+            
+            # Timestamps
+            timestamp="2025-08-16T14:42:44.9384606-04:00",
+            utc_timestamp="2025-08-16T18:42:44.9384614Z",
+            timestamp_created=datetime.now(timezone.utc).isoformat(),
+            
+            # Lists
+            genres=["Anime", "Fantasy"],
+            studios=["ufotable", "Aniplex", "Shueisha"],
+            tags=[],
+            
+            # Image tags
+            primary_image_tag="ef43347430d568667404c5ee65376c6b",
+            logo_image_tag="a0bf9d1784cab4a4b125b543b3c7e77b",
+            thumb_image_tag="008b18a341d9a4483100823dbb50a2fc",
+            
+            # Content hash for change detection
+            content_hash="test_hash_12345"
+        )
+        
+        # Attach metadata to the item
+        sample_item.omdb = sample_omdb
+        sample_item.tmdb = sample_tmdb
+        sample_item.tvdb = None  # No TVDb data for this movie
+        sample_item.ratings = {
+            'imdb': {'value': '9.0/10', 'normalized': 9.0, 'source': 'Internet Movie Database'},
+            'imdb_score': '9.0',
+            'imdb_votes': '5,044',
+            'metascore': None,
+            'tmdb': {'value': '7.2/10', 'normalized': 7.2, 'count': 73}
+        }
+        
+        # Convert item to dict and manually add metadata (since it's not a dataclass field)
+        item_dict = asdict(sample_item)
+        
+        # Add metadata to dict (matching what happens in render_embed)
+        if sample_item.omdb:
+            item_dict['omdb'] = sample_omdb.to_dict() if hasattr(sample_omdb, 'to_dict') else asdict(sample_omdb)
+        if sample_item.tmdb:
+            item_dict['tmdb'] = sample_tmdb.to_dict() if hasattr(sample_tmdb, 'to_dict') else asdict(sample_tmdb)
+        if hasattr(sample_item, 'ratings'):
+            item_dict['ratings'] = sample_item.ratings
+        
+        # Sample template variables matching actual webhook processing
         sample_vars = {
-            "item": asdict(sample_item),
+            "item": item_dict,
             "action": "new_item",
-            "thumbnail_url": "https://example.com/thumb.jpg",
+            "thumbnail_url": "http://jellyfin.example.com/Items/fd944137-71cb-e2b7-35da-55e82d613f26/Images/Primary?quality=90&maxWidth=500&maxHeight=400&tag=ef43347430d568667404c5ee65376c6b",
             "changes": [],
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "server_url": "http://jellyfin.example.com",
@@ -1609,7 +1767,8 @@ class DiscordNotifier:
             "color": 65280,
             "image_quality": 90,
             "image_max_width": 500,
-            "image_max_height": 400
+            "image_max_height": 400,
+            "tvdb_attribution_needed": False
         }
         
         # Get all template files

@@ -344,6 +344,7 @@ Rate Limiter → Discord API → Retry Logic → Success/Failure Handling → Qu
 | `/queues` | GET | Show notification queue status |
 | `/flush-queues` | POST | Process all pending notifications |
 | `/test-webhook` | POST | Send test notification |
+| `/validate-templates` | GET | Validate all templates with sample data |
 
 ### Example API Usage
 
@@ -359,6 +360,9 @@ curl -X POST http://localhost:8080/sync
 
 # Test specific webhook
 curl -X POST "http://localhost:8080/test-webhook?webhook_name=movies"
+
+# Validate templates
+curl http://localhost:8080/validate-templates
 ```
 
 ## 🎨 Templates
