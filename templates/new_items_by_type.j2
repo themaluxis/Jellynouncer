@@ -239,8 +239,8 @@
 
             {%- if item_data.item.runtime_ticks -%}
               {%- set minutes = (item_data.item.runtime_ticks / 600000000) | int -%}
-              {%- set seconds = ((item_data.item.runtime_ticks / 10000000) | int) % 60 -%}
-              \n⏱️ {{ minutes }}:{{ '%02d'|format(seconds) }}
+              {%- set seconds = (((item_data.item.runtime_ticks / 10000000) | int) % 60) -%}
+              \n⏱️ {{ minutes }}:{{ "%02d" % seconds }}
             {%- endif -%}
 
             {%- if item_data.item.genres and item_data.item.genres|length > 0 -%}

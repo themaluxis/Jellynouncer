@@ -109,11 +109,11 @@
         {
           "name": "⏱️ Runtime",
           "value": {{ (
-            (((item.runtime_ticks / 600000000) | int / 60) | int | string) ~ "h " ~ (((item.runtime_ticks / 600000000) | int) % 60 | string) ~ "m"
+            (((item.runtime_ticks / 600000000) | int / 60) | int | string) ~ "h " ~ ((((item.runtime_ticks / 600000000) | int) % 60) | string) ~ "m"
             if item.runtime_ticks and ((item.runtime_ticks / 600000000) | int / 60) | int > 0
             else (((item.runtime_ticks / 600000000) | int) | string) ~ " min"
             if item.runtime_ticks
-            else ((item.omdb.runtime_minutes / 60) | int | string) ~ "h " ~ ((item.omdb.runtime_minutes % 60) | string) ~ "m"
+            else ((item.omdb.runtime_minutes / 60) | int | string) ~ "h " ~ (((item.omdb.runtime_minutes % 60)) | string) ~ "m"
             if item.omdb and item.omdb.runtime_minutes and (item.omdb.runtime_minutes / 60) | int > 0
             else (item.omdb.runtime_minutes | string) ~ " min"
             if item.omdb and item.omdb.runtime_minutes

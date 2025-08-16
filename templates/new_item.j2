@@ -187,11 +187,11 @@
           "value": {% if item.runtime_ticks -%}
               {%- set minutes = (item.runtime_ticks / 600000000) | int -%}
               {%- set hours = (minutes / 60) | int -%}
-              {%- set mins = minutes % 60 -%}
+              {%- set mins = (minutes % 60) -%}
               {{ (hours ~ "h " ~ mins ~ "m" if hours > 0 else mins ~ " min") | tojson }}
             {%- elif item.omdb and item.omdb.runtime_minutes -%}
               {%- set hours = (item.omdb.runtime_minutes / 60) | int -%}
-              {%- set mins = item.omdb.runtime_minutes % 60 -%}
+              {%- set mins = (item.omdb.runtime_minutes % 60) -%}
               {{ (hours ~ "h " ~ mins ~ "m" if hours > 0 else mins ~ " min") | tojson }}
             {%- else -%}
               "N/A"

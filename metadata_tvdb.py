@@ -623,11 +623,29 @@ class TVDB:
             TVDBSeriesMetadata object or None if not found
         """
         try:
+            self.logger.debug("=" * 60)
+            self.logger.debug(f"📺 TVDb API: Fetching series metadata for ID: {tvdb_id}")
+            self.logger.debug("=" * 60)
+            
             response = await self._make_request("GET", f"/series/{tvdb_id}")
             series_data = response.get("data", {})
+            
+            self.logger.debug("📦 Basic series response received:")
+            self.logger.debug(f"  Response keys: {list(response.keys())}")
+            self.logger.debug(f"  Data keys: {list(series_data.keys()) if series_data else 'No data'}")
+            
+            if series_data:
+                self.logger.debug(f"  Series name: {series_data.get('name', 'N/A')}")
+                self.logger.debug(f"  Series ID: {series_data.get('id', 'N/A')}")
+                self.logger.debug(f"  Overview: {(series_data.get('overview', 'N/A')[:100] + '...') if series_data.get('overview') and len(series_data.get('overview', '')) > 100 else series_data.get('overview', 'N/A')}")
+                self.logger.debug(f"  Status: {series_data.get('status', 'N/A')}")
+                self.logger.debug(f"  First aired: {series_data.get('firstAired', 'N/A')}")
 
             extended_response = await self._make_request("GET", f"/series/{tvdb_id}/extended")
             extended_data = extended_response.get("data", {})
+            
+            self.logger.debug("📦 Extended series response received:")
+            self.logger.debug(f"  Extended data keys: {list(extended_data.keys()) if extended_data else 'No data'}")
 
             series_data.update(extended_data)
 
@@ -667,6 +685,25 @@ class TVDB:
                     metadata.banner_url = f"{self.ARTWORK_BASE_URL}{artwork.image}"
                 elif artwork.type == 3:  # Fanart
                     metadata.fanart_url = f"{self.ARTWORK_BASE_URL}{artwork.image}"
+
+            # Log the final metadata object
+            self.logger.debug("=" * 60)
+            self.logger.debug("✅ TVDb METADATA OBJECT CREATED")
+            self.logger.debug("=" * 60)
+            self.logger.debug(f"  TVDb ID: {metadata.tvdb_id}")
+            self.logger.debug(f"  Name: {metadata.name}")
+            self.logger.debug(f"  Overview: {(metadata.overview[:100] + '...') if metadata.overview and len(metadata.overview) > 100 else metadata.overview}")
+            self.logger.debug(f"  Status: {metadata.status}")
+            self.logger.debug(f"  First Aired: {metadata.first_aired}")
+            self.logger.debug(f"  Rating: {metadata.rating}")
+            self.logger.debug(f"  Rating Count: {metadata.rating_count}")
+            self.logger.debug(f"  Average Runtime: {metadata.average_runtime}")
+            self.logger.debug(f"  Genres: {metadata.genres}")
+            self.logger.debug(f"  Poster URL: {metadata.poster_url}")
+            self.logger.debug(f"  Banner URL: {metadata.banner_url}")
+            self.logger.debug(f"  Fanart URL: {metadata.fanart_url}")
+            self.logger.debug(f"  Number of artworks: {len(metadata.artworks)}")
+            self.logger.debug("=" * 60)
 
             self.logger.info(f"Successfully fetched series metadata for TVDB ID: {tvdb_id}")
             return metadata
