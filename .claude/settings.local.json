@@ -12,7 +12,9 @@
       "Bash(for:*)",
       "Bash(done)",
       "Bash(git --no-pager diff discord_services.py)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "WebFetch(domain:docs.python.org)",
+      "WebFetch(domain:jinja.palletsprojects.com)"
     ],
     "deny": [],
     "ask": []

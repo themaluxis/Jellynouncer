@@ -25,7 +25,7 @@ import logging
 import time
 from datetime import datetime, timezone
 from dataclasses import asdict
-from typing import Dict, Any, Optional, List, Union, Tuple, TypedDict
+from typing import Dict, Any, Optional, List
 
 import aiosqlite
 
@@ -685,7 +685,6 @@ class DatabaseManager:
                     
                     try:
                         # Prepare all items in chunk
-                        all_values = []
                         columns = None
                         items_to_insert = []
                         

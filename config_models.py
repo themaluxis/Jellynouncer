@@ -587,6 +587,8 @@ class NotificationsConfig(BaseModel):
 
     watch_changes: Dict[str, bool] = Field(default_factory=dict)
     colors: Dict[str, int] = Field(default_factory=dict)
+    filter_renames: bool = Field(default=True, description="Filter out notifications for file renames (same content, different path)")
+    filter_deletes: bool = Field(default=True, description="Filter out delete notifications for upgrades (delete followed by add of same item)")
 
 
 # ==================== SERVER CONFIGURATION ====================
@@ -1194,6 +1196,9 @@ class ConfigurationValidator:
             'TVDB_API_KEY': ['metadata_services', 'tvdb', 'api_key'],
             'TVDB_SUBSCRIBER_PIN': ['metadata_services', 'tvdb', 'subscriber_pin'],
             'TVDB_CACHE_TTL_HOURS': ['metadata_services', 'tvdb', 'cache_ttl_hours'],
+            # New notification filter options
+            'FILTER_RENAMES': ['notifications', 'filter_renames'],
+            'FILTER_DELETES': ['notifications', 'filter_deletes'],
         }
 
         for env_var, path in env_mappings.items():
@@ -1213,8 +1218,8 @@ class ConfigurationValidator:
                     except ValueError:
                         self.logger.warning(f"Invalid PORT value '{value}', skipping override")
                         continue
-                elif env_var == 'DATABASE_WAL_MODE':
-                    # Convert string to boolean for WAL mode
+                elif env_var in ('DATABASE_WAL_MODE', 'FILTER_RENAMES', 'FILTER_DELETES'):
+                    # Convert string to boolean
                     value = value.lower() in ('true', '1', 'yes', 'on')
 
                 # Set the value

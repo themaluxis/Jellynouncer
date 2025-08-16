@@ -163,6 +163,11 @@ class WebhookService:
         # Record service startup time for uptime tracking
         self._start_time: float = time.time()
         self._last_sync_time: float = 0.0  # Initialize sync time
+        
+        # Deletion tracking for filtering upgrades/renames
+        self.pending_deletions = {}  # Track recent deletions to filter upgrades
+        self.deletion_timeout = 30  # Wait 30 seconds before processing deletions
+        self.deletion_cleanup_task = None  # Background task for cleaning old deletions
 
         self.logger.info("WebhookService created - ready for initialization")
 
@@ -429,8 +434,24 @@ class WebhookService:
         start_time = time.time()
 
         try:
-            self.logger.debug(f"Processing webhook for {payload.Name} ({payload.ItemType})")
-
+            self.logger.debug(f"Processing webhook for {payload.Name} ({payload.ItemType}) - Event: {payload.NotificationType}")
+            
+            # Handle ItemDeleted notifications
+            if payload.NotificationType == "ItemDeleted":
+                return await self._handle_item_deleted(payload)
+            
+            # Handle ItemAdded notifications with rename/upgrade filtering
+            if payload.NotificationType == "ItemAdded":
+                # Check if this might be a rename or upgrade
+                deletion_info = await self._check_pending_deletion(payload.Name, payload.ItemType)
+                if deletion_info:
+                    # This might be an upgrade or rename
+                    return await self._handle_potential_upgrade(payload, deletion_info)
+                else:
+                    # Normal add without prior deletion
+                    return await self._process_item_added(payload)
+            
+            # For other notification types, continue with original logic
             # Get detailed item information from Jellyfin
             item_data = await self.jellyfin.get_item(payload.ItemId)
             if not item_data:
@@ -1568,3 +1589,276 @@ class WebhookService:
 
         except Exception as e:
             self.logger.error(f"Error during service cleanup: {e}")
+    
+    async def _handle_item_deleted(self, payload: WebhookPayload) -> Dict[str, Any]:
+        """
+        Handle ItemDeleted notifications with filtering for upgrades.
+        
+        When an item is deleted, we don't immediately send a notification.
+        Instead, we queue it and wait to see if an ItemAdded comes shortly after
+        (indicating an upgrade or rename).
+        
+        Args:
+            payload: The deletion webhook payload
+            
+        Returns:
+            Processing result dictionary
+        """
+        start_time = time.time()
+        
+        # Check if deletion filtering is enabled
+        if self.config.notifications.filter_deletes:
+            # Store deletion info with timestamp
+            deletion_key = f"{payload.Name}_{payload.ItemType}"
+            self.pending_deletions[deletion_key] = {
+                'payload': payload,
+                'timestamp': time.time(),
+                'item_id': payload.ItemId,
+                'file_path': getattr(payload, 'Path', None)
+            }
+            
+            self.logger.info(f"Queued deletion for {payload.Name} - waiting for potential upgrade")
+            
+            # Start cleanup task if not running
+            if not self.deletion_cleanup_task or self.deletion_cleanup_task.done():
+                self.deletion_cleanup_task = asyncio.create_task(self._cleanup_old_deletions())
+            
+            return {
+                "status": "queued",
+                "action": "deletion_queued",
+                "item_id": payload.ItemId,
+                "item_name": payload.Name,
+                "message": "Deletion queued for upgrade detection",
+                "processing_time": round(time.time() - start_time, 3)
+            }
+        else:
+            # Send deletion notification immediately if filtering is disabled
+            return await self._send_deletion_notification(payload)
+    
+    async def _check_pending_deletion(self, item_name: str, item_type: str) -> Optional[Dict]:
+        """
+        Check if there's a pending deletion for this item.
+        
+        Args:
+            item_name: Name of the item being added
+            item_type: Type of the item
+            
+        Returns:
+            Deletion info if found, None otherwise
+        """
+        deletion_key = f"{item_name}_{item_type}"
+        return self.pending_deletions.get(deletion_key)
+    
+    async def _handle_potential_upgrade(self, add_payload: WebhookPayload, deletion_info: Dict) -> Dict[str, Any]:
+        """
+        Handle a potential upgrade or rename scenario.
+        
+        Args:
+            add_payload: The ItemAdded webhook payload
+            deletion_info: Information about the previous deletion
+            
+        Returns:
+            Processing result dictionary
+        """
+        start_time = time.time()
+        deletion_key = f"{add_payload.Name}_{add_payload.ItemType}"
+        
+        # Remove from pending deletions
+        del self.pending_deletions[deletion_key]
+        
+        # Get item details to check if it's a rename or upgrade
+        item_data = await self.jellyfin.get_item(add_payload.ItemId)
+        if not item_data:
+            # Can't determine, treat as normal add
+            return await self._process_item_added(add_payload)
+        
+        # Convert to MediaItem for comparison
+        new_item = await self.jellyfin.convert_to_media_item(item_data)
+        
+        # Check if this is just a rename (same properties, different path)
+        is_rename = False
+        if self.config.notifications.filter_renames and deletion_info.get('file_path'):
+            # Get the existing item from database
+            existing_item = await self.db.get_item(deletion_info['item_id'])
+            if existing_item:
+                # Check if only the path changed
+                changes = await self.change_detector.detect_changes(existing_item, new_item)
+                if not changes or (len(changes) == 1 and changes[0].field == 'file_path'):
+                    is_rename = True
+                    self.logger.info(f"Detected rename for {add_payload.Name} - filtering notification")
+        
+        if is_rename:
+            # Just update the database, don't send notification
+            await self.db.save_item(new_item)
+            return {
+                "status": "filtered",
+                "action": "rename_filtered",
+                "item_id": add_payload.ItemId,
+                "item_name": add_payload.Name,
+                "message": "Rename detected and filtered",
+                "processing_time": round(time.time() - start_time, 3)
+            }
+        else:
+            # This is an upgrade - process normally but skip the deletion notification
+            self.logger.info(f"Detected upgrade for {add_payload.Name} - processing as upgrade")
+            return await self._process_item_added(add_payload)
+    
+    async def _process_item_added(self, payload: WebhookPayload) -> Dict[str, Any]:
+        """
+        Process a normal ItemAdded notification.
+        
+        This is a helper method that contains the original ItemAdded logic.
+        
+        Args:
+            payload: The webhook payload
+            
+        Returns:
+            Processing result dictionary
+        """
+        # This will contain the rest of the original process_webhook logic
+        # Moving it here for clarity
+        start_time = time.time()
+        
+        # Get detailed item information from Jellyfin
+        item_data = await self.jellyfin.get_item(payload.ItemId)
+        if not item_data:
+            return {
+                "status": "error",
+                "action": "fetch_failed",
+                "item_id": payload.ItemId,
+                "item_name": payload.Name,
+                "message": "Could not fetch item data from Jellyfin"
+            }
+        
+        # Continue with the rest of the original logic...
+        # (This would be moved from the main process_webhook method)
+        media_item = await self.jellyfin.convert_to_media_item(item_data)
+        media_item.server_id = payload.ServerId
+        media_item.server_name = payload.ServerName
+        media_item.server_version = payload.ServerVersion
+        media_item.server_url = payload.ServerUrl
+        
+        existing_item = await self.db.get_item(media_item.item_id)
+        
+        if existing_item:
+            changes = await self.change_detector.detect_changes(existing_item, media_item)
+            if changes:
+                await self.db.save_item(media_item)
+                enriched_item = await self.jellyfin.enrich_media_item_for_notification(
+                    media_item, item_data, retry_on_failure=True
+                )
+                await self.discord.send_notification(enriched_item, "upgraded_item", changes)
+                return {
+                    "status": "success",
+                    "action": "upgraded_item",
+                    "item_id": media_item.item_id,
+                    "item_name": media_item.name,
+                    "changes": len(changes),
+                    "processing_time": round(time.time() - start_time, 3)
+                }
+            else:
+                await self.db.save_item(media_item)
+                return {
+                    "status": "success",
+                    "action": "metadata_updated",
+                    "item_id": media_item.item_id,
+                    "item_name": media_item.name,
+                    "processing_time": round(time.time() - start_time, 3)
+                }
+        else:
+            await self.db.save_item(media_item)
+            if self.metadata_service and self.metadata_service.enabled:
+                try:
+                    media_item = await self.metadata_service.enrich_media_item(media_item)
+                except Exception as e:
+                    self.logger.error(f"Error enriching item with metadata: {e}")
+            
+            await self.discord.send_notification(media_item, "new_item")
+            return {
+                "status": "success",
+                "action": "new_item",
+                "item_id": media_item.item_id,
+                "item_name": media_item.name,
+                "processing_time": round(time.time() - start_time, 3)
+            }
+    
+    async def _send_deletion_notification(self, payload: WebhookPayload) -> Dict[str, Any]:
+        """
+        Send a deletion notification to Discord.
+        
+        Args:
+            payload: The deletion webhook payload
+            
+        Returns:
+            Processing result dictionary
+        """
+        start_time = time.time()
+        
+        try:
+            # Create a minimal MediaItem for the deletion notification
+            from media_models import MediaItem
+            
+            deleted_item = MediaItem(
+                item_id=payload.ItemId,
+                name=payload.Name,
+                item_type=payload.ItemType,
+                server_id=payload.ServerId,
+                server_name=payload.ServerName,
+                server_version=payload.ServerVersion,
+                server_url=payload.ServerUrl,
+                file_path=getattr(payload, 'Path', None),
+                content_hash="",  # Required field
+                timestamp_created=str(int(time.time()))
+            )
+            
+            # Send deletion notification
+            await self.discord.send_notification(deleted_item, "deleted_item")
+            
+            self.logger.info(f"Sent deletion notification for {payload.Name}")
+            
+            return {
+                "status": "success",
+                "action": "item_deleted",
+                "item_id": payload.ItemId,
+                "item_name": payload.Name,
+                "processing_time": round(time.time() - start_time, 3)
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to send deletion notification: {e}")
+            return {
+                "status": "error",
+                "action": "deletion_failed",
+                "item_id": payload.ItemId,
+                "item_name": payload.Name,
+                "error": str(e),
+                "processing_time": round(time.time() - start_time, 3)
+            }
+    
+    async def _cleanup_old_deletions(self):
+        """
+        Background task to clean up old pending deletions.
+        
+        This runs periodically to process deletions that weren't followed
+        by an add (true deletions, not upgrades).
+        """
+        while not self.shutdown_event.is_set():
+            try:
+                await asyncio.sleep(10)  # Check every 10 seconds
+                
+                current_time = time.time()
+                expired_deletions = []
+                
+                # Find expired deletions
+                for key, info in self.pending_deletions.items():
+                    if current_time - info['timestamp'] > self.deletion_timeout:
+                        expired_deletions.append(key)
+                
+                # Process expired deletions
+                for key in expired_deletions:
+                    info = self.pending_deletions.pop(key)
+                    self.logger.info(f"Processing expired deletion for {info['payload'].Name}")
+                    await self._send_deletion_notification(info['payload'])
+                    
+            except Exception as e:
+                self.logger.error(f"Error in deletion cleanup task: {e}")
+                await asyncio.sleep(30)  # Wait longer on error

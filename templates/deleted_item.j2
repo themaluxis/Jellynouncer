@@ -1,0 +1,171 @@
+{#
+  Deleted Item Jinja2 Discord Webhook Template for Jellynouncer
+  ==============================================================
+
+  This template generates Discord embed messages for deleted media items.
+  It provides clean, informative notifications when content is removed from Jellyfin.
+
+  Discord Limits Respected:
+  ------------------------
+  - Max 256 chars for title
+  - Max 4096 chars for description
+  - Max 25 fields (we use ~5-10)
+  - Max 1024 chars per field value
+  - Max 6000 chars total per embed
+#}
+{
+  "embeds": [
+    {
+      {#
+        Dynamic Title Based on Item Type
+        ---------------------------------
+        Shows appropriate emoji and type label for deleted content
+      #}
+      "title": {% if item.item_type == 'Episode' -%}
+        {{ ("🗑️📺 " ~ (item.name | default('Unknown Episode') | truncate(200, True, '...'))) | tojson }}
+      {%- elif item.item_type == 'Series' -%}
+        {{ ("🗑️📺 " ~ (item.name | default('Unknown Series') | truncate(200, True, '...'))) | tojson }}
+      {%- elif item.item_type == 'Movie' -%}
+        {{ ("🗑️🎬 " ~ (item.name | default('Unknown Movie') | truncate(200, True, '...'))) | tojson }}
+      {%- elif item.item_type == 'Season' -%}
+        {{ ("🗑️📺 " ~ (item.series_name | default('Unknown Series')) ~ " - Season " ~ (item.season_number | default('?'))) | tojson }}
+      {%- elif item.item_type == 'Audio' -%}
+        {{ ("🗑️🎵 " ~ (item.name | default('Unknown Song') | truncate(200, True, '...'))) | tojson }}
+      {%- elif item.item_type == 'MusicAlbum' -%}
+        {{ ("🗑️💿 " ~ (item.name | default('Unknown Album') | truncate(200, True, '...'))) | tojson }}
+      {%- elif item.item_type == 'MusicArtist' -%}
+        {{ ("🗑️🎤 " ~ (item.name | default('Unknown Artist') | truncate(200, True, '...'))) | tojson }}
+      {%- elif item.item_type == 'Photo' -%}
+        {{ ("🗑️📷 " ~ (item.name | default('Deleted Photo') | truncate(200, True, '...'))) | tojson }}
+      {%- else -%}
+        {{ ("🗑️📁 " ~ (item.name | default('Unknown ' ~ item.item_type) | truncate(200, True, '...'))) | tojson }}
+      {%- endif %},
+
+      {#
+        Simple Description for Deleted Items
+        -------------------------------------
+        Keep it concise since the content is being removed
+      #}
+      "description": {% if item.item_type == 'Episode' -%}
+        {{ ("**" ~ (item.series_name | default('Unknown Series')) ~ "**\n" ~
+        "S" ~ "%02d"|format(item.season_number | default(0)) ~ "E" ~ "%02d"|format(item.episode_number | default(0)) ~ "\n" ~
+        (item.name | default('Unknown Episode')) ~ "\n\n" ~
+        "This item has been removed from the library.") | tojson }}
+      {%- elif item.item_type in ['Series', 'Season'] -%}
+        {{ ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
+        (" (" ~ item.year ~ ")" if item.year else "") ~ "\n\n" ~
+        "This item has been removed from the library.") | tojson }}
+      {%- elif item.item_type == 'Movie' -%}
+        {{ ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
+        (" (" ~ item.year ~ ")" if item.year else "") ~ "\n\n" ~
+        "This movie has been removed from the library.") | tojson }}
+      {%- elif item.item_type == 'Audio' -%}
+        {{ ("**" ~ (item.name | default('Unknown Song')) ~ "**" ~
+        (" by " ~ (item.artists | join(', ')) if item.artists is defined and item.artists and item.artists | length > 0 else
+         " by " ~ item.album_artist if item.album_artist is defined and item.album_artist else
+         "") ~
+        (" from **" ~ item.album ~ "**" if item.album is defined and item.album else
+         "") ~ "\n\n" ~
+        "This track has been removed from the library.") | tojson }}
+      {%- elif item.item_type == 'MusicAlbum' -%}
+        {{ ("**" ~ (item.name | default('Unknown Album')) ~ "**" ~
+        (" by " ~ item.album_artist if item.album_artist is defined and item.album_artist else
+         " by " ~ (item.artists | join(', ')) if item.artists is defined and item.artists and item.artists | length > 0 else
+         "") ~ "\n\n" ~
+        "This album has been removed from the library.") | tojson }}
+      {%- else -%}
+        {{ ("**" ~ (item.name | default('Unknown Title')) ~ "**\n\n" ~
+        "This item has been removed from the library.") | tojson }}
+      {%- endif %},
+
+      "color": {{ color }},
+
+      {#
+        Minimal Fields for Deleted Items
+        ---------------------------------
+        Only show essential information since the item is gone
+      #}
+      {% set field_count = namespace(value=0) %}
+      "fields": [
+        {# Item Type Field #}
+        {% if item.item_type and field_count.value < 25 -%}
+          {% if field_count.value > 0 %},{% endif %}
+          {% set field_count.value = field_count.value + 1 %}
+          {
+            "name": "📁 Type",
+            "value": {{ item.item_type | tojson }},
+            "inline": true
+          }
+        {%- endif %}
+
+        {# Year Field for Movies/Series #}
+        {% if item.year and item.item_type in ['Movie', 'Series'] and field_count.value < 25 -%}
+          {% if field_count.value > 0 %},{% endif %}
+          {% set field_count.value = field_count.value + 1 %}
+          ,{
+            "name": "📅 Year",
+            "value": {{ item.year | tojson }},
+            "inline": true
+          }
+        {%- endif %}
+
+        {# Genre Field #}
+        {% if item.genres and item.genres | length > 0 and field_count.value < 25 -%}
+          {% if field_count.value > 0 %},{% endif %}
+          {% set field_count.value = field_count.value + 1 %}
+          ,{
+            "name": "🎭 Genre",
+            "value": {{ (item.genres[:3] | join(', ')) | truncate(100, True, '...') | tojson }},
+            "inline": true
+          }
+        {%- endif %}
+
+        {# File Path if available #}
+        {% if item.file_path and field_count.value < 25 -%}
+          {% if field_count.value > 0 %},{% endif %}
+          {% set field_count.value = field_count.value + 1 %}
+          ,{
+            "name": "📂 Path",
+            "value": {{ item.file_path | truncate(100, True, '...') | tojson }},
+            "inline": false
+          }
+        {%- endif %}
+
+        {# Deletion Timestamp #}
+        {% if field_count.value < 25 -%}
+          {% if field_count.value > 0 %},{% endif %}
+          {% set field_count.value = field_count.value + 1 %}
+          ,{
+            "name": "🕐 Removed",
+            "value": "<t:{{ item.date_created | default(item.timestamp_created) | int }}:R>",
+            "inline": true
+          }
+        {%- endif %}
+      ],
+
+      {#
+        Footer Information
+        ------------------
+        Show server information and timestamp
+      #}
+      "footer": {
+        "text": {{ (item.server_name | default('Jellyfin Server')) | tojson }}
+        {% if item.server_version -%}
+          ,
+          "icon_url": "https://raw.githubusercontent.com/jellyfin/jellyfin-ux/master/branding/SVG/icon-transparent.svg"
+        {%- endif %}
+      },
+
+      {#
+        Timestamp
+        ---------
+        Use current timestamp for deletion event
+      #}
+      "timestamp": {{ item.timestamp | tojson }}
+
+      {#
+        No thumbnail for deleted items since content is gone
+      #}
+    }
+  ]
+}

@@ -32,6 +32,8 @@ The service acts as a smart filter between Jellyfin's webhook events and Discord
 - **Technical Detection**: Identifies resolution improvements, codec upgrades (H.264 → H.265), audio enhancements (Stereo → 7.1), and HDR additions
 - **Content Hashing**: Uses fingerprinting to prevent duplicate notifications while catching meaningful changes
 - **Customizable Triggers**: Configure which changes warrant notifications
+- **Rename Filtering**: Automatically detects and filters out file renames (same content, different path)
+- **Upgrade Detection**: Intelligently handles file upgrades by filtering deletion notifications when followed by additions
 
 ### 🚀 Multi-Channel Discord Routing
 - **Content-Type Routing**: Automatically routes movies, TV shows, and music to different Discord channels
@@ -135,6 +137,7 @@ docker-compose up -d
    - Go to Jellyfin Dashboard → Plugins → Webhook
    - Add new webhook with URL: `http://your-server:8080/webhook`
    - Enable "Item Added" event
+   - Enable "Item Deleted" event (optional, for deletion notifications)
    - Check "Send All Properties"
    - Save configuration
 
@@ -161,6 +164,7 @@ docker run -d \
    - Go to Jellyfin Dashboard → Plugins → Webhook
    - Add new webhook with URL: `http://your-server:8080/webhook`
    - Enable "Item Added" event
+   - Enable "Item Deleted" event (optional, for deletion notifications)
    - Check "Send All Properties"
    - Save configuration
 
@@ -216,12 +220,57 @@ Create `config/config.json` for advanced settings:
       "codec": true,
       "audio_codec": true,
       "hdr_status": true
-    }
+    },
+    "filter_renames": true,
+    "filter_deletes": true
   }
 }
 ```
 
 **📚 [Complete Configuration Guide →](config/Readme.md)**
+
+### 🎯 Smart Filtering Features
+
+#### Deletion Notifications & Filtering
+
+Jellynouncer now supports **ItemDeleted** webhooks from Jellyfin, with intelligent filtering to prevent spam:
+
+##### **Filter Renames** (`filter_renames`)
+When enabled (default: `true`), Jellynouncer intelligently detects file renames and filters out unnecessary notifications:
+- Detects when a file is deleted and immediately re-added with the same content
+- Compares media properties to identify renames vs actual changes
+- Prevents "deleted" + "added" notification spam for simple file moves
+
+##### **Filter Deletes** (`filter_deletes`)
+When enabled (default: `true`), Jellynouncer intelligently handles upgrade scenarios:
+- Delays deletion notifications by 30 seconds to detect upgrades
+- When Jellyfin upgrades a file (e.g., 1080p → 4K), it sends delete + add events
+- Jellynouncer detects this pattern and only sends the upgrade notification
+- True deletions (not followed by additions) are still notified after the delay
+
+#### Configuration Options
+
+**Environment Variables:**
+```bash
+FILTER_RENAMES=true    # Filter out rename notifications
+FILTER_DELETES=true    # Filter deletion notifications for upgrades
+```
+
+**config.json:**
+```json
+{
+  "notifications": {
+    "filter_renames": true,
+    "filter_deletes": true
+  }
+}
+```
+
+#### Template Support
+
+New deletion templates are available:
+- `deleted_item.j2` - Standard deletion notification template
+- Custom templates can be created following the same structure
 
 ## 🔄 How It Works
 
