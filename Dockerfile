@@ -11,36 +11,35 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
+# Copy ONLY requirements.txt first
 COPY requirements.txt .
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy all Python application files except backup files
-COPY *.py .
-# Remove any backup files that might have been copied
-RUN rm -f *.bak 2>/dev/null || true
-
-# Copy entrypoint script
-COPY docker-entrypoint.sh /usr/local/bin/
-
-# Create defaults directory structure
-RUN mkdir -p /app/defaults/templates /app/defaults/config
-
-# Copy default files to the correct locations
-COPY templates/ /app/defaults/templates/
-COPY config/config.json /app/defaults/config.json
-
-# Create required directories
-RUN mkdir -p /app/data /app/logs /app/config /app/templates && \
-    chmod 755 /app/data /app/logs /app/config /app/templates && \
-    chmod +x /usr/local/bin/docker-entrypoint.sh
+# Create directory structure
+RUN mkdir -p /app/defaults/templates /app/defaults/config \
+    /app/data /app/logs /app/config /app/templates && \
+    chmod 755 /app/data /app/logs /app/config /app/templates
 
 # Set default environment variables
 ENV HOST=0.0.0.0
 ENV PORT=8080
-# Enable color support in terminal for colored logs
 ENV TERM=xterm-256color
 ENV PYTHONUNBUFFERED=1
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Copy default configuration (templates and config)
+COPY templates/ /app/defaults/templates/
+COPY config/config.json /app/defaults/config.json
+
+# Copy Python application files LAST
+COPY *.py ./
+# Remove any backup files that might have been copied
+RUN rm -f *.bak 2>/dev/null || true
 
 # Expose port (configurable via build arg or environment)
 ARG PORT=8080
