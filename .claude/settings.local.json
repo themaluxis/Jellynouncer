@@ -11,7 +11,8 @@
       "Bash(powershell:*)",
       "Bash(for:*)",
       "Bash(done)",
-      "Bash(git --no-pager diff discord_services.py)"
+      "Bash(git --no-pager diff discord_services.py)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []

@@ -24,7 +24,7 @@ import time
 import ssl
 from datetime import datetime, timezone
 import logging
-from typing import Dict, Any, Optional, List, Callable, Union
+from typing import Dict, Any, Optional, List, Callable, Union, Tuple, AsyncGenerator
 
 from jellyfin_apiclient_python import JellyfinClient
 
@@ -591,6 +591,146 @@ class JellyfinAPI:
             self.logger.error(f"Failed to retrieve library items: {e}")
             return []
 
+    async def get_items_stream(
+        self,
+        batch_size: int = 100
+    ) -> AsyncGenerator[Tuple[List[Dict[str, Any]], int], None]:
+        """
+        Stream library items in batches as an async generator.
+        
+        This method yields batches of items as they're fetched from the Jellyfin API,
+        enabling true streaming processing without accumulating all items in memory.
+        Each yield provides a tuple of (batch_items, total_count) to track progress.
+        
+        **Streaming Architecture:**
+        - Yields batches immediately after fetching from API
+        - No accumulation of items in memory
+        - Enables concurrent processing while fetching continues
+        - Provides backpressure control through async iteration
+        
+        **Memory Efficiency:**
+        - Only one batch in memory at a time within the generator
+        - Garbage collection happens naturally after each yield
+        - Suitable for libraries with millions of items
+        
+        **Error Handling:**
+        - Yields successfully fetched batches even if later batches fail
+        - Logs errors but continues attempting to fetch remaining batches
+        - Consumer can decide how to handle partial results
+        
+        Args:
+            batch_size (int): Number of items to fetch per API call (default: 100)
+            
+        Yields:
+            Tuple[List[Dict[str, Any]], int]: Tuple of (batch_items, total_record_count)
+                where batch_items is the current batch and total_record_count is the
+                total number of items in the library for progress tracking
+                
+        Example:
+            ```python
+            # Stream and process batches as they arrive
+            async for batch, total_count in jellyfin_api.get_items_stream(batch_size=50):
+                logger.info(f"Processing batch of {len(batch)} items (total: {total_count})")
+                
+                # Process batch immediately without waiting for all items
+                for item in batch:
+                    await process_item(item)
+                    
+                # Calculate progress
+                items_processed += len(batch)
+                progress = (items_processed / total_count) * 100
+                logger.info(f"Progress: {progress:.1f}%")
+            ```
+            
+        Note:
+            This generator maintains connection to Jellyfin throughout iteration.
+            Ensure proper exception handling in the consumer to avoid connection leaks.
+        """
+        if not await self.is_connected():
+            self.logger.error("Cannot stream items: not connected to Jellyfin")
+            return
+            
+        try:
+            start_index = 0
+            total_record_count = None
+            
+            self.logger.info(f"Starting library streaming with batch size {batch_size}")
+            
+            while True:
+                try:
+                    # Request batch of items with webhook-specific fields
+                    webhook_fields = ",".join([
+                        # Core item metadata
+                        "Overview", "ProductionYear", "RunTimeTicks", "OfficialRating",
+                        "Tagline", "PremiereDate", "DateCreated", "DateModified",
+                        # Media stream information
+                        "MediaStreams", "MediaSources",
+                        # Provider IDs
+                        "ProviderIds",
+                        # File system information
+                        "Path",
+                        # TV Series hierarchy
+                        "IndexNumber", "ParentIndexNumber", "SeriesName", "SeriesId",
+                        "SeasonId", "ParentId", "AirTime",
+                        # Content metadata
+                        "Genres", "Studios", "Tags",
+                        # Music-specific fields
+                        "Album", "Artists", "AlbumArtist", "ArtistItems",
+                        # Photo/image specific fields
+                        "Width", "Height",
+                        # Additional fields
+                        "AspectRatio", "CommunityRating"
+                    ])
+                    
+                    response = self.client.jellyfin.user_items(
+                        params={
+                            'StartIndex': start_index,
+                            'Limit': batch_size,
+                            'Recursive': True,
+                            'Fields': webhook_fields,
+                            'IncludeItemTypes': 'Movie,Series,Season,Episode,Audio,MusicAlbum,Book,Photo',
+                            'EnableTotalRecordCount': True
+                        }
+                    )
+                    
+                    batch_items = response.get('Items', [])
+                    total_record_count = response.get('TotalRecordCount', 0)
+                    
+                    if not batch_items:
+                        self.logger.debug("No more items to retrieve")
+                        break
+                        
+                    # Yield the batch immediately for streaming processing
+                    yield (batch_items, total_record_count)
+                    
+                    self.logger.debug(
+                        f"Streamed batch at index {start_index}: {len(batch_items)} items "
+                        f"(total: {total_record_count})"
+                    )
+                    
+                    # Check if we've retrieved all items
+                    if start_index + len(batch_items) >= total_record_count:
+                        break
+                        
+                    start_index += batch_size
+                    
+                    # Brief pause to avoid overwhelming the server
+                    await asyncio.sleep(0.1)
+                    
+                except Exception as e:
+                    self.logger.error(f"Error retrieving batch at index {start_index}: {e}")
+                    # Continue trying to fetch remaining batches
+                    start_index += batch_size
+                    if total_record_count and start_index >= total_record_count:
+                        break
+                    await asyncio.sleep(1)  # Wait longer after an error
+                    
+            self.logger.info("Library streaming completed")
+            
+        except Exception as e:
+            self.logger.error(f"Failed during library streaming: {e}")
+            # Generator will naturally terminate on exception
+            
     async def convert_to_media_item(self, item_data: Dict[str, Any]) -> MediaItem:
         """
         Convert Jellyfin API response to internal MediaItem format.

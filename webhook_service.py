@@ -999,17 +999,23 @@ class WebhookService:
 
     async def sync_jellyfin_library(self, background: bool = False) -> Dict[str, Any]:
         """
-        Synchronize entire Jellyfin library to local database.
+        Synchronize entire Jellyfin library to local database using streaming batch processing.
 
-        This method performs a complete sync of the Jellyfin library, processing
-        all items in configurable batches for optimal efficiency. It now uses the
-        configured batch size and batch database operations for maximum performance.
+        This method performs a complete sync of the Jellyfin library using a producer-consumer
+        pattern that streams batches from the API while concurrently processing them to the
+        database. This provides optimal memory usage and performance for large libraries.
 
-        **Enhanced Batch Processing:**
-            - Uses config.sync.sync_batch_size for both API retrieval and database operations
-            - Batch database saves using save_items_batch() for significant performance improvement
-            - Individual item error handling within batches maintains data integrity
-            - Configurable batch sizes up to 1000 items for high-performance scenarios
+        **Streaming Architecture:**
+            - Producer task: Fetches batches from Jellyfin API and queues them
+            - Consumer task: Processes queued batches and saves to database
+            - Concurrent execution with configurable queue size for backpressure
+            - Memory-efficient: Only a few batches in memory at once
+
+        **Enhanced Performance:**
+            - Overlapping network I/O (API fetch) with database I/O (batch save)
+            - True streaming: No accumulation of all items in memory
+            - Real-time progress logging shows fetch and save operations
+            - Partial progress saved even if sync fails midway
 
         **Background vs Foreground Sync:**
             - Background: Doesn't block webhook processing (for periodic syncs)
@@ -1035,8 +1041,8 @@ class WebhookService:
             ```
 
         Note:
-            Large libraries now process much faster due to batch operations.
-            Progress is logged periodically to provide feedback during operations.
+            This streaming implementation is suitable for libraries with millions of items,
+            providing consistent memory usage regardless of library size.
         """
         # Initialize timing variable
         sync_start_time = time.time()
@@ -1077,119 +1083,210 @@ class WebhookService:
 
             # Get configured batch size from sync configuration
             api_batch_size = self.config.sync.sync_batch_size
-            self.logger.info(f"Using configured batch size: {api_batch_size}")
+            self.logger.info(f"Starting streaming sync with batch size: {api_batch_size}")
 
-            # Retrieve all items from Jellyfin API using configured batch size
-            self.logger.info("Retrieving all items from Jellyfin...")
-            all_items = await self.jellyfin.get_all_items(batch_size=api_batch_size)
-
-            if not all_items:
-                self.logger.warning("No items retrieved from Jellyfin library")
+            # Create async queue for producer-consumer pattern
+            # Queue size of 3 provides good balance between memory usage and throughput
+            batch_queue = asyncio.Queue(maxsize=3)
+            
+            # Shared state for tracking progress (thread-safe via asyncio)
+            sync_state = {
+                'total_items': 0,
+                'items_fetched': 0,
+                'items_processed': 0,
+                'batch_errors': 0,
+                'total_individual_errors': 0,
+                'producer_done': False,
+                'consumer_done': False,
+                'fatal_error': ''  # Empty string instead of None for type consistency
+            }
+            
+            async def producer():
+                """Fetch batches from Jellyfin API and queue them for processing."""
+                batch_num = 0
+                try:
+                    async for batch_items, total_count in self.jellyfin.get_items_stream(batch_size=api_batch_size):
+                        batch_num += 1
+                        sync_state['total_items'] = total_count
+                        sync_state['items_fetched'] += len(batch_items)
+                        
+                        # Log when batch is fetched from API
+                        self.logger.info(
+                            f"Fetched batch {batch_num} from API: {len(batch_items)} items "
+                            f"(total fetched: {sync_state['items_fetched']}/{total_count})"
+                        )
+                        
+                        # Queue the batch for processing
+                        await batch_queue.put((batch_num, batch_items))
+                        
+                    # Signal completion
+                    await batch_queue.put(None)
+                    sync_state['producer_done'] = True
+                    self.logger.info(f"API fetch completed: {sync_state['items_fetched']} total items fetched")
+                    
+                except Exception as e:
+                    self.logger.error(f"Producer task failed: {e}")
+                    sync_state['fatal_error'] = str(e)
+                    # Signal error to consumer
+                    await batch_queue.put(None)
+                    sync_state['producer_done'] = True
+            
+            async def consumer():
+                """Process batches from queue and save to database."""
+                try:
+                    while True:
+                        # Get batch from queue
+                        batch_data = await batch_queue.get()
+                        
+                        # Check for completion signal
+                        if batch_data is None:
+                            break
+                            
+                        batch_num, batch_items = batch_data
+                        batch_start_time = time.time()
+                        
+                        self.logger.info(
+                            f"Processing batch {batch_num}: {len(batch_items)} items "
+                            f"(queue size: {batch_queue.qsize()})"
+                        )
+                        
+                        try:
+                            # Convert API data to MediaItem objects
+                            media_items = []
+                            conversion_errors = 0
+                            failed_items = []
+                            
+                            for item_data in batch_items:
+                                try:
+                                    media_item = await self.jellyfin.convert_to_media_item(item_data)
+                                    media_items.append(media_item)
+                                except Exception as e:
+                                    item_id = item_data.get('Id', 'unknown')
+                                    item_name = item_data.get('Name', 'unknown')
+                                    failed_items.append((item_id, item_name, str(e)))
+                                    conversion_errors += 1
+                                    sync_state['total_individual_errors'] += 1
+                            
+                            # Log conversion errors if any
+                            if failed_items:
+                                self.logger.warning(
+                                    f"Batch {batch_num}: {conversion_errors} items failed conversion"
+                                )
+                                # Log first few failed items for debugging
+                                for item_id, item_name, error in failed_items[:3]:
+                                    self.logger.debug(
+                                        f"  - Failed item: {item_name} (ID: {item_id}): {error}"
+                                    )
+                                if len(failed_items) > 3:
+                                    self.logger.debug(f"  ... and {len(failed_items) - 3} more")
+                            
+                            # Save batch to database
+                            if media_items:
+                                batch_results = await self.db.save_items_batch(media_items)
+                                
+                                # Check if entire batch failed
+                                if batch_results['failed'] == len(media_items) and batch_results['successful'] == 0:
+                                    sync_state['batch_errors'] += 1
+                                    sync_state['total_individual_errors'] += batch_results['failed']
+                                    
+                                    self.logger.error(
+                                        f"Batch {batch_num}: ENTIRE BATCH FAILED - "
+                                        f"likely schema mismatch or database issue. "
+                                        f"{batch_results['failed']} items could not be saved."
+                                    )
+                                else:
+                                    # Update progress
+                                    sync_state['items_processed'] += batch_results['successful']
+                                    sync_state['total_individual_errors'] += batch_results['failed']
+                                    
+                                    batch_time = time.time() - batch_start_time
+                                    
+                                    # Log batch save completion
+                                    self.logger.info(
+                                        f"Batch {batch_num} saved to database: "
+                                        f"{batch_results['successful']}/{len(media_items)} items "
+                                        f"({batch_time:.2f}s)"
+                                    )
+                                    
+                                    # Log failures if any
+                                    if batch_results['failed'] > 0:
+                                        self.logger.warning(
+                                            f"Batch {batch_num}: {batch_results['failed']} items failed to save"
+                                        )
+                            else:
+                                # All items in batch failed conversion
+                                self.logger.warning(f"Batch {batch_num}: All {len(batch_items)} items failed conversion")
+                                sync_state['batch_errors'] += 1
+                            
+                            # Log overall progress periodically
+                            if batch_num % 5 == 0 and sync_state['total_items'] > 0:
+                                progress_pct = (sync_state['items_processed'] / sync_state['total_items']) * 100
+                                elapsed_time = time.time() - sync_start_time
+                                items_per_sec = sync_state['items_processed'] / elapsed_time if elapsed_time > 0 else 0
+                                eta = (sync_state['total_items'] - sync_state['items_processed']) / items_per_sec if items_per_sec > 0 else 0
+                                
+                                self.logger.info(
+                                    f"Sync progress: {sync_state['items_processed']}/{sync_state['total_items']} "
+                                    f"({progress_pct:.1f}%) - "
+                                    f"Rate: {items_per_sec:.1f} items/sec - "
+                                    f"ETA: {eta:.1f}s"
+                                )
+                            
+                        except Exception as e:
+                            self.logger.error(f"Error processing batch {batch_num}: {e}")
+                            sync_state['batch_errors'] += 1
+                            sync_state['total_individual_errors'] += len(batch_items)
+                        
+                        # Small delay to prevent overwhelming the database
+                        if not sync_state['producer_done']:
+                            await asyncio.sleep(self.config.sync.api_request_delay)
+                    
+                    sync_state['consumer_done'] = True
+                    self.logger.info(f"Database processing completed: {sync_state['items_processed']} items saved")
+                    
+                except Exception as e:
+                    self.logger.error(f"Consumer task failed: {e}")
+                    sync_state['fatal_error'] = str(e)
+                    sync_state['consumer_done'] = True
+            
+            # Run producer and consumer concurrently
+            producer_task = asyncio.create_task(producer())
+            consumer_task = asyncio.create_task(consumer())
+            
+            try:
+                # Wait for both tasks to complete
+                await asyncio.gather(producer_task, consumer_task)
+            except Exception as e:
+                self.logger.error(f"Sync tasks failed: {e}")
+                sync_state['fatal_error'] = str(e)
+                # Cancel any running tasks
+                producer_task.cancel()
+                consumer_task.cancel()
+            
+            # Update last sync time in database
+            try:
+                await self.db.update_last_sync_time()
+            except Exception as e:
+                self.logger.warning(f"Could not update last sync time: {e}")
+            
+            processing_time = time.time() - sync_start_time
+            
+            # Determine final status
+            total_items = sync_state['total_items']
+            items_processed = sync_state['items_processed']
+            total_individual_errors = sync_state['total_individual_errors']
+            batch_errors = sync_state['batch_errors']
+            
+            if total_items == 0:
                 return {
                     "status": "warning",
                     "message": "No items found in library",
                     "items_processed": 0,
                     "total_items": 0,
                     "errors": 0,
-                    "processing_time": round(time.time() - sync_start_time, 2)
+                    "processing_time": round(processing_time, 2)
                 }
-
-            self.logger.info(f"Retrieved {len(all_items)} items from Jellyfin - starting processing...")
-
-            # Process items using the same batch size for database operations
-            db_batch_size = api_batch_size  # Use same size for consistency
-            items_processed = 0
-            batch_errors = 0
-            total_individual_errors = 0
-
-            for i in range(0, len(all_items), db_batch_size):
-                batch = all_items[i:i + db_batch_size]
-                batch_start_time = time.time()
-
-                try:
-                    # Convert API data to MediaItem objects for this batch
-                    media_items = []
-                    conversion_errors = 0
-
-                    for item_data in batch:
-                        try:
-                            media_item = await self.jellyfin.convert_to_media_item(item_data)
-                            media_items.append(media_item)
-                        except Exception as e:
-                            self.logger.warning(f"Error converting item {item_data.get('Id', 'unknown')}: {e}")
-                            conversion_errors += 1
-                            total_individual_errors += 1
-
-                    # Save batch to database using efficient batch operation
-                    if media_items:
-                        batch_results = await self.db.save_items_batch(media_items)
-
-                        # Check if entire batch failed (likely schema issue)
-                        if batch_results['failed'] == len(media_items) and batch_results['successful'] == 0:
-                            # Entire batch failed - this is a batch error
-                            batch_errors += 1
-                            total_individual_errors += batch_results['failed']
-
-                            self.logger.error(
-                                f"Batch {i // db_batch_size + 1}: ENTIRE BATCH FAILED - "
-                                f"likely schema mismatch or database issue. "
-                                f"{batch_results['failed']} items could not be saved."
-                            )
-                        else:
-                            # Partial success - some items saved, some failed
-                            items_processed += batch_results['successful']
-                            total_individual_errors += batch_results['failed']
-
-                            batch_time = time.time() - batch_start_time
-                            self.logger.debug(
-                                f"Batch {i // db_batch_size + 1}: "
-                                f"{batch_results['successful']}/{len(media_items)} saved, "
-                                f"{batch_results['failed']} failed, "
-                                f"{conversion_errors} conversion errors "
-                                f"({batch_time:.2f}s)"
-                            )
-                    else:
-                        # All items in this batch failed conversion
-                        self.logger.warning(f"Batch {i // db_batch_size + 1}: All items failed conversion")
-
-                    # Log progress periodically (every 10 batches)
-                    if (i // db_batch_size) % 10 == 0:
-                        progress_pct = round((i / len(all_items)) * 100, 1)
-                        elapsed_time = time.time() - sync_start_time
-                        estimated_total = elapsed_time / (i + db_batch_size) * len(all_items) if i > 0 else 0
-                        remaining_time = max(0, estimated_total - elapsed_time)
-
-                        self.logger.info(
-                            f"Sync progress: {items_processed}/{len(all_items)} items processed "
-                            f"({progress_pct}%) - "
-                            f"Elapsed: {elapsed_time:.1f}s, "
-                            f"ETA: {remaining_time:.1f}s"
-                        )
-
-                except Exception as e:
-                    # Handle batch-level errors (connection issues, etc.)
-                    self.logger.error(f"Error processing batch starting at index {i}: {e}")
-                    batch_errors += 1
-                    total_individual_errors += len(batch)
-
-                # Add small delay between batches to prevent overwhelming the system
-                if i + db_batch_size < len(all_items):  # Don't delay after the last batch
-                    await asyncio.sleep(self.config.sync.api_request_delay)
-
-                # Add small delay between batches to prevent overwhelming the system
-                if i + db_batch_size < len(all_items):  # Don't delay after the last batch
-                    await asyncio.sleep(self.config.sync.api_request_delay)
-
-            # Update last sync time in database
-            try:
-                await self.db.update_last_sync_time()
-            except Exception as e:
-                self.logger.warning(f"Could not update last sync time: {e}")
-
-            processing_time = time.time() - sync_start_time
-
-            # Determine final status based on error thresholds
-            total_items = len(all_items)
+            
             success_rate = (items_processed / total_items) * 100 if total_items > 0 else 0
 
             if total_individual_errors == 0:
@@ -1208,7 +1305,7 @@ class WebhookService:
             self.logger.info(f"  Batch errors: {batch_errors:,}")
             self.logger.info(f"  Processing time: {processing_time:.2f}s")
             self.logger.info(f"  Throughput: {items_processed / processing_time:.1f} items/sec")
-            self.logger.info(f"  Batch size used: {db_batch_size:,}")
+            self.logger.info(f"  Batch size used: {api_batch_size:,}")
             self.logger.info("=" * 80)
 
             return {
@@ -1220,7 +1317,7 @@ class WebhookService:
                 "success_rate": round(success_rate, 1),
                 "processing_time": round(processing_time, 2),
                 "throughput": round(items_processed / processing_time, 1) if processing_time > 0 else 0,
-                "batch_size_used": db_batch_size
+                "batch_size_used": api_batch_size
             }
 
         except Exception as e:
