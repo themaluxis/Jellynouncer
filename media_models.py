@@ -23,7 +23,6 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from functools import cached_property
 from typing import Optional, List
 
 
@@ -411,7 +410,7 @@ class MediaItem:
         if not self.timestamp_created:
             self.timestamp_created = datetime.now(timezone.utc).isoformat()
     
-    @cached_property
+    @property
     def content_hash(self) -> str:
         """
         Generate content hash lazily using Blake2b for better performance.
