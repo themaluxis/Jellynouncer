@@ -149,7 +149,7 @@ class MetadataService:
             except Exception as e:
                 self.logger.error(f"TVDBv4 initialization error: {e}")
                 self.tvdb_client = None
-        h
+        
         # Log initialization status and available services after all clients are initialized
         self.logger.info(f"Metadata service initialized - Enabled: {self.enabled}")
         if self.enabled:
