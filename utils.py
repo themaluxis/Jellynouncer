@@ -241,34 +241,75 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
     # Initialize colorama if available - colors on by default in Docker
     use_colors = False
     
+    # Create a basic logger for debugging color initialization
+    # We can't use the main logger yet since it hasn't been set up
+    init_logger = logging.getLogger("jellynouncer.init")
+    init_logger.setLevel(logging.DEBUG)
+    if not init_logger.handlers:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.DEBUG)
+        console_handler.setFormatter(logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s'))
+        init_logger.addHandler(console_handler)
+    
+    init_logger.debug("=" * 60)
+    init_logger.debug("Color initialization starting...")
+    init_logger.debug(f"Colorama available: {COLORAMA_AVAILABLE}")
+    
     if COLORAMA_AVAILABLE:
         # Check if colors are explicitly disabled via NO_COLOR environment variable
         force_no_color = os.environ.get('NO_COLOR', '').lower() in ('1', 'true', 'yes')
+        init_logger.debug(f"NO_COLOR environment variable: {os.environ.get('NO_COLOR', 'not set')}")
+        init_logger.debug(f"Force no color: {force_no_color}")
         
         # Check if we're in Docker (by checking for /.dockerenv file)
         in_docker = os.path.exists('/.dockerenv')
+        init_logger.debug(f"Docker environment detected (/.dockerenv exists): {in_docker}")
         
         # Check if we have a TTY
         has_tty = hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()
+        init_logger.debug(f"TTY detected: {has_tty}")
+        init_logger.debug(f"stdout type: {type(sys.stdout)}")
+        
+        # Check TERM environment variable
+        term_var = os.environ.get('TERM', 'not set')
+        init_logger.debug(f"TERM environment variable: {term_var}")
+        
+        # Check FORCE_COLOR environment variable
+        force_color_var = os.environ.get('FORCE_COLOR', 'not set')
+        init_logger.debug(f"FORCE_COLOR environment variable: {force_color_var}")
         
         # Determine if we should use colors
         if force_no_color:
             # User explicitly disabled colors
+            init_logger.debug("Colors DISABLED: NO_COLOR environment variable is set")
             use_colors = False
         elif in_docker:
             # Always force colors in Docker environments
             # Use strip=False to keep colors even without TTY
             # Use convert=False to prevent colorama from converting/stripping codes
+            init_logger.debug("Colors ENABLED: Docker environment detected, forcing colors")
+            init_logger.debug("Initializing colorama with: autoreset=True, strip=False, convert=False")
             colorama.init(autoreset=True, strip=False, convert=False)
             use_colors = True
         elif has_tty:
             # Normal TTY environment (not Docker)
+            init_logger.debug("Colors ENABLED: TTY detected")
+            init_logger.debug("Initializing colorama with: autoreset=True (standard mode)")
             colorama.init(autoreset=True)
             use_colors = True
         elif os.environ.get('FORCE_COLOR', '').lower() in ('1', 'true', 'yes'):
             # Allow forcing colors even in non-Docker, non-TTY environments if needed
+            init_logger.debug("Colors ENABLED: FORCE_COLOR environment variable is set")
+            init_logger.debug("Initializing colorama with: autoreset=True, strip=False, convert=False")
             colorama.init(autoreset=True, strip=False, convert=False)
             use_colors = True
+        else:
+            init_logger.debug("Colors DISABLED: No TTY, not in Docker, and FORCE_COLOR not set")
+    else:
+        init_logger.debug("Colors DISABLED: Colorama module not available")
+    
+    init_logger.debug(f"Final decision - use_colors: {use_colors}")
+    init_logger.debug("=" * 60)
     
     class BracketFormatter(logging.Formatter):
         """
@@ -483,9 +524,25 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
     logger.info(f"Backup Count: 5 files")
     logger.info(f"Total Storage: 50MB maximum")
     logger.info(f"Total Handlers: {len(logger.handlers)}")
-    color_status = 'Enabled (default)' if use_colors else 'Disabled'
-    if force_no_color or force_color_off:
-        color_status = 'Disabled (by environment variable)'
+    
+    # Determine color status message
+    if use_colors:
+        if in_docker:
+            color_status = 'Enabled (Docker environment detected)'
+        elif has_tty:
+            color_status = 'Enabled (TTY detected)'
+        elif os.environ.get('FORCE_COLOR', '').lower() in ('1', 'true', 'yes'):
+            color_status = 'Enabled (FORCE_COLOR set)'
+        else:
+            color_status = 'Enabled'
+    else:
+        if force_no_color:
+            color_status = 'Disabled (NO_COLOR set)'
+        elif not COLORAMA_AVAILABLE:
+            color_status = 'Disabled (colorama not available)'
+        else:
+            color_status = 'Disabled (no TTY/Docker detected)'
+    
     logger.info(f"Color Support: {color_status}")
 
     # List each handler for diagnostic purposes
