@@ -795,6 +795,52 @@ class DiscordNotifier:
         # Default fallback
         return 65280  # Green
 
+    def _log_json_error_context(self, rendered: str, position: int, line_no: int, col_no: int) -> None:
+        """
+        Log detailed context around a JSON parsing error.
+        
+        Args:
+            rendered: The rendered template string
+            position: Character position of the error
+            line_no: Line number of the error
+            col_no: Column number of the error
+        """
+        lines = rendered.splitlines()
+        
+        self.logger.error("📍 JSON Error Context:")
+        
+        # Show 3 lines before and after the error
+        start_line = max(0, line_no - 4)
+        end_line = min(len(lines), line_no + 3)
+        
+        for i in range(start_line, end_line):
+            line_num = i + 1
+            if line_num == line_no:
+                # This is the error line
+                self.logger.error(f"  >>> Line {line_num:3d}: {lines[i]}")
+                # Add a pointer to the error column
+                pointer = " " * (col_no + 13) + "^" + " ERROR HERE"
+                self.logger.error(pointer)
+            else:
+                self.logger.error(f"      Line {line_num:3d}: {lines[i]}")
+        
+        # Try to identify the specific issue
+        if position > 0 and position < len(rendered):
+            char_at_error = rendered[position]
+            self.logger.error(f"  - Character at error position: {repr(char_at_error)}")
+            
+            # Common JSON issues
+            if char_at_error == "'":
+                self.logger.error("  ⚠️  Possible issue: Single quotes used instead of double quotes")
+            elif char_at_error == "\n":
+                self.logger.error("  ⚠️  Possible issue: Unescaped newline in string value")
+            elif char_at_error == "\\":
+                self.logger.error("  ⚠️  Possible issue: Incorrectly escaped backslash")
+            elif char_at_error == ",":
+                self.logger.error("  ⚠️  Possible issue: Trailing comma or missing value")
+            elif char_at_error == "}":
+                self.logger.error("  ⚠️  Possible issue: Missing comma before closing brace")
+    
     def _log_template_rendering_debug(self, template_name: str,
                                       template_vars: Dict[str, Any], rendered_output: str) -> None:
         """
@@ -1071,6 +1117,8 @@ class DiscordNotifier:
         template_candidates = _get_template_for_action_and_grouping(action, grouping_config)
         self.logger.debug(f"Template candidates for {action}: {template_candidates}")
 
+        rendered = None
+
         # Try to find and render appropriate template
         for template_name in template_candidates:
             try:
@@ -1088,11 +1136,39 @@ class DiscordNotifier:
             except TemplateNotFound:
                 self.logger.debug(f"Template not found: {template_name}")
                 continue
-            except (TemplateSyntaxError, json.JSONDecodeError) as e:
-                self.logger.warning(f"Template error in {template_name}: {e}")
+            except TemplateSyntaxError as e:
+                self.logger.error(f"❌ Template Syntax Error in {template_name}:")
+                self.logger.error(f"  - Error: {e.message}")
+                if hasattr(e, 'lineno') and e.lineno:
+                    self.logger.error(f"  - Line number: {e.lineno}")
+                if hasattr(e, 'filename'):
+                    self.logger.error(f"  - File: {e.filename}")
+                self.logger.error(f"  - Full error: {str(e)}")
+                continue
+            except json.JSONDecodeError as e:
+                self.logger.error(f"❌ JSON Decode Error in {template_name}:")
+                self.logger.error(f"  - Error: {e.msg}")
+                self.logger.error(f"  - Position: {e.pos}")
+                self.logger.error(f"  - Line: {e.lineno}, Column: {e.colno}")
+                
+                # Enhanced context display with line numbers
+                if rendered:
+                    self._log_json_error_context(rendered, e.pos, e.lineno, e.colno)
+                
+                # Log the raw rendered output for debugging
+                if self.logger.isEnabledFor(logging.DEBUG):
+                    self.logger.debug("Raw rendered template output:")
+                    for i, line in enumerate(rendered.splitlines(), 1):
+                        if max(1, e.lineno - 2) <= i <= e.lineno + 2:
+                            marker = " >>> " if i == e.lineno else "     "
+                            self.logger.debug(f"{marker}Line {i:3d}: {line}")
                 continue
             except Exception as e:
-                self.logger.error(f"Unexpected error rendering template {template_name}: {e}")
+                self.logger.error(f"❌ Unexpected error rendering template {template_name}:")
+                self.logger.error(f"  - Error type: {type(e).__name__}")
+                self.logger.error(f"  - Error: {str(e)}")
+                import traceback
+                self.logger.error(f"  - Traceback:\n{traceback.format_exc()}")
                 continue
 
         # Fallback to basic embed if all templates fail
@@ -1490,6 +1566,111 @@ class DiscordNotifier:
             self.logger.error(f"💥 Unexpected error sending webhook for {item_name}: {e}", exc_info=True)
             return False
 
+    async def validate_all_templates(self) -> Dict[str, Any]:
+        """
+        Validate all available templates for JSON syntax errors.
+        
+        This method renders each template with sample data and checks for JSON validity.
+        Useful for catching template errors during development.
+        
+        Returns:
+            Dict with validation results for each template
+        """
+        import os
+        from media_models import MediaItem
+        
+        results = {}
+        
+        # Create sample media item with all possible fields
+        sample_item = MediaItem(
+            item_id="test123",
+            name="Test Movie: The Testing",
+            item_type="Movie",
+            year=2024,
+            overview="This is a test movie with special characters: \"quotes\", 'apostrophes', \n newlines",
+            video_height=1080,
+            video_codec="h264",
+            audio_codec="aac",
+            file_size=1073741824,
+            runtime_ticks=72000000000,
+            genres=["Action", "Sci-Fi"],
+            imdb_id="tt1234567"
+        )
+        
+        # Sample template variables
+        sample_vars = {
+            "item": asdict(sample_item),
+            "action": "new_item",
+            "thumbnail_url": "https://example.com/thumb.jpg",
+            "changes": [],
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "server_url": "http://jellyfin.example.com",
+            "jellyfin_url": "http://jellyfin.example.com",
+            "color": 65280,
+            "image_quality": 90,
+            "image_max_width": 500,
+            "image_max_height": 400
+        }
+        
+        # Get all template files
+        template_dir = self.template_dir
+        if os.path.exists(template_dir):
+            for filename in os.listdir(template_dir):
+                if filename.endswith('.j2'):
+                    try:
+                        template = self.jinja_env.get_template(filename)
+                        rendered = template.render(**sample_vars)
+                        
+                        # Try to parse as JSON
+                        json.loads(rendered)
+                        results[filename] = {
+                            "status": "✅ Valid",
+                            "error": None
+                        }
+                        
+                    except TemplateSyntaxError as e:
+                        results[filename] = {
+                            "status": "❌ Template Syntax Error",
+                            "error": str(e),
+                            "line": getattr(e, 'lineno', None)
+                        }
+                    except json.JSONDecodeError as e:
+                        results[filename] = {
+                            "status": "❌ JSON Invalid",
+                            "error": e.msg,
+                            "line": e.lineno,
+                            "column": e.colno
+                        }
+                    except Exception as e:
+                        results[filename] = {
+                            "status": "❌ Render Error",
+                            "error": str(e)
+                        }
+        
+        # Log summary
+        self.logger.info("=" * 60)
+        self.logger.info("📋 TEMPLATE VALIDATION RESULTS")
+        self.logger.info("=" * 60)
+        
+        valid_count = sum(1 for r in results.values() if r["status"].startswith("✅"))
+        total_count = len(results)
+        
+        for template_name, result in sorted(results.items()):
+            if result["status"].startswith("✅"):
+                self.logger.info(f"  {result['status']} {template_name}")
+            else:
+                self.logger.error(f"  {result['status']} {template_name}")
+                if result.get("line"):
+                    self.logger.error(f"      Line: {result['line']}")
+                if result.get("column"):
+                    self.logger.error(f"      Column: {result['column']}")
+                self.logger.error(f"      Error: {result['error']}")
+        
+        self.logger.info("=" * 60)
+        self.logger.info(f"Summary: {valid_count}/{total_count} templates valid")
+        
+        return results
+    
     def get_webhook_status(self) -> Dict[str, Any]:
         """
         Get current status of Discord webhook configuration and rate limiting.

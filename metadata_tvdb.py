@@ -273,7 +273,7 @@ class TVDB:
         self.session: Optional[ClientSession] = None
 
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
-
+        self.logger.debug(f"TVDbv4 API initialized successfully")
     async def __aenter__(self) -> TVDB:
         """Async context manager entry."""
         await self._ensure_session()

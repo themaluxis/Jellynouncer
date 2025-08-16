@@ -715,6 +715,59 @@ async def health_check():
         )
 
 
+@app.get("/validate-templates")
+async def validate_templates():
+    """
+    Validate all Discord notification templates for JSON syntax errors.
+    
+    This endpoint renders each template with sample data and checks for JSON validity.
+    Useful for catching template errors during development or after template modifications.
+    
+    Returns:
+        dict: Validation results for each template with error details if any
+    
+    Example:
+        ```bash
+        curl http://jellynouncer:8080/validate-templates
+        ```
+    """
+    if webhook_service is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Service not ready - still initializing"
+        )
+    
+    if not webhook_service.discord_notifier:
+        raise HTTPException(
+            status_code=503,
+            detail="Discord notifier not initialized"
+        )
+    
+    try:
+        results = await webhook_service.discord_notifier.validate_all_templates()
+        
+        # Count valid/invalid templates
+        valid_count = sum(1 for r in results.values() if r["status"].startswith("✅"))
+        total_count = len(results)
+        
+        return {
+            "status": "success" if valid_count == total_count else "errors_found",
+            "summary": {
+                "total_templates": total_count,
+                "valid_templates": valid_count,
+                "invalid_templates": total_count - valid_count
+            },
+            "templates": results,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        webhook_service.logger.error(f"Template validation failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Template validation failed: {str(e)}"
+        )
+
 @app.get("/stats")
 async def service_statistics():
     """
