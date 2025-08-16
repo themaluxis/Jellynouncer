@@ -115,6 +115,7 @@ class JellyfinConfig(BaseModel):
     device_name: str = Field(default="jellynouncer-webhook-service")
     device_id: str = Field(default="jellynouncer-discord-webhook-001")
 
+    # noinspection PyDecorator
     @field_validator('server_url')
     @classmethod
     def validate_server_url(cls, v: str) -> str:
@@ -167,6 +168,7 @@ class JellyfinConfig(BaseModel):
         # "http://localhost:8096/" becomes "http://localhost:8096"
         return v.rstrip('/')
 
+    # noinspection PyDecorator
     @field_validator('api_key', 'user_id')
     @classmethod
     def validate_required_strings(cls, v: str) -> str:
@@ -240,6 +242,7 @@ class WebhookConfig(BaseModel):
     enabled: bool = Field(default=False, description="Whether webhook is enabled")
     grouping: Dict[str, Any] = Field(default_factory=dict, description="Grouping configuration")
 
+    # noinspection PyDecorator
     @field_validator('url')
     @classmethod
     def validate_webhook_url(cls, v: Optional[str]) -> Optional[str]:
@@ -378,6 +381,7 @@ class DatabaseConfig(BaseModel):
     wal_mode: bool = Field(default=True)
     vacuum_interval_hours: int = Field(default=24, ge=1, le=168)  # 1 hour to 1 week
 
+    # noinspection PyDecorator
     @field_validator('path')
     @classmethod
     def validate_db_path(cls, v: str) -> str:
@@ -479,6 +483,7 @@ class TemplatesConfig(BaseModel):
     new_items_grouped_template: str = Field(default="new_items_grouped.j2")
     upgraded_items_grouped_template: str = Field(default="upgraded_items_grouped.j2")
 
+    # noinspection PyDecorator
     @field_validator('directory')
     @classmethod
     def validate_template_directory(cls, v: str) -> str:
@@ -623,6 +628,7 @@ class ServerConfig(BaseModel):
     port: int = Field(default=8080, ge=1024, le=65535)  # Avoid system ports (<1024)
     log_level: str = Field(default="INFO")
 
+    # noinspection PyDecorator
     @field_validator('log_level')
     @classmethod
     def validate_log_level(cls, v: str) -> str:
@@ -788,6 +794,7 @@ class TVDBConfig(BaseModel):
     base_url: str = Field(default="https://api4.thetvdb.com/v4/", description="TVDB API base URL")
     access_mode: str = Field(default="auto", description="Access mode (auto, subscriber, licensed)")
 
+    # noinspection PyDecorator
     @field_validator('api_key', 'subscriber_pin')
     @classmethod
     def validate_optional_strings(cls, v: Optional[str]) -> Optional[str]:
@@ -809,6 +816,7 @@ class TVDBConfig(BaseModel):
             return None
         return v.strip()
 
+    # noinspection PyDecorator
     @field_validator('access_mode')
     @classmethod
     def validate_access_mode(cls, v: str) -> str:

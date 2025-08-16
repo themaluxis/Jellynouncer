@@ -54,8 +54,8 @@
             #}
             {%- if item_data.item.omdb and item_data.item.omdb.imdb_rating and item_data.item.omdb.imdb_rating != 'N/A' -%}
               \n⭐ IMDb: {{ item_data.item.omdb.imdb_rating }}
-            {%- elif item_data.item.tmdb and item_data.item.tmdb.vote_average -%}
-              \n⭐ TMDb: {{ item_data.item.tmdb.vote_average }}
+            {%- elif item_data.item.tmdb and item_data.item.tmdb.rating_display -%}
+              \n⭐ TMDb: {{ item_data.item.tmdb.rating_display }}/10
             {%- elif item_data.item.tvdb and item_data.item.tvdb.rating -%}
               \n⭐ TVDb: {{ item_data.item.tvdb.rating }}
             {%- endif %}",

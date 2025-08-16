@@ -40,8 +40,8 @@
             {%- if item_data.item.omdb and item_data.item.omdb.imdb_rating and item_data.item.omdb.imdb_rating != 'N/A' -%}
               {%- set _ = rating_parts.append('IMDb: ' ~ item_data.item.omdb.imdb_rating) -%}
             {%- endif -%}
-            {%- if item_data.item.tmdb and item_data.item.tmdb.vote_average -%}
-              {%- set _ = rating_parts.append('TMDb: ' ~ item_data.item.tmdb.vote_average) -%}
+            {%- if item_data.item.tmdb and item_data.item.tmdb.rating_display -%}
+              {%- set _ = rating_parts.append('TMDb: ' ~ item_data.item.tmdb.rating_display ~ '/10') -%}
             {%- endif -%}
             {%- if rating_parts|length > 0 %}\n⭐ {{ rating_parts | join(' • ') }}{% endif -%}
             {%- if not loop.last %}\n\n{% endif -%}

@@ -65,8 +65,8 @@
             {%- if item_data.item.omdb and item_data.item.omdb.ratings_dict.rotten_tomatoes -%}
               {%- set _ = rating_parts.append('RT: ' ~ item_data.item.omdb.ratings_dict.rotten_tomatoes.value) -%}
             {%- endif -%}
-            {%- if item_data.item.tmdb and item_data.item.tmdb.vote_average -%}
-              {%- set _ = rating_parts.append('TMDb: ' ~ item_data.item.tmdb.vote_average) -%}
+            {%- if item_data.item.tmdb and item_data.item.tmdb.rating_display -%}
+              {%- set _ = rating_parts.append('TMDb: ' ~ item_data.item.tmdb.rating_display ~ '/10') -%}
             {%- endif -%}
             (\"\\n⭐ \" ~ (rating_parts | join(' • ')) if rating_parts|length > 0 else \"\") ~
 

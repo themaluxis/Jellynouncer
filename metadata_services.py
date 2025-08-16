@@ -120,21 +120,6 @@ class MetadataService:
         self.last_request_times = {}
         self.min_request_interval = 1.0  # Minimum seconds between API requests
 
-        # Log initialization status and available services
-        self.logger.info(f"Metadata service initialized - Enabled: {self.enabled}")
-        if self.enabled:
-            available_services = []
-            if self.omdb_client:
-                available_services.append("OMDb")
-            if self.tmdb_client:
-                available_services.append("TMDb")
-            if self.tvdb_config_ready:
-                access_mode = "subscriber" if self.tvdb_config.subscriber_pin else "standard"
-                available_services.append(f"TVDb v4 ({access_mode})")
-
-            service_list = ', '.join(available_services) if available_services else 'None (no API keys configured)'
-            self.logger.info(f"Available metadata services: {service_list}")
-
     async def initialize(self, session: aiohttp.ClientSession, db_manager) -> None:
         """
         Initialize metadata service with shared resources and perform setup tasks.
@@ -160,10 +145,25 @@ class MetadataService:
                     cache_ttl=self.config.tvdb_cache_ttl_hours * 3600  # Convert to seconds
                 )
                 await self.tvdb_client.__aenter__()
-                self.logger.info("TVDBv4 client initialized successfully")
+                self.logger.info("TVDb client initialized")
             except Exception as e:
                 self.logger.error(f"TVDBv4 initialization error: {e}")
                 self.tvdb_client = None
+        h
+        # Log initialization status and available services after all clients are initialized
+        self.logger.info(f"Metadata service initialized - Enabled: {self.enabled}")
+        if self.enabled:
+            available_services = []
+            if self.omdb_client:
+                available_services.append("OMDb")
+            if self.tmdb_client:
+                available_services.append("TMDb")
+            if self.tvdb_client:  # Check actual client, not config
+                access_mode = "subscriber" if self.tvdb_config.subscriber_pin else "standard"
+                available_services.append(f"TVDb v4 ({access_mode})")
+
+            service_list = ', '.join(available_services) if available_services else 'None (no API keys configured)'
+            self.logger.info(f"Available metadata services: {service_list}")
 
     async def enrich_media_item(self, item: MediaItem) -> MediaItem:
         """

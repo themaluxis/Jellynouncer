@@ -49,7 +49,7 @@
               Priority: IMDb → TMDb → TVDb
             #}
             (\"\\n⭐ IMDb: \" ~ item_data.item.omdb.imdb_rating if item_data.item.omdb and item_data.item.omdb.imdb_rating and item_data.item.omdb.imdb_rating != 'N/A'
-             else \"\\n⭐ TMDb: \" ~ item_data.item.tmdb.vote_average if item_data.item.tmdb and item_data.item.tmdb.vote_average
+             else \"\\n⭐ TMDb: \" ~ item_data.item.tmdb.rating_display ~ "/10" if item_data.item.tmdb and item_data.item.tmdb.rating_display
              else \"\\n⭐ TVDb: \" ~ item_data.item.tvdb.rating if item_data.item.tvdb and item_data.item.tvdb.rating
              else \"\")
           ) | tojson }},

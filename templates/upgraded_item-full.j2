@@ -134,7 +134,7 @@
         {% set has_ratings = false %}
         {% if (item.omdb and (item.omdb.imdb_rating or item.omdb.metascore or
                item.omdb.ratings_dict.rotten_tomatoes)) or
-               (item.tmdb and item.tmdb.vote_average) or
+               (item.tmdb and item.tmdb.rating_display) or
                (item.tvdb and item.tvdb.rating) %}
           {% set has_ratings = true %}
         {% endif %}
@@ -155,8 +155,8 @@
             {%- if item.omdb and item.omdb.metascore and item.omdb.metascore != 'N/A' -%}
               {%- set _ = rating_parts.append('**MC:** ' ~ item.omdb.metascore ~ '/100') -%}
             {%- endif -%}
-            {%- if item.tmdb and item.tmdb.vote_average -%}
-              {%- set _ = rating_parts.append('**TMDb:** ' ~ item.tmdb.vote_average ~ '/10') -%}
+            {%- if item.tmdb and item.tmdb.rating_display -%}
+              {%- set _ = rating_parts.append('**TMDb:** ' ~ item.tmdb.rating_display ~ '/10') -%}
             {%- elif item.omdb and item.omdb.ratings_dict.tmdb -%}
               {%- set _ = rating_parts.append('**TMDb:** ' ~ item.omdb.ratings_dict.tmdb.value) -%}
             {%- endif -%}

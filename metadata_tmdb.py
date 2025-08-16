@@ -167,10 +167,21 @@ class TMDbMetadata:
 
         if self.logo_path:
             self.logo_url = f"{base_url}w500{self.logo_path}"
+    
+    @property
+    def rating_display(self) -> Optional[str]:
+        """Get vote_average rounded to nearest tenth for display."""
+        if self.vote_average is not None:
+            # Round to 1 decimal place
+            return f"{round(self.vote_average, 1):.1f}"
+        return None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for template context."""
-        return asdict(self)
+        """Convert to dictionary for template context, including computed properties."""
+        data = asdict(self)
+        # Add the computed property
+        data['rating_display'] = self.rating_display
+        return data
 
 
 class TMDbAPI:

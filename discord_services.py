@@ -1308,19 +1308,16 @@ class DiscordNotifier:
         self.logger.debug("\n✅ VALIDATION SUMMARY:")
         validation_errors = []
 
-        if not isinstance(payload, dict):
-            validation_errors.append("Payload is not a dictionary")
-        else:
-            if 'embeds' not in payload and 'content' not in payload:
-                validation_errors.append("Payload missing both 'embeds' and 'content'")
+        if 'embeds' not in payload and 'content' not in payload:
+            validation_errors.append("Payload missing both 'embeds' and 'content'")
 
-            if 'embeds' in payload:
-                if not isinstance(payload['embeds'], list):
-                    validation_errors.append("'embeds' is not a list")
-                elif len(payload['embeds']) == 0:
-                    validation_errors.append("'embeds' array is empty")
-                elif len(payload['embeds']) > 10:
-                    validation_errors.append(f"Too many embeds: {len(payload['embeds'])} (max 10)")
+        if 'embeds' in payload:
+            if not isinstance(payload['embeds'], list):
+                validation_errors.append("'embeds' is not a list")
+            elif len(payload['embeds']) == 0:
+                validation_errors.append("'embeds' array is empty")
+            elif len(payload['embeds']) > 10:
+                validation_errors.append(f"Too many embeds: {len(payload['embeds'])} (max 10)")
 
         if validation_errors:
             self.logger.error("❌ VALIDATION ERRORS FOUND:")
