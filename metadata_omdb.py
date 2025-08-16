@@ -237,7 +237,7 @@ class OMDbAPI:
             # Initialize OMDb client with API key
             omdb.set_default("apikey", self.api_key)
             self.client = omdb.OMDBClient(apikey=self.api_key)
-            self.logger.info("OMDb API client initialized successfully")
+            self.logger.info("OMDb API initialized successfully")
 
     def _make_request(self, **kwargs) -> Optional[Dict[str, Any]]:
         """

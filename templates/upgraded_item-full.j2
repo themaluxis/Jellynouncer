@@ -29,7 +29,7 @@
       #}
       "description": {{ (
         (\"**\" ~ (item.series_name | default('Unknown Series')) ~ \"**\\n\" ~
-         \"S\" ~ ('%02d' | format(item.season_number | default(0))) ~ \"E\" ~ ('%02d' | format(item.episode_number | default(0))) ~ \"\\n\" ~
+         \"S\" ~ (\"%02d\" % (item.season_number | default(0))) ~ \"E\" ~ (\"%02d\" % (item.episode_number | default(0))) ~ \"\\n\" ~
          (item.name | default('Unknown Episode')) ~
          (\"\\n*Originally aired: \" ~ item.air_time ~ \"*\" if item.air_time else \"\") ~
          (\"\\n\\n\" ~ ((item.tvdb.overview[:600] + '...') if item.tvdb.overview | length > 600 else item.tvdb.overview) if item.tvdb and item.tvdb.overview

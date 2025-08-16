@@ -24,9 +24,125 @@ License: MIT
 
 import logging
 import logging.handlers
+import os
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Try to import colorama for colored output
+try:
+    import colorama
+    from colorama import Fore, Style
+    COLORAMA_AVAILABLE = True
+except ImportError:
+    COLORAMA_AVAILABLE = False
+
+
+def interpolate_color(start_rgb, end_rgb, position):
+    """
+    Interpolate between two RGB colors based on position (0.0 to 1.0).
+    
+    Args:
+        start_rgb: Tuple of (r, g, b) for start color
+        end_rgb: Tuple of (r, g, b) for end color  
+        position: Float between 0.0 and 1.0
+        
+    Returns:
+        Tuple of interpolated (r, g, b) values
+    """
+    r = int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * position)
+    g = int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * position)
+    b = int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * position)
+    return (r, g, b)
+
+
+def rgb_to_ansi(r, g, b):
+    """
+    Convert RGB values to ANSI 256-color escape code.
+    
+    Args:
+        r, g, b: RGB values (0-255)
+        
+    Returns:
+        ANSI escape code string
+    """
+    return f"\033[38;2;{r};{g};{b}m"
+
+
+# Jellyfin gradient colors
+JELLYFIN_PURPLE_RGB = (170, 92, 195)  # #AA5CC3
+JELLYFIN_BLUE_RGB = (0, 164, 220)     # #00A4DC
+
+# Track gradient message groups and their positions
+gradient_message_tracker = {
+    'webhook_init': {
+        'messages': [
+            "=" * 60,
+            "🚀 WebhookService initialization completed successfully!",
+            "Service is ready to process Jellyfin webhooks",
+            "=" * 60
+        ],
+        'current_index': 0
+    },
+    'app_startup': {
+        'messages': [
+            "Jellynouncer app started successfully",
+            "=" * 60,
+            "🎬 Jellynouncer is ready to receive webhooks!",
+            "Send webhooks to:",  # Partial match for dynamic content
+            "Health check:",       # Partial match for dynamic content
+            "Also available on:",  # Optional, partial match
+            "=" * 60
+        ],
+        'current_index': 0,
+        'debug_messages': [  # Debug messages that appear in this section
+            "Primary IP detected via external route:",
+            "Local hostname:",
+            "Hostname",
+            "Total interfaces discovered:",
+            "User-friendly interfaces:"
+        ]
+    },
+    'jellyfin_logo': {
+        'messages': [
+            "                                                                     ",
+            "                                                                     ",
+            "                                _@@@@p,                              ",
+            "                              _@@@@@@@@g                             ",
+            "                            _@@@@@@@@@@@@g                           ",
+            "                          _@@@@@@@@@@@@@@@@L                         ",
+            "                         g@@@@@@@@@@@@@@@@@@@,                       ",
+            "                       _@@@@@@@@@B\"\"%@@@@@@@@@b                      ",
+            "                      g@@@@@@@@P      '@@@@@@@@@_                    ",
+            "                    _@@@@@@@@@          \\@@@@@@@@p                   ",
+            "                   /@@@@@@@@/             @@@@@@@@@                  ",
+            "                  @@@@@@@@D                \"@@@@@@@@_                ",
+            "                ,@@@@@@@@/                   @@@@@@@@a               ",
+            "               /@@@@@@@@          _gg_    ,_  T@@@@@@@@              ",
+            "              j@@@@@@@P          /@ @@@L   '8g '@@@@@@@@             ",
+            "             @@@@@@@@/          @@| @@@@g 0g  @L @@@@@@@@,           ",
+            "            @@@@@@@@          o@@@| ==B@@h  @, @, %@@@@@@@L          ",
+            "          ,@@@@@@@@       __@@@@@@@     @@, [@ @]  T@@@@@@@L         ",
+            "         ,@@@@@@@W  __g@@@@@@@@@@@@,    @@@ (/ @'   \\@@@@@@@L        ",
+            "        ,@@@@@@@D _@@@@@@@@@@@@@@@@@  ~@@@@   (F     \\@@@@@@@1       ",
+            "       ,@@@@@@@D  @@@@@@@@@@@@@@@@@@@_'@@@@           \\@@@@@@@l      ",
+            "      ,@@@@@@@W   \"@@@@@@@D>\"\"  '\"<4@@@_\"@P            \\@@@@@@@L     ",
+            "      @@@@@@@@         _og@@           \"=\"              T@@@@@@@\\    ",
+            "     @@@@@@@@           @@@@L                            @@@@@@@@,   ",
+            "    @@@@@@@@g            Q@@@g                           '@@@@@@@@   ",
+            "   /@@@@@@@@@_            0@@@@                         _g@@@@@@@@@  ",
+            "   @@@@@@@@@@@@@g____      \"\"                    ____g@@@@@@@@@@@@@, ",
+            "  |@@@@@@@@@@@@@@@@@@@@@@@@gggggggggggggggg@@@@@@@@@@@@@@@@@@@@@@@@@ ",
+            "  '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@P ",
+            "   '0@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@B\"  ",
+            "        \"<4B@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@B=\"       ",
+            "                   \"\"\"\"===4BBBB@@@@@@@@@BBBBP==*\"\"\"\"                 ",
+            "                                                                     "
+        ],
+        'current_index': 0
+    }
+}
 
 
 def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> logging.Logger:
@@ -122,32 +238,73 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
     except PermissionError as e:
         raise PermissionError(f"Cannot create log directory '{log_dir}': {e}")
 
+    # Initialize colorama if available - colors on by default in Docker
+    use_colors = False
+    force_no_color = False
+    force_color_off = False
+    
+    if COLORAMA_AVAILABLE:
+        # Check if colors are explicitly disabled
+        force_no_color = os.environ.get('NO_COLOR', '').lower() in ('1', 'true', 'yes')
+        force_color_off = os.environ.get('FORCE_COLOR', '').lower() in ('0', 'false', 'no')
+        
+        # Check if we're in Docker or have a TTY
+        in_docker = os.path.exists('/.dockerenv') or os.environ.get('DOCKER_CONTAINER', False)
+        has_tty = hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()
+        
+        # Enable colors by default in Docker, or if we have TTY, unless explicitly disabled
+        if not (force_no_color or force_color_off):
+            if in_docker or has_tty:
+                colorama.init(autoreset=True)
+                use_colors = True
+        # Allow forcing colors on even without Docker/TTY
+        elif os.environ.get('FORCE_COLOR', '').lower() in ('1', 'true', 'yes'):
+            colorama.init(autoreset=True)
+            use_colors = True
+    
     class BracketFormatter(logging.Formatter):
         """
         Custom log formatter that uses brackets for structured, readable output.
 
         This nested class creates a custom formatter that generates consistent,
         structured log messages. The bracket format makes it easy to parse logs
-        programmatically while remaining human-readable.
+        programmatically while remaining human-readable. When colorama is available
+        and we're in a suitable environment, it adds color coding by log level.
         """
+        
+        # Color mappings for different log levels
+        LEVEL_COLORS = {
+            'DEBUG': Fore.CYAN if COLORAMA_AVAILABLE else '',
+            'INFO': Fore.GREEN if COLORAMA_AVAILABLE else '',
+            'WARNING': Fore.YELLOW if COLORAMA_AVAILABLE else '',
+            'ERROR': Fore.RED if COLORAMA_AVAILABLE else '',
+            'CRITICAL': Fore.RED + Style.BRIGHT if COLORAMA_AVAILABLE else ''
+        }
+        
+        # Component colors for better visual separation
+        COMPONENT_COLOR = Fore.BLUE if COLORAMA_AVAILABLE else ''
+        TIMESTAMP_COLOR = Fore.WHITE + Style.DIM if COLORAMA_AVAILABLE else ''
+        USER_COLOR = Fore.MAGENTA if COLORAMA_AVAILABLE else ''
+        RESET = Style.RESET_ALL if COLORAMA_AVAILABLE else ''
 
         def format(self, record: logging.LogRecord) -> str:
             """
-            Format log record with structured bracket format.
+            Format log record with structured bracket format and optional colors.
 
             This method is called automatically by the logging system for each
             log message. It extracts information from the LogRecord and formats
-            it according to our structured format.
+            it according to our structured format, with color coding when available.
 
             Args:
                 record (LogRecord): Log record containing message and metadata
 
             Returns:
-                str: Formatted log message ready for output
+                str: Formatted log message ready for output, optionally with ANSI color codes
 
             Example:
                 Input LogRecord with message "Database connected"
                 Output: "[2025-01-15 10:30:45 UTC] [system] [INFO] [jellynouncer.db] Database connected"
+                (with green coloring for INFO level when colors are enabled)
             """
             # Get UTC timestamp for consistency across time zones and deployments
             timestamp = datetime.fromtimestamp(
@@ -158,9 +315,94 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
             # Get user context (extensible for multi-user scenarios)
             # This allows tracking which user or process generated the log message
             user = getattr(record, 'user', 'system')
+            
+            # Check if this is a gradient message
+            is_gradient_message = False
+            gradient_color = None
+            message_text = record.getMessage()
+            
+            if use_colors and record.name in ['jellynouncer.webhook', 'jellynouncer', 'jellynouncer.logo']:
+                # Check webhook initialization messages
+                if record.name == 'jellynouncer.webhook':
+                    for i, msg in enumerate(gradient_message_tracker['webhook_init']['messages']):
+                        if msg in message_text:
+                            # Calculate gradient position for this message
+                            total_msgs = len(gradient_message_tracker['webhook_init']['messages'])
+                            position = i / (total_msgs - 1) if total_msgs > 1 else 0
+                            rgb = interpolate_color(JELLYFIN_PURPLE_RGB, JELLYFIN_BLUE_RGB, position)
+                            gradient_color = rgb_to_ansi(*rgb)
+                            is_gradient_message = True
+                            break
+                
+                # Check app startup messages
+                elif record.name == 'jellynouncer':
+                    # First check for debug messages in the startup sequence
+                    for debug_msg in gradient_message_tracker['app_startup'].get('debug_messages', []):
+                        if debug_msg in message_text and record.levelname == 'DEBUG':
+                            # Find position in the main message sequence
+                            # Debug messages get colored based on their position in the sequence
+                            # They appear after "🎬 Jellynouncer is ready" and before the final separator
+                            position = 0.5  # Middle of gradient for debug messages
+                            rgb = interpolate_color(JELLYFIN_PURPLE_RGB, JELLYFIN_BLUE_RGB, position)
+                            gradient_color = rgb_to_ansi(*rgb)
+                            is_gradient_message = True
+                            break
+                    
+                    # Check for main startup messages
+                    if not is_gradient_message:
+                        for i, msg in enumerate(gradient_message_tracker['app_startup']['messages']):
+                            if msg in message_text or (msg == "=" * 60 and message_text == "=" * 60):
+                                # Calculate gradient position for this message
+                                total_msgs = len(gradient_message_tracker['app_startup']['messages'])
+                                position = i / (total_msgs - 1) if total_msgs > 1 else 0
+                                rgb = interpolate_color(JELLYFIN_PURPLE_RGB, JELLYFIN_BLUE_RGB, position)
+                                gradient_color = rgb_to_ansi(*rgb)
+                                is_gradient_message = True
+                                break
+                
+                # Check for Jellyfin logo ASCII art
+                elif record.name == 'jellynouncer.logo':
+                    for i, msg in enumerate(gradient_message_tracker['jellyfin_logo']['messages']):
+                        if message_text == msg:
+                            # Calculate gradient position for this line
+                            total_msgs = len(gradient_message_tracker['jellyfin_logo']['messages'])
+                            position = i / (total_msgs - 1) if total_msgs > 1 else 0
+                            rgb = interpolate_color(JELLYFIN_PURPLE_RGB, JELLYFIN_BLUE_RGB, position)
+                            gradient_color = rgb_to_ansi(*rgb)
+                            is_gradient_message = True
+                            break
+            
+            # Get the appropriate color for this log level (if not gradient)
+            if not is_gradient_message:
+                level_color = self.LEVEL_COLORS.get(record.levelname, '')
+            else:
+                level_color = gradient_color  # Use gradient color for the message
 
             # Format the complete log message with structured brackets
-            return f"[{timestamp}] [{user}] [{record.levelname}] [{record.name}] {record.getMessage()}"
+            if use_colors:
+                if is_gradient_message:
+                    # Special gradient formatting
+                    formatted = (
+                        f"{self.TIMESTAMP_COLOR}[{timestamp}]{self.RESET} "
+                        f"{self.USER_COLOR}[{user}]{self.RESET} "
+                        f"{gradient_color}[{record.levelname}]{self.RESET} "
+                        f"{self.COMPONENT_COLOR}[{record.name}]{self.RESET} "
+                        f"{gradient_color}{message_text}{self.RESET}"
+                    )
+                else:
+                    # Regular colored format for Docker/TTY environments
+                    formatted = (
+                        f"{self.TIMESTAMP_COLOR}[{timestamp}]{self.RESET} "
+                        f"{self.USER_COLOR}[{user}]{self.RESET} "
+                        f"{level_color}[{record.levelname}]{self.RESET} "
+                        f"{self.COMPONENT_COLOR}[{record.name}]{self.RESET} "
+                        f"{level_color}{message_text}{self.RESET}"
+                    )
+            else:
+                # Plain format for non-TTY environments or when colors are disabled
+                formatted = f"[{timestamp}] [{user}] [{record.levelname}] [{record.name}] {message_text}"
+            
+            return formatted
 
     # Create the main application logger with the specified name
     logger = logging.getLogger("jellynouncer")
@@ -212,18 +454,44 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
     logger.info(f"Backup Count: 5 files")
     logger.info(f"Total Storage: 50MB maximum")
     logger.info(f"Total Handlers: {len(logger.handlers)}")
+    color_status = 'Enabled (default)' if use_colors else 'Disabled'
+    if force_no_color or force_color_off:
+        color_status = 'Disabled (by environment variable)'
+    logger.info(f"Color Support: {color_status}")
 
     # List each handler for diagnostic purposes
     for i, handler in enumerate(logger.handlers):
         logger.info(f"Handler {i + 1}: {type(handler).__name__} - Level: {logging.getLevelName(handler.level)}")
 
     # Test logging at different levels to verify configuration
-    logger.debug("DEBUG level logging is working - visible when log level is DEBUG")
-    logger.info("INFO level logging is working")
+    if use_colors:
+        logger.info("Color-coded logging enabled - messages will be colored by level:")
+        logger.debug("DEBUG messages in cyan - detailed diagnostic information")
+        logger.info("INFO messages in green - general informational messages")
+        logger.warning("WARNING messages in yellow - warning conditions")
+        logger.error("ERROR messages in red - error conditions")
+    else:
+        logger.debug("DEBUG level logging is working - visible when log level is DEBUG")
+        logger.info("INFO level logging is working")
 
     logger.info("=" * 60)
 
     return logger
+
+
+def display_jellyfin_logo() -> None:
+    """
+    Display the Jellyfin ASCII art logo with gradient coloring.
+    
+    This function outputs the Jellyfin logo line by line with gradient
+    coloring from purple to blue. It's meant to be called after the
+    "Jellynouncer app started successfully" message.
+    """
+    logo_logger = logging.getLogger("jellynouncer.logo")
+    
+    # Output each line of the logo
+    for line in gradient_message_tracker['jellyfin_logo']['messages']:
+        logo_logger.info(line)
 
 
 def get_logger(name: str = "jellynouncer") -> logging.Logger:

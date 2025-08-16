@@ -207,7 +207,7 @@ When `action` is "upgraded_item", the `changes` variable contains a list of chan
     {% elif change.type == 'hdr_status' %}
       🌈 HDR: {{ change.old_value }} → {{ change.new_value }}
     {% elif change.type == 'file_size' %}
-      💾 File replaced ({{ '%.1f' | format(change.new_value / 1073741824) }} GB)
+      💾 File replaced ({{ "%.1f" % (change.new_value / 1073741824) }} GB)
     {% endif %}
   {% endfor %}
   
@@ -353,7 +353,8 @@ Available when TMDb API key is configured:
 | `item.tmdb.runtime` | integer | Runtime in minutes | 136 |
 | `item.tmdb.budget` | integer | Production budget | 63000000 |
 | `item.tmdb.revenue` | integer | Box office revenue | 467222728 |
-| `item.tmdb.genres` | list | Genre objects | [{"id": 28, "name": "Action"}] |
+| `item.tmdb.genres` | list | Genre objects (raw) | [{"id": 28, "name": "Action"}] |
+| `item.tmdb.genres_list` | list | Genre names (processed) | ["Action", "Adventure", "Sci-Fi"] |
 | `item.tmdb.production_companies` | list | Production companies | [{"name": "Warner Bros."}] |
 | `item.tmdb.poster_path` | string | Poster path | "/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg" |
 | `item.tmdb.backdrop_path` | string | Backdrop path | "/fNG7i7RqMErkcqhohV2a6cV1Ehy.jpg" |
@@ -430,6 +431,20 @@ Transform data using filters:
 {{ item.overview[:100] }}          <!-- First 100 characters -->
 {{ item.genres | join(", ") }}     <!-- Action, Sci-Fi -->
 {{ item.file_size / 1073741824 | round(2) }} GB
+```
+
+#### String Formatting
+Format numbers and strings using Python-style formatting:
+```jinja2
+{# Correct syntax for formatting numbers #}
+{{ "%.1f" % (item.file_size / 1073741824) }} GB     <!-- 1.5 GB -->
+{{ "%.2f" % (item.file_size / 1073741824) }} GB     <!-- 1.50 GB -->
+{{ "%02d" % item.season_number }}                   <!-- 01, 02, 03... -->
+{{ "%03d" % item.episode_number }}                  <!-- 001, 002, 003... -->
+
+{# Incorrect syntax - DO NOT USE #}
+{{ '%.1f' | format(value) }}                        <!-- WRONG - Will cause template errors -->
+{{ '%02d' | format(value) }}                        <!-- WRONG - Will cause template errors -->
 ```
 
 #### Comments
@@ -522,7 +537,7 @@ Add notes that won't appear in output:
   "embeds": [
     {
       "title": "📺 New Episode",
-      "description": "**{{ item.series_name }}**\nS{{ '%02d' | format(item.season_number or 0) }}E{{ '%02d' | format(item.episode_number or 0) }} - {{ item.name }}",
+      "description": "**{{ item.series_name }}**\nS{{ "%02d" % (item.season_number or 0) }}E{{ "%02d" % (item.episode_number or 0) }} - {{ item.name }}",
       "color": {{ color }},
       "fields": [
         {% if item.overview %}
@@ -577,7 +592,7 @@ Add notes that won't appear in output:
     {% elif change.type == 'hdr_status' %}
       🌈 HDR: {{ change.old_value }} → {{ change.new_value }}
     {% elif change.type == 'file_size' %}
-      💾 File replaced ({{ '%.1f' | format(change.new_value / 1073741824) }} GB)
+      💾 File replaced ({{ "%.1f" % (change.new_value / 1073741824) }} GB)
     {% endif %}
   {% endfor %}
   
@@ -790,6 +805,26 @@ For upgrade templates with change tracking:
   {# Display TVDb rating for TV shows #}
   {% if item.ratings.tvdb %}
     📺 TVDb: {{ item.ratings.tvdb.value }}/10 ({{ item.ratings.tvdb.count }} ratings)
+  {% endif %}
+{% endif %}
+```
+
+### Using TMDb Metadata
+
+```jinja2
+{% if item.tmdb %}
+  {# Use genres_list for processed genre names #}
+  {% if item.tmdb.genres_list %}
+    Genres: {{ item.tmdb.genres_list | join(", ") }}
+    <!-- Output: "Action, Adventure, Science Fiction" -->
+  {% endif %}
+  
+  {# DO NOT use item.tmdb.genres | map(attribute='name') #}
+  {# item.tmdb.genres contains raw objects, use genres_list instead #}
+  
+  {# Display vote average and count #}
+  {% if item.tmdb.vote_average %}
+    Rating: {{ item.tmdb.vote_average }}/10 ({{ item.tmdb.vote_count }} votes)
   {% endif %}
 {% endif %}
 ```
@@ -1011,7 +1046,7 @@ Here's a production-ready template with all best practices:
       {# Rich description with safe property access #}
       "description": "{% if item.item_type == 'Episode' and item.series_name -%}
         **{{ item.series_name }}**
-        S{{ '%02d' | format(item.season_number or 0) }}E{{ '%02d' | format(item.episode_number or 0) }} - {{ item.name }}
+        S{{ "%02d" % (item.season_number or 0) }}E{{ "%02d" % (item.episode_number or 0) }} - {{ item.name }}
       {%- else -%}
         **{{ item.name }}**{% if item.year %} ({{ item.year }}){% endif %}
       {%- endif -%}
@@ -1084,7 +1119,7 @@ Here's a production-ready template with all best practices:
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "💾 Size",
-          "value": "{{ '%.1f' | format(item.file_size / 1073741824) }} GB",
+          "value": "{{ \"%.1f\" % (item.file_size / 1073741824) }} GB",
           "inline": true
         }
         {% endif %}

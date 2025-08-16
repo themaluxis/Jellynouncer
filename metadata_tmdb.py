@@ -239,7 +239,7 @@ class TMDbAPI:
             except AttributeError:
                 self.logger.warning("Could not fetch TMDb configuration")
 
-            self.logger.info("TMDb API client initialized successfully")
+            self.logger.info("TMDb API initialized successfully")
 
         except Exception as e:
             self.logger.error(f"Failed to initialize TMDb client: {e}")

@@ -29,7 +29,7 @@
       #}
       "description": {{ (
         ("**" ~ (item.series_name | default('Unknown Series')) ~ "**\n" ~
-         "S" ~ ('%02d' | format(item.season_number | default(0))) ~ "E" ~ ('%02d' | format(item.episode_number | default(0))) ~ "\n" ~
+         "S" ~ ("%02d" % (item.season_number | default(0))) ~ "E" ~ ("%02d" % (item.episode_number | default(0))) ~ "\n" ~
          (item.name | default('Unknown Episode')) ~
          ("\n*Originally aired: " ~ item.air_time ~ "*" if item.air_time else "") ~
          ("\n\n" ~ ((item.tvdb.overview[:800] + '...') if item.tvdb.overview | length > 800 else item.tvdb.overview) if item.tvdb and item.tvdb.overview
@@ -132,8 +132,8 @@
             {% set display_genres = item.genres %}
           {% endif %}
         {% elif item.item_type == 'Movie' %}
-          {% if item.tmdb and item.tmdb.genres %}
-            {% set display_genres = item.tmdb.genres | map(attribute='name') | list %}
+          {% if item.tmdb and item.tmdb.genres_list %}
+            {% set display_genres = item.tmdb.genres_list %}
           {% elif item.omdb and item.omdb.genres_list %}
             {% set display_genres = item.omdb.genres_list %}
           {% elif item.genres %}
@@ -158,7 +158,7 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "💾 File Size",
-          "value": {{ (('%.2f' | format(item.file_size / 1073741824)) ~ " GB") | tojson }},
+          "value": {{ (("%.2f" % (item.file_size / 1073741824)) ~ " GB") | tojson }},
           "inline": true
         }
         {% endif %}

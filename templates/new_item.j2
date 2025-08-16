@@ -56,7 +56,7 @@
       #}
       "description": {{ ({% if item.item_type == 'Episode' -%}
         "**" ~ (item.series_name | default('Unknown Series')) ~ "**\n" ~
-        "S" ~ ('%02d' | format(item.season_number | default(0))) ~ "E" ~ ('%02d' | format(item.episode_number | default(0))) ~ "\n" ~
+        "S" ~ ("%02d" % (item.season_number | default(0))) ~ "E" ~ ("%02d" % (item.episode_number | default(0))) ~ "\n" ~
         (item.name | default('Unknown Episode')) ~
         ({% if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0 -%}
           "\n\n" ~ ((item.tvdb.overview[:250] ~ '...') if item.tvdb.overview | length > 250 else item.tvdb.overview)
@@ -214,8 +214,8 @@
             {% set display_genres = item.genres %}
           {% endif %}
         {% elif item.item_type == 'Movie' %}
-          {% if item.tmdb and item.tmdb.genres and item.tmdb.genres | length > 0 %}
-            {% set display_genres = item.tmdb.genres | map(attribute='name') | list %}
+          {% if item.tmdb and item.tmdb.genres_list and item.tmdb.genres_list | length > 0 %}
+            {% set display_genres = item.tmdb.genres_list %}
           {% elif item.omdb and item.omdb.genres_list and item.omdb.genres_list | length > 0 %}
             {% set display_genres = item.omdb.genres_list %}
           {% elif item.genres and item.genres | length > 0 %}
@@ -241,7 +241,7 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "💾 Size",
-          "value": {{ (('%.1f' | format(item.file_size / 1073741824)) ~ " GB") | tojson }},
+          "value": {{ (("%.1f" % (item.file_size / 1073741824)) ~ " GB") | tojson }},
           "inline": true
         }
         {%- endif %}

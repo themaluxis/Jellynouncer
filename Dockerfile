@@ -38,6 +38,9 @@ RUN mkdir -p /app/data /app/logs /app/config /app/templates && \
 # Set default environment variables
 ENV HOST=0.0.0.0
 ENV PORT=8080
+# Enable color support in terminal for colored logs
+ENV TERM=xterm-256color
+ENV PYTHONUNBUFFERED=1
 
 # Expose port (configurable via build arg or environment)
 ARG PORT=8080

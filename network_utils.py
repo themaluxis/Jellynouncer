@@ -903,6 +903,11 @@ def log_jellynouncer_startup(
 
     # Log the enhanced startup message (service -> app)
     logger.info("Jellynouncer app started successfully")
+    
+    # Display the Jellyfin ASCII art logo with gradient coloring
+    from utils import display_jellyfin_logo
+    display_jellyfin_logo()
+    
     logger.info("=" * 60)
     logger.info("🎬 Jellynouncer is ready to receive webhooks!")
 

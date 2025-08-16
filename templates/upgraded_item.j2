@@ -46,7 +46,7 @@
       #}
       "description": {{ (
         ("**" ~ (item.series_name | default('Unknown Series')) ~ "**\n" ~
-         "S" ~ ('%02d' | format(item.season_number | default(0))) ~ "E" ~ ('%02d' | format(item.episode_number | default(0))) ~ "\n" ~
+         "S" ~ ("%02d" % (item.season_number | default(0))) ~ "E" ~ ("%02d" % (item.episode_number | default(0))) ~ "\n" ~
          (item.name | default('Unknown Episode')) ~
          ("\n\n" ~ ((item.tvdb.overview[:200] + '...') if item.tvdb.overview | length > 200 else item.tvdb.overview) if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0
           else "\n\n" ~ ((item.overview[:200] + '...') if item.overview | length > 200 else item.overview) if item.overview and item.overview | length > 0
@@ -165,7 +165,7 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "💾 New Size",
-          "value": {{ (('%.1f' | format(item.file_size / 1073741824)) ~ " GB") | tojson }},
+          "value": {{ (("%.1f" % (item.file_size / 1073741824)) ~ " GB") | tojson }},
           "inline": true
         }
         {% endif %}

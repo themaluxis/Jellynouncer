@@ -76,8 +76,8 @@
               TMDb → OMDb → Jellyfin
             #}
             {%- set display_genres = null -%}
-            {%- if item_data.item.tmdb and item_data.item.tmdb.genres -%}
-              {%- set display_genres = item_data.item.tmdb.genres | map(attribute='name') | list -%}
+            {%- if item_data.item.tmdb and item_data.item.tmdb.genres_list -%}
+              {%- set display_genres = item_data.item.tmdb.genres_list -%}
             {%- elif item_data.item.omdb and item_data.item.omdb.genres_list -%}
               {%- set display_genres = item_data.item.omdb.genres_list -%}
             {%- elif item_data.item.genres -%}

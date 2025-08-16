@@ -160,12 +160,10 @@ class MetadataService:
                     cache_ttl=self.config.tvdb_cache_ttl_hours * 3600  # Convert to seconds
                 )
                 await self.tvdb_client.__aenter__()
-                self.logger.info("TVDB client initialized successfully")
+                self.logger.info("TVDBv4 client initialized successfully")
             except Exception as e:
-                self.logger.error(f"TVDB initialization error: {e}")
+                self.logger.error(f"TVDBv4 initialization error: {e}")
                 self.tvdb_client = None
-
-        self.logger.info("Metadata service initialization completed")
 
     async def enrich_media_item(self, item: MediaItem) -> MediaItem:
         """
