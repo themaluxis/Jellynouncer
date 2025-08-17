@@ -682,7 +682,7 @@ class DatabaseManager:
                 await db.execute("BEGIN TRANSACTION")
 
                 # Process items in chunks to avoid SQL parameter limits
-                chunk_size = 5000  # Increased for better performance with large batches
+                chunk_size = 1000  # Balanced size for reliability and performance
                 
                 for chunk_start in range(0, len(items), chunk_size):
                     chunk = items[chunk_start:chunk_start + chunk_size]
