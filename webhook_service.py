@@ -1701,17 +1701,26 @@ class WebhookService:
         # Convert to MediaItem for comparison
         new_item = await self.jellyfin.convert_to_media_item(item_data)
         
-        # Check if this is just a rename (same properties, different path)
+        # Check if this is just a rename (same content hash = same file, just moved/renamed)
+        # NOTE: ItemId changes when files are renamed in Jellyfin, so we can't compare by ID
         is_rename = False
-        if self.config.notifications.filter_renames and deletion_info.get('file_path'):
-            # Get the existing item from database
-            existing_item = await self.db.get_item(deletion_info['item_id'])
-            if existing_item:
-                # Check if only the path changed
-                changes = await self.change_detector.detect_changes(existing_item, new_item)
-                if not changes or (len(changes) == 1 and changes[0].field == 'file_path'):
+        if self.config.notifications.filter_renames:
+            # Get the OLD item from database using the deletion's item_id
+            old_item = await self.db.get_item(deletion_info['item_id'])
+            if old_item:
+                # Compare content hashes - if they match, it's the same file content
+                # Since we exclude file_path from hash, only actual quality changes will differ
+                if old_item.content_hash == new_item.content_hash:
                     is_rename = True
-                    self.logger.info(f"Detected rename for {add_payload.Name} - filtering notification")
+                    self.logger.info(f"Detected rename/move for {add_payload.Name} (matching content hash) - filtering notification")
+                    self.logger.debug(f"  Old ItemId: {deletion_info['item_id']}")
+                    self.logger.debug(f"  New ItemId: {add_payload.ItemId}")
+                    self.logger.debug(f"  Old Path: {deletion_info.get('file_path', 'unknown')}")
+                    self.logger.debug(f"  New Path: {new_item.file_path}")
+                else:
+                    # Different hash means actual content changes (quality upgrade)
+                    changes = await self.change_detector.detect_changes(old_item, new_item)
+                    self.logger.debug(f"Content changed for {add_payload.Name}: {len(changes)} changes detected")
         
         if is_rename:
             # Just update the database, don't send notification

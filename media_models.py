@@ -431,9 +431,11 @@ class MediaItem:
             return self._content_hash
         
         # Generate hash data with only technical specifications
+        # NOTE: We deliberately exclude file_path AND item_id because:
+        # - file_path changes when files are moved/renamed
+        # - item_id changes when files are renamed (Jellyfin generates new ID from path)
         hash_data = {
-            # Core identification
-            "item_id": self.item_id,
+            # Core identification (name and type only)
             "name": self.name,
             "item_type": self.item_type,
 
@@ -453,8 +455,8 @@ class MediaItem:
             "audio_bitrate": self.audio_bitrate,
             "audio_samplerate": self.audio_samplerate,
 
-            # File path for detecting file replacements
-            "file_path": self.file_path,
+            # File size can indicate a different encode of the same quality
+            "file_size": self.file_size,
         }
 
         # Use Blake2b for faster hashing (2-3x faster than MD5)
