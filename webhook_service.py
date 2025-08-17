@@ -1615,6 +1615,21 @@ class WebhookService:
         """
         start_time = time.time()
         
+        # Enhanced debug logging for delete events
+        self.logger.debug("=" * 60)
+        self.logger.debug("🗑️ ITEM DELETION WEBHOOK RECEIVED")
+        self.logger.debug("=" * 60)
+        self.logger.debug(f"  Item Name: {payload.Name}")
+        self.logger.debug(f"  Item ID: {payload.ItemId}")
+        self.logger.debug(f"  Item Type: {payload.ItemType}")
+        self.logger.debug(f"  Library: {getattr(payload, 'LibraryName', 'Unknown')}")
+        self.logger.debug(f"  Path: {getattr(payload, 'Path', 'Not provided')}")
+        self.logger.debug(f"  Server: {payload.ServerName}")
+        self.logger.debug(f"  User: {payload.Username}")
+        self.logger.debug(f"  Delete filtering enabled: {self.config.notifications.filter_deletes}")
+        self.logger.debug(f"  Rename filtering enabled: {self.config.notifications.filter_renames}")
+        self.logger.debug("=" * 60)
+        
         # Check if deletion filtering is enabled
         if self.config.notifications.filter_deletes:
             # Store deletion info with timestamp
@@ -1627,6 +1642,8 @@ class WebhookService:
             }
             
             self.logger.info(f"Queued deletion for {payload.Name} - waiting for potential upgrade")
+            self.logger.debug(f"  Deletion key: {deletion_key}")
+            self.logger.debug(f"  Pending deletions queue size: {len(self.pending_deletions)}")
             
             # Start cleanup task if not running
             if not self.deletion_cleanup_task or self.deletion_cleanup_task.done():
@@ -1812,6 +1829,14 @@ class WebhookService:
         """
         start_time = time.time()
         
+        self.logger.debug("=" * 60)
+        self.logger.debug("🗑️ SENDING DELETION NOTIFICATION")
+        self.logger.debug("=" * 60)
+        self.logger.debug(f"  Item: {payload.Name}")
+        self.logger.debug(f"  Type: {payload.ItemType}")
+        self.logger.debug(f"  ID: {payload.ItemId}")
+        self.logger.debug("=" * 60)
+        
         try:
             # Create a minimal MediaItem for the deletion notification
             from media_models import MediaItem
@@ -1859,22 +1884,31 @@ class WebhookService:
         This runs periodically to process deletions that weren't followed
         by an add (true deletions, not upgrades).
         """
+        self.logger.debug("Starting deletion cleanup task")
+        
         while not self.shutdown_event.is_set():
             try:
                 await asyncio.sleep(10)  # Check every 10 seconds
+                
+                if self.pending_deletions:
+                    self.logger.debug(f"Checking {len(self.pending_deletions)} pending deletions for expiry")
                 
                 current_time = time.time()
                 expired_deletions = []
                 
                 # Find expired deletions
                 for key, info in self.pending_deletions.items():
-                    if current_time - info['timestamp'] > self.deletion_timeout:
+                    age = current_time - info['timestamp']
+                    if age > self.deletion_timeout:
                         expired_deletions.append(key)
+                        self.logger.debug(f"  - {key}: aged {age:.1f}s (expired, timeout={self.deletion_timeout}s)")
+                    else:
+                        self.logger.debug(f"  - {key}: aged {age:.1f}s (waiting, timeout={self.deletion_timeout}s)")
                 
                 # Process expired deletions
                 for key in expired_deletions:
                     info = self.pending_deletions.pop(key)
-                    self.logger.info(f"Processing expired deletion for {info['payload'].Name}")
+                    self.logger.info(f"Processing expired deletion for {info['payload'].Name} (no upgrade detected)")
                     await self._send_deletion_notification(info['payload'])
                     
             except Exception as e:
