@@ -501,8 +501,10 @@ class DiscordNotifier:
             from jinja2 import FileSystemBytecodeCache
             import os
             
-            # Create bytecode cache directory if it doesn't exist
-            cache_dir = os.path.join(os.path.dirname(self.template_dir), 'template_cache')
+            # Create bytecode cache directory in writable data directory
+            # Use /app/data for Docker or local data directory
+            data_dir = os.environ.get('DATA_DIR', '/app/data')
+            cache_dir = os.path.join(data_dir, 'template_cache')
             os.makedirs(cache_dir, exist_ok=True)
             
             # Configure environment with caching for 8x performance improvement
