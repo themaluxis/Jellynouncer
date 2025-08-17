@@ -561,7 +561,7 @@ class MetadataService:
                     ratings['imdb_votes'] = omdb_data.imdb_votes
 
             # Metascore
-            if hasattr(omdb_data, 'metascore') and omdb_data.metascore != 'N/A':
+            if hasattr(omdb_data, 'metascore') and omdb_data.metascore and omdb_data.metascore != 'N/A':
                 ratings['metascore'] = {
                     'value': omdb_data.metascore,
                     'normalized': self._normalize_rating(omdb_data.metascore, '/100'),
