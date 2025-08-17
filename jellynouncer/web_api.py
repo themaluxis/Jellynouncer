@@ -427,7 +427,8 @@ class WebInterfaceService:
         
         # Load configuration
         try:
-            self.config = ConfigurationValidator.load_and_validate()
+            validator = ConfigurationValidator()
+            self.config = validator.load_and_validate_config()
         except Exception as e:
             self.logger.error(f"Failed to load configuration: {e}")
             raise

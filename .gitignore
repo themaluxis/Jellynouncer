@@ -18,3 +18,5 @@ jellynouncer/*.pyc
 jellynouncer/*.pyo
 web/PERFORMANCE_OPTIMIZATIONS.md
 web/IMPLEMENTATION_GUIDE.md
+/web/node_modules
+package-lock.json

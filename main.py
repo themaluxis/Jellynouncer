@@ -24,11 +24,21 @@ import sys
 import asyncio
 import signal
 import logging
-from multiprocessing import Process
+import platform
+from multiprocessing import Process, set_start_method
 from typing import Optional
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Set multiprocessing start method for Windows compatibility
+# This doesn't affect Linux/Docker which already use 'fork' by default
+if platform.system() == 'Windows':
+    try:
+        set_start_method('spawn', force=True)
+    except RuntimeError:
+        # Already set, ignore
+        pass
 
 from jellynouncer.utils import setup_logging, get_logger
 from jellynouncer.network_utils import log_jellynouncer_startup
