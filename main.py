@@ -87,6 +87,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 import uvicorn
+from pydantic import ValidationError
 
 # Import our custom modules
 from webhook_models import WebhookPayload
@@ -249,7 +250,7 @@ app = FastAPI(
 
 
 @app.post("/webhook")
-async def receive_webhook(payload: WebhookPayload, request: Request):
+async def receive_webhook(request: Request):
     """
     Main webhook endpoint for receiving notifications from Jellyfin.
 
@@ -261,8 +262,7 @@ async def receive_webhook(payload: WebhookPayload, request: Request):
     including headers, body content, and field-by-field validation.
 
     Args:
-        payload (WebhookPayload): Validated webhook data from Jellyfin
-        request (Request): FastAPI request object for debug logging
+        request (Request): FastAPI request object containing the webhook data
 
     Returns:
         dict: Processing result with status and details
@@ -294,10 +294,22 @@ async def receive_webhook(payload: WebhookPayload, request: Request):
         )
 
     try:
+        # Get raw body once - we'll use it for both debug logging and parsing
+        raw_body = await request.body()
+        
+        # Parse the webhook payload
+        try:
+            json_data = json.loads(raw_body)
+            payload = WebhookPayload(**json_data)
+        except (json.JSONDecodeError, ValidationError) as e:
+            webhook_service.logger.error(f"Failed to parse webhook payload: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid webhook payload: {str(e)}"
+            )
+        
         # Debug logging when enabled
         if webhook_service.logger.isEnabledFor(logging.DEBUG):
-            # Get raw body for comprehensive debugging
-            raw_body = await request.body()
             
             # Get client information
             client_info = getattr(request, "client", None)
@@ -671,10 +683,18 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     errors = []
     for error in exc.errors():
         field_path = " → ".join(str(loc) for loc in error["loc"])
+        # Handle bytes input that can't be JSON serialized
+        input_value = error.get("input", "unknown")
+        if isinstance(input_value, bytes):
+            try:
+                # Try to decode bytes to string for better error messages
+                input_value = input_value.decode('utf-8')[:500]  # Limit to 500 chars
+            except:
+                input_value = f"<binary data: {len(input_value)} bytes>"
         errors.append({
             "field": field_path,
             "message": error["msg"],
-            "input": error.get("input", "unknown")
+            "input": input_value
         })
 
     # Log the validation error for debugging
