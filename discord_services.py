@@ -1050,56 +1050,8 @@ class DiscordNotifier:
             # Returns Discord embed structure ready for webhook
             ```
         """
-        # Debug: Check what metadata is actually attached to the item
-        self.logger.debug("=" * 60)
-        self.logger.debug(f"🔍 METADATA DEBUGGING for item: {item.name}")
-        self.logger.debug("=" * 60)
-
-        # Check for attached metadata objects
-        self.logger.debug("Checking for metadata attributes on MediaItem:")
-        self.logger.debug(f"  - Has 'omdb' attribute: {hasattr(item, 'omdb')}")
-        if hasattr(item, 'omdb'):
-            omdb_data = getattr(item, 'omdb', None)
-            if omdb_data:
-                self.logger.debug(f"    - OMDb data present: {omdb_data is not None}")
-                self.logger.debug(f"    - OMDb IMDb rating: {getattr(omdb_data, 'imdb_rating', 'N/A')}")
-                self.logger.debug(f"    - OMDb Metascore: {getattr(omdb_data, 'metascore', 'N/A')}")
-            else:
-                self.logger.debug("    - OMDb data is None")
-
-        self.logger.debug(f"  - Has 'tmdb' attribute: {hasattr(item, 'tmdb')}")
-        if hasattr(item, 'tmdb'):
-            tmdb_data = getattr(item, 'tmdb', None)
-            if tmdb_data:
-                self.logger.debug(f"    - TMDb data present: {tmdb_data is not None}")
-                self.logger.debug(f"    - TMDb vote_average: {getattr(tmdb_data, 'vote_average', 'N/A')}")
-                self.logger.debug(f"    - TMDb vote_count: {getattr(tmdb_data, 'vote_count', 'N/A')}")
-            else:
-                self.logger.debug("    - TMDb data is None")
-
-        self.logger.debug(f"  - Has 'tvdb' attribute: {hasattr(item, 'tvdb')}")
-        if hasattr(item, 'tvdb'):
-            tvdb_data = getattr(item, 'tvdb', None)
-            if tvdb_data:
-                self.logger.debug(f"    - TVDb data present: {tvdb_data is not None}")
-                self.logger.debug(f"    - TVDb rating: {getattr(tvdb_data, 'rating', 'N/A')}")
-            else:
-                self.logger.debug("    - TVDb data is None")
-
-        self.logger.debug(f"  - Has 'ratings' attribute: {hasattr(item, 'ratings')}")
-        if hasattr(item, 'ratings'):
-            ratings_data = getattr(item, 'ratings', {})
-            self.logger.debug(f"    - Ratings data: {ratings_data}")
-
         # Convert item to dictionary for template
         item_dict = asdict(item)
-
-        # IMPORTANT: Check if metadata is preserved after asdict conversion
-        self.logger.debug("After asdict() conversion:")
-        self.logger.debug(f"  - 'omdb' in item_dict: {'omdb' in item_dict}")
-        self.logger.debug(f"  - 'tmdb' in item_dict: {'tmdb' in item_dict}")
-        self.logger.debug(f"  - 'tvdb' in item_dict: {'tvdb' in item_dict}")
-        self.logger.debug(f"  - 'ratings' in item_dict: {'ratings' in item_dict}")
 
         # Add metadata from the passed parameter if available
         if metadata:
