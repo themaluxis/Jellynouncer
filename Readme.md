@@ -546,7 +546,7 @@ See the full template guide for all available variables
 ## 🔧 Manual Installation
 
 ### Requirements
-- Python 3.11+
+- Python 3.13+
 - SQLite 3
 - Git
 
