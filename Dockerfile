@@ -28,7 +28,7 @@ ENV PORT=8080
 ENV TERM=xterm-256color
 ENV PYTHONUNBUFFERED=1
 
-# Copy entrypoint script
+# Copy static files that rarely change first
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
@@ -36,7 +36,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 COPY templates/ /app/defaults/templates/
 COPY config/config.json /app/defaults/config.json
 
-# Copy Python application files LAST
+# Copy Python application files LAST (these change most frequently)
 COPY *.py ./
 # Remove any backup files that might have been copied
 RUN rm -f *.bak 2>/dev/null || true
