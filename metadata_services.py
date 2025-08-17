@@ -153,9 +153,11 @@ class MetadataService:
         # Initialize TVDB client if configured
         if self.tvdb_config_ready:
             try:
+                # Convert cache duration from hours to seconds for TVDB
+                cache_ttl_seconds = self.cache_duration_hours * 3600
                 self.tvdb_client = TVDB(
                     api_key=self.tvdb_config.api_key,
-                    cache_duration_hours=self.cache_duration_hours
+                    cache_ttl=cache_ttl_seconds
                 )
                 # TVDB needs its own session initialization
                 await self.tvdb_client.initialize(session)
