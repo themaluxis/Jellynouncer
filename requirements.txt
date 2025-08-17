@@ -9,3 +9,7 @@ pydantic==2.11.0
 omdb==0.10.1
 tmdbv3api==1.9.0
 colorama==0.4.6
+bcrypt==4.1.2
+pyjwt==2.8.0
+passlib==1.7.4
+cryptography==41.0.7

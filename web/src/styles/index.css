@@ -1,0 +1,195 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --jellyfin-purple: #9b59b6;
+    --jellyfin-blue: #3498db;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-dark-bg text-dark-text-primary font-sans antialiased;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-dark-surface;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-dark-border rounded-full hover:bg-gray-600;
+  }
+
+  /* Firefox scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.dark.border') theme('colors.dark.surface');
+  }
+}
+
+@layer components {
+  /* Button variants */
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-dark-bg disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply bg-gradient-to-r from-jellyfin-purple to-jellyfin-blue text-white hover:shadow-lg hover:scale-105 focus:ring-jellyfin-purple;
+  }
+
+  .btn-secondary {
+    @apply bg-dark-elevated text-dark-text-primary border border-dark-border hover:bg-dark-border focus:ring-dark-border;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+  }
+
+  /* Card component */
+  .card {
+    @apply bg-dark-surface rounded-xl border border-dark-border p-6 shadow-lg;
+  }
+
+  .card-hover {
+    @apply card hover:border-jellyfin-purple/50 transition-all duration-300 cursor-pointer;
+  }
+
+  /* Input styles */
+  .input {
+    @apply w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded-lg text-dark-text-primary placeholder-dark-text-muted focus:outline-none focus:ring-2 focus:ring-jellyfin-purple focus:border-transparent transition-all duration-200;
+  }
+
+  .input-error {
+    @apply border-red-500 focus:ring-red-500;
+  }
+
+  /* Label styles */
+  .label {
+    @apply block text-sm font-medium text-dark-text-secondary mb-2;
+  }
+
+  /* Sidebar navigation */
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-lg text-dark-text-secondary hover:text-dark-text-primary hover:bg-dark-elevated transition-all duration-200;
+  }
+
+  .nav-item-active {
+    @apply nav-item text-dark-text-primary bg-gradient-to-r from-jellyfin-purple/20 to-jellyfin-blue/20 border-l-4 border-jellyfin-purple;
+  }
+
+  /* Status indicators */
+  .status-dot {
+    @apply w-2 h-2 rounded-full animate-pulse;
+  }
+
+  .status-online {
+    @apply bg-green-500;
+  }
+
+  .status-offline {
+    @apply bg-red-500;
+  }
+
+  .status-warning {
+    @apply bg-yellow-500;
+  }
+
+  /* Code block styling */
+  .code-block {
+    @apply bg-dark-elevated rounded-lg p-4 font-mono text-sm overflow-x-auto border border-dark-border;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-jellyfin-purple to-jellyfin-blue bg-clip-text text-transparent;
+  }
+
+  /* Loading spinner */
+  .spinner {
+    @apply animate-spin h-5 w-5 border-2 border-dark-text-muted border-t-jellyfin-purple rounded-full;
+  }
+
+  /* Tooltip */
+  .tooltip {
+    @apply absolute z-10 px-2 py-1 text-xs text-white bg-gray-900 rounded-md shadow-lg pointer-events-none;
+  }
+}
+
+@layer utilities {
+  /* Animation delays */
+  .animation-delay-100 {
+    animation-delay: 100ms;
+  }
+
+  .animation-delay-200 {
+    animation-delay: 200ms;
+  }
+
+  .animation-delay-300 {
+    animation-delay: 300ms;
+  }
+
+  /* Glass morphism effect */
+  .glass {
+    @apply bg-dark-surface/50 backdrop-blur-md border border-dark-border/50;
+  }
+
+  /* Text truncation */
+  .truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .truncate-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+/* Monaco Editor Theme Override */
+.monaco-editor {
+  @apply rounded-lg overflow-hidden;
+}
+
+.monaco-editor .margin {
+  @apply bg-dark-elevated;
+}
+
+/* Chart.js custom styling */
+.chartjs-tooltip {
+  @apply bg-dark-elevated border border-dark-border rounded-lg shadow-xl;
+}
+
+/* Transitions for page changes */
+.page-transition-enter {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.page-transition-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 300ms, transform 300ms;
+}
+
+.page-transition-exit {
+  opacity: 1;
+}
+
+.page-transition-exit-active {
+  opacity: 0;
+  transition: opacity 300ms;
+}

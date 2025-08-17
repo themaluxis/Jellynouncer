@@ -86,7 +86,7 @@ The `jellyfin` section configures connection to your Jellyfin media server.
     "api_key": null,
     "user_id": null,
     "client_name": "Jellynouncer-Discord-Webhook",
-    "client_version": "2.0.0",
+    "client_version": "1.0.0",
     "device_name": "jellynouncer-webhook-service",
     "device_id": "jellynouncer-discord-webhook-001"
   }
@@ -372,7 +372,7 @@ The `server` section configures the FastAPI web server.
 {
   "server": {
     "host": "0.0.0.0",
-    "port": 8080,
+    "port": 1984,
     "log_level": "INFO"
   }
 }
@@ -695,17 +695,17 @@ Solution: Check file permissions and ensure data directory is writable
 
 **Test webhook connectivity:**
 ```bash
-curl -X POST "http://localhost:8080/test-webhook?webhook_name=default"
+curl -X POST "http://localhost:1984/test-webhook?webhook_name=default"
 ```
 
 **Check service health:**
 ```bash
-curl http://localhost:8080/health
+curl http://localhost:1984/health
 ```
 
 **Validate API connectivity:**
 ```bash
-curl http://localhost:8080/stats
+curl http://localhost:1984/stats
 ```
 
 ## Best Practices

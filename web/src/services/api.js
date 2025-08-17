@@ -1,0 +1,107 @@
+import axios from 'axios'
+import toast from 'react-hot-toast'
+
+// Create axios instance with default config
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || '',
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Request interceptor
+api.interceptors.request.use(
+  (config) => {
+    // Add timestamp to prevent caching
+    if (config.method === 'get') {
+      config.params = {
+        ...config.params,
+        _t: Date.now(),
+      }
+    }
+    return config
+  },
+  (error) => {
+    return Promise.reject(error)
+  }
+)
+
+// Response interceptor
+api.interceptors.response.use(
+  (response) => {
+    return response
+  },
+  async (error) => {
+    const originalRequest = error.config
+    
+    // Handle 401 errors (unauthorized)
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+      
+      // Try to refresh the token
+      const authStore = (await import('../stores/authStore')).useAuthStore.getState()
+      const success = await authStore.refreshAccessToken()
+      
+      if (success) {
+        // Retry the original request with new token
+        originalRequest.headers['Authorization'] = `Bearer ${authStore.accessToken}`
+        return api(originalRequest)
+      } else {
+        // Refresh failed, logout user
+        authStore.logout()
+        window.location.href = '/login'
+      }
+    }
+    
+    // Handle other errors
+    if (error.response) {
+      // Server responded with error
+      const message = error.response.data?.detail || error.response.data?.message || 'An error occurred'
+      
+      // Don't show toast for auth status checks
+      if (!error.config.url?.includes('/auth/status')) {
+        toast.error(message)
+      }
+    } else if (error.request) {
+      // Request was made but no response
+      toast.error('No response from server. Please check your connection.')
+    } else {
+      // Something else happened
+      toast.error('An unexpected error occurred')
+    }
+    
+    return Promise.reject(error)
+  }
+)
+
+export default api
+
+// Convenience methods for common API calls
+export const apiService = {
+  // Auth
+  checkAuthStatus: () => api.get('/api/auth/status'),
+  login: (username, password) => api.post('/api/auth/login', { username, password }),
+  setupAuth: (username, password, email) => api.post('/api/auth/setup', { username, password, email }),
+  updateAuthSettings: (authEnabled, requireWebhookAuth) => 
+    api.put('/api/auth/settings', null, { params: { auth_enabled: authEnabled, require_webhook_auth: requireWebhookAuth } }),
+  
+  // Overview
+  getOverview: () => api.get('/api/overview'),
+  
+  // Config
+  getConfig: () => api.get('/api/config'),
+  updateConfig: (section, key, value) => api.put('/api/config', { section, key, value }),
+  
+  // Templates
+  getTemplates: () => api.get('/api/templates'),
+  getTemplate: (name) => api.get(`/api/templates/${name}`),
+  updateTemplate: (name, content) => api.put(`/api/templates/${name}`, { name, content }),
+  restoreTemplate: (name) => api.post(`/api/templates/${name}/restore`),
+  
+  // Logs
+  getLogs: (params) => api.post('/api/logs', params),
+  
+  // Health
+  healthCheck: () => api.get('/api/health'),
+}

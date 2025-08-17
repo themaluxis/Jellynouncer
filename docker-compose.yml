@@ -1,54 +1,121 @@
+version: '3.8'
+
 services:
-  jellyfin-discord-webhook:
+  jellynouncer:
     build:
       context: .
-      args:
-        - PORT=${PORT:-8080}
-    container_name: jellyfin-discord-webhook
+      dockerfile: Dockerfile
+    container_name: jellynouncer
     restart: unless-stopped
+    
+    # Port mappings for both services
     ports:
-      - "${PORT:-8080}:${PORT:-8080}"
+      - "${PORT:-1984}:1984"      # Webhook service
+      - "${WEB_PORT:-1985}:1985"  # Web interface (HTTP)
+      - "${SSL_PORT:-9000}:9000"  # Web interface (HTTPS - when configured)
+    
+    # Volume mounts for persistence
     volumes:
-      # Mount host directories to container, with fallback to container defaults
+      # Configuration directory
       - ./config:/app/config:rw
+      
+      # Templates directory (customizable)
       - ./templates:/app/templates:rw
+      
+      # Data directory (databases, certificates)
       - ./data:/app/data:rw
+      
+      # Logs directory
       - ./logs:/app/logs:rw
+      
+      # Optional: Mount custom web assets (logos, favicons)
+      # Place your logo.png, favicon.ico, favicon.png in web/public/
+      # - ./web/public:/app/web/dist/assets:ro
+    
     environment:
-      # Required Configuration
-      - JELLYFIN_SERVER_URL=${JELLYFIN_SERVER_URL}
-      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
-      - JELLYFIN_USER_ID=${JELLYFIN_USER_ID}
-      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
-
-      # Optional: Separate webhooks for different content types
-      - DISCORD_WEBHOOK_URL_MOVIES=${DISCORD_WEBHOOK_URL_MOVIES:-}
-      - DISCORD_WEBHOOK_URL_TV=${DISCORD_WEBHOOK_URL_TV:-}
-      - DISCORD_WEBHOOK_URL_MUSIC=${DISCORD_WEBHOOK_URL_MUSIC:-}
-
-      # Optional: External rating services
-      - OMDB_API_KEY=${OMDB_API_KEY:-}
-      - TMDB_API_KEY=${TMDB_API_KEY:-}
-      - TVDB_API_KEY=${TVDB_API_KEY:-}
-
-      # Server Configuration (NEW)
-      - HOST=${HOST:-0.0.0.0}
-      - PORT=${PORT:-8080}
-
-      # System Configuration
+      # === Core Configuration ===
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - TZ=${TZ:-UTC}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DEBUG=${DEBUG:-false}
+      
+      # === Jellyfin Configuration (Required) ===
+      - JELLYFIN_SERVER_URL=${JELLYFIN_SERVER_URL}
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
+      - JELLYFIN_USER_ID=${JELLYFIN_USER_ID}
+      
+      # === Discord Configuration (Required) ===
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      
+      # === Optional Discord Webhooks for Content Routing ===
+      - DISCORD_WEBHOOK_URL_MOVIES=${DISCORD_WEBHOOK_URL_MOVIES:-}
+      - DISCORD_WEBHOOK_URL_TV=${DISCORD_WEBHOOK_URL_TV:-}
+      - DISCORD_WEBHOOK_URL_MUSIC=${DISCORD_WEBHOOK_URL_MUSIC:-}
+      
+      # === Optional Metadata Services ===
+      - OMDB_API_KEY=${OMDB_API_KEY:-}
+      - TMDB_API_KEY=${TMDB_API_KEY:-}
+      - TVDB_API_KEY=${TVDB_API_KEY:-}
+      
+      # === Server Configuration ===
+      - HOST=${HOST:-0.0.0.0}
+      - PORT=${PORT:-1984}
+      - WEB_PORT=${WEB_PORT:-1985}
+      
+      # === Web Interface Configuration ===
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}  # Auto-generated if not provided
+      - JELLYNOUNCER_RUN_MODE=${JELLYNOUNCER_RUN_MODE:-all}  # all, webhook, web
+      
+      # === Development Options ===
+      - JELLYNOUNCER_DEV_MODE=${JELLYNOUNCER_DEV_MODE:-false}
+    
+    # Health check for both services
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-8080}/health"]
+      test: |
+        curl -f http://localhost:1984/health && curl -f http://localhost:1985/api/health || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 30s
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=jellynouncer"
+    
+    # Network configuration
     networks:
-      - jellyfin-webhook-network
+      - jellynouncer_network
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    
+    # Resource limits (optional - adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1024M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    
+    # Labels for container management
+    labels:
+      - "com.jellynouncer.description=Media notification service for Jellyfin"
+      - "com.jellynouncer.version=1.0.0"
+      - "com.jellynouncer.webhook.port=1984"
+      - "com.jellynouncer.web.port=1985"
 
+# Networks
 networks:
-  jellyfin-webhook-network:
+  jellynouncer_network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -16,3 +16,5 @@ CLAUDE.md
 jellynouncer/__pycache__/
 jellynouncer/*.pyc
 jellynouncer/*.pyo
+web/PERFORMANCE_OPTIMIZATIONS.md
+web/IMPLEMENTATION_GUIDE.md

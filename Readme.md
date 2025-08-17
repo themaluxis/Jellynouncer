@@ -21,11 +21,20 @@
 
 The service acts as a smart filter between Jellyfin's webhook events and Discord notifications, analyzing changes to determine what's truly noteworthy - distinguishing between new content additions and quality improvements like resolution upgrades (1080p → 4K) or HDR additions.
 
-> ⚠️ **BETA SOFTWARE NOTICE**
+> [!WARNING]
+> **BETA SOFTWARE NOTICE**
 > 
 > This software is currently in beta development. While core functionality is stable, you may encounter bugs or edge cases. Please report any issues you find to help improve the service.
 
 ## ✨ Key Features
+
+### Web Interface Features
+- **📊 Real-time Dashboard** - Monitor service health, statistics, and recent notifications
+- **⚙️ Configuration Manager** - Modify all settings through an intuitive UI
+- **📝 Template Editor** - Edit Jinja2 templates with syntax highlighting and live preview
+- **📜 Log Viewer** - Browse and filter logs with color-coded severity levels
+- **🔐 Optional Authentication** - Secure your web interface with JWT-based authentication
+- **🔒 SSL/TLS Support** - Enable HTTPS with your own certificates
 
 ### 🧠 Smart Change Detection
 - **Intelligent Analysis**: Distinguishes between new content and quality upgrades
@@ -46,6 +55,7 @@ The service acts as a smart filter between Jellyfin's webhook events and Discord
 - **Rich Media Information**: Display posters, technical specs, ratings, cast, and plot summaries
 - **Multiple Templates**: Different templates for new items, upgrades, and grouped notifications
 - **Dynamic Content**: Templates can access all media metadata and technical information
+- **Web Editor**: Edit templates directly in the web interface with syntax highlighting
 
 ### 📊 External Metadata Integration
 - **Rating Services**: Integrates with OMDb, TMDb, and TVDB for ratings and additional metadata
@@ -57,7 +67,7 @@ The service acts as a smart filter between Jellyfin's webhook events and Discord
 - **Intelligent Queue System**: Never lose notifications with automatic queueing during rate limits
   - Handles up to 1000 queued notifications for large library updates
   - Automatic retry with exponential backoff (3 attempts)
-  - Real-time queue statistics via `/stats` endpoint
+  - Real-time queue statistics via web interface or `/stats` endpoint
   - Graceful processing during Discord rate limits (30/minute)
 - **Rate Limiting**: Respects Discord API limits with configurable rate limiting
 - **Retry Logic**: Exponential backoff for network resilience
@@ -70,6 +80,7 @@ The service acts as a smart filter between Jellyfin's webhook events and Discord
 - **Environment Overrides**: All settings configurable via environment variables
 - **Configuration Validation**: Automatic validation with detailed error reporting
 - **Graceful Shutdown**: Proper cleanup and queue processing on shutdown
+- **Web Management**: Full control through web interface on port 1985
 
 ## 🚀 Quick Start
 
@@ -80,6 +91,9 @@ The service acts as a smart filter between Jellyfin's webhook events and Discord
 - **Docker** (recommended) or Python 3.11+ for manual installation
 
 ### Docker Compose (Recommended)
+
+<details>
+<summary><b>📦 View Docker Compose Setup</b></summary>
 
 1. **Create directory structure:**
 ```bash
@@ -97,7 +111,9 @@ services:
     container_name: jellynouncer
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "1984:1984"  # Webhook service
+      - "1985:1985"  # Web interface (HTTP)
+      - "9000:9000"  # Web interface (HTTPS - optional)
     environment:
       # Required
       - JELLYFIN_SERVER_URL=http://your-jellyfin-server:8096
@@ -115,18 +131,24 @@ services:
       - TMDB_API_KEY=your_tmdb_key
       - TVDB_API_KEY=your_tvdb_key
       
+      # Optional: Web interface security
+      - JWT_SECRET_KEY=your-secret-key-here  # Auto-generated if not set
+      
       # System
       - PUID=1000
       - PGID=1000
       - TZ=America/New_York
       - LOG_LEVEL=INFO
+      - JELLYNOUNCER_RUN_MODE=all  # all, webhook, or web
     volumes:
       - ./config:/app/config
       - ./data:/app/data
       - ./logs:/app/logs
       - ./templates:/app/templates
+      # Optional: Custom web assets
+      # - ./web/public:/app/web/dist/assets:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:1984/health"]
       interval: 300s
       timeout: 10s
       retries: 3
@@ -138,22 +160,32 @@ services:
 docker-compose up -d
 ```
 
-4. **Configure Jellyfin Webhook Plugin:**
+4. **Access the services:**
+   - Web Interface: `http://your-server:1985`
+   - Webhook Endpoint: `http://your-server:1984/webhook`
+
+5. **Configure Jellyfin Webhook Plugin:**
    - Go to Jellyfin Dashboard → Plugins → Webhook
-   - Add new webhook with URL: `http://your-server:8080/webhook`
+   - Add new webhook with URL: `http://your-server:1984/webhook`
    - Enable "Item Added" event
    - Enable "Item Deleted" event (optional, for deletion notifications)
    - Check "Send All Properties"
    - Save configuration
 
+</details>
+
 ### Docker Run
 
-1. **Run the container:**
+<details>
+<summary><b>🐳 View Docker Run Command</b></summary>
+
 ```bash
 docker run -d \
   --name jellynouncer \
   --restart unless-stopped \
-  -p 8080:8080 \
+  -p 1984:1984 \
+  -p 1985:1985 \
+  -p 9000:9000 \
   -e JELLYFIN_SERVER_URL=http://jellyfin:8096 \
   -e JELLYFIN_API_KEY=your_api_key \
   -e JELLYFIN_USER_ID=your_user_id \
@@ -165,17 +197,194 @@ docker run -d \
   markusmcnugen/jellynouncer:latest
 ```
 
-2. **Configure Jellyfin Webhook Plugin:**
-   - Go to Jellyfin Dashboard → Plugins → Webhook
-   - Add new webhook with URL: `http://your-server:8080/webhook`
-   - Enable "Item Added" event
-   - Enable "Item Deleted" event (optional, for deletion notifications)
-   - Check "Send All Properties"
-   - Save configuration
+</details>
+
+## 🌐 Web Interface
+
+> [!TIP]
+> The web interface is available at `http://your-server:1985` and provides full control over Jellynouncer without manual configuration editing.
+
+### 📊 Dashboard / Overview
+
+The dashboard provides real-time insights into your Jellynouncer instance:
+
+- **Service Health**: Live status of all components (Jellyfin, Discord, Database, APIs)
+- **Statistics Cards**: 
+  - Total notifications sent
+  - Queue size and processing rate
+  - Database item count
+  - Uptime and performance metrics
+- **Recent Notifications**: Live feed of the last 50 notifications with details
+- **Queue Status**: Current queue size with rate limit information
+- **Background Tasks**: Status of sync, cleanup, and maintenance tasks
+- **Charts**: 
+  - Notifications over time (hourly/daily)
+  - Content type distribution
+  - Success/failure rates
+
+### ⚙️ Configuration
+
+The configuration page allows you to modify all settings through an intuitive interface:
+
+<details>
+<summary><b>View Configuration Sections</b></summary>
+
+#### **Jellyfin Settings**
+- Server URL, API key, and User ID
+- Connection testing and validation
+- Library selection and filtering
+
+#### **Discord Settings**
+- Main webhook URL configuration
+- Content-specific webhook routing (Movies, TV, Music)
+- Grouping settings (mode, delay, max items)
+- Rate limiting configuration
+
+#### **Notification Settings**
+- Change detection toggles (resolution, codec, audio, HDR)
+- Filter options (renames, deletes, upgrades)
+- Minimum quality thresholds
+- Notification templates selection
+
+#### **External APIs**
+- OMDb, TMDb, TVDB API keys
+- API testing and validation
+- Fallback behavior configuration
+
+#### **Advanced Settings**
+- Database maintenance intervals
+- Sync frequency and batch sizes
+- Log levels and retention
+- Performance tuning
+
+</details>
+
+> [!IMPORTANT]
+> Changes made in the configuration page are applied immediately and persist across restarts.
+
+### 📝 Template Editor
+
+The template editor provides a powerful environment for customizing Discord notifications:
+
+- **Syntax Highlighting**: Full Jinja2 syntax highlighting with Monaco Editor
+- **Template Library**: All templates displayed in a tree view
+- **Live Preview**: Test templates with sample data before saving
+- **Variable Reference**: Quick access panel showing all available variables
+- **Template Types**:
+  - Individual notifications (`new_item.j2`, `upgraded_item.j2`)
+  - Grouped notifications (by event type or content type)
+  - Deletion notifications (`deleted_item.j2`)
+- **Version Control**: Automatic backup of templates before editing
+- **Validation**: Real-time syntax checking and error highlighting
+
+<details>
+<summary><b>Available Template Variables</b></summary>
+
+```jinja2
+{{ item.name }}              # Media title
+{{ item.year }}              # Release year
+{{ item.overview }}          # Plot summary
+{{ item.video_height }}      # Resolution (1080, 2160)
+{{ item.video_codec }}       # Codec (h264, hevc)
+{{ item.audio_codec }}       # Audio codec
+{{ item.audio_channels }}    # Channel layout (2.0, 5.1, 7.1)
+{{ item.video_range }}       # HDR type (SDR, HDR, HDR10+, DV)
+{{ item.imdb_rating }}       # IMDb rating
+{{ item.tmdb_rating }}       # TMDb rating
+{{ item.tvdb_rating }}       # TVDB rating
+{{ item.genres }}            # Genre list
+{{ item.cast }}              # Cast members
+{{ item.runtime }}           # Runtime in minutes
+{{ item.file_size_mb }}      # File size in MB
+{{ item.container }}         # Container format
+{{ item.poster_url }}        # Poster image URL
+```
+
+</details>
+
+### 📜 Log Viewer
+
+The log viewer provides comprehensive logging insights:
+
+- **Real-time Updates**: Logs update automatically as new entries are created
+- **Severity Filtering**: Filter by DEBUG, INFO, WARNING, ERROR, CRITICAL
+- **Component Filtering**: Filter by specific components (webhook, discord, database, etc.)
+- **Search**: Full-text search across all log entries
+- **Color Coding**: 
+  - 🔵 DEBUG (gray)
+  - ℹ️ INFO (blue)
+  - ⚠️ WARNING (yellow)
+  - ❌ ERROR (red)
+  - 🔴 CRITICAL (bold red)
+- **Time Range**: Filter logs by time range (last hour, day, week)
+- **Export**: Download logs for offline analysis
+- **Auto-scroll**: Automatically scroll to new entries
+
+### 🔐 Security
+
+The web interface includes optional security features:
+
+<details>
+<summary><b>Authentication Setup</b></summary>
+
+#### **Enabling Authentication**
+
+Authentication is **disabled by default**. To enable:
+
+1. Navigate to Settings → Security in the web interface
+2. Toggle "Enable Authentication"
+3. Create your admin account:
+   - Username (3-50 characters, alphanumeric)
+   - Password (minimum 8 characters)
+   - Email (optional)
+4. Click "Save Settings"
+
+#### **JWT Token Management**
+- Access tokens expire after 30 minutes
+- Refresh tokens valid for 7 days
+- Automatic token refresh in the background
+- Secure HTTP-only cookies for token storage
+
+#### **Password Security**
+- Bcrypt hashing with unique salts
+- Configurable work factor for future-proofing
+- No password storage in plain text
+- Password reset functionality
+
+</details>
+
+<details>
+<summary><b>SSL/TLS Configuration</b></summary>
+
+#### **Enabling HTTPS**
+
+SSL/TLS is **disabled by default**. To enable:
+
+1. Navigate to Settings → SSL/TLS in the web interface
+2. Toggle "Enable SSL/TLS"
+3. Choose certificate format:
+   - **PFX/PKCS12**: Upload single file with password
+   - **PEM**: Upload separate certificate and key files
+4. Configure port (default: 9000)
+5. Click "Apply"
+
+#### **Certificate Management**
+- Automatic certificate validation
+- Expiry monitoring and warnings
+- CSR generation for certificate requests
+- Support for self-signed certificates
+
+> [!CAUTION]
+> You must provide your own SSL certificates. Jellynouncer does not generate certificates automatically for security reasons.
+
+</details>
 
 ## ⚙️ Configuration
 
 ### Getting API Keys
+
+<details>
+<summary><b>🔑 View API Key Instructions</b></summary>
 
 #### Jellyfin Credentials
 1. **API Key**: Dashboard → API Keys → Add Key
@@ -191,9 +400,17 @@ docker run -d \
 - **TMDb**: Free at [themoviedb.org](https://www.themoviedb.org/settings/api)
 - **TVDB**: Register at [thetvdb.com](https://thetvdb.com/api-information)
 
+</details>
+
 ### Advanced Configuration
 
-Create `config/config.json` for advanced settings:
+Configuration can be managed through:
+1. **Web Interface** (recommended) - `http://your-server:1985`
+2. **Environment Variables** - Override any setting
+3. **config.json** - Manual file editing
+
+<details>
+<summary><b>📋 View config.json Example</b></summary>
 
 ```json
 {
@@ -228,54 +445,19 @@ Create `config/config.json` for advanced settings:
     },
     "filter_renames": true,
     "filter_deletes": true
+  },
+  "web_interface": {
+    "auth_enabled": false,
+    "ssl_enabled": false,
+    "port": 1985,
+    "ssl_port": 9000
   }
 }
 ```
+
+</details>
 
 **📚 [Complete Configuration Guide →](config/Readme.md)**
-
-### 🎯 Smart Filtering Features
-
-#### Deletion Notifications & Filtering
-
-Jellynouncer supports **ItemDeleted** webhooks from Jellyfin, with intelligent filtering to prevent spam:
-
-##### **Filter Renames** (`filter_renames`)
-When enabled (default: `true`), Jellynouncer intelligently detects file renames and filters out unnecessary notifications:
-- Detects when a file is deleted and immediately re-added with the same content
-- Compares media properties to identify renames vs actual changes
-- Prevents "deleted" + "added" notification spam for simple file moves
-
-##### **Filter Deletes** (`filter_deletes`)
-When enabled (default: `true`), Jellynouncer intelligently handles upgrade scenarios:
-- Delays deletion notifications by 30 seconds to detect upgrades
-- When Jellyfin upgrades a file (e.g., 1080p → 4K), it sends delete + add events
-- Jellynouncer detects this pattern and only sends the upgrade notification
-- True deletions (not followed by additions) are still notified after the delay
-
-#### Configuration Options
-
-**Environment Variables:**
-```bash
-FILTER_RENAMES=true    # Filter out rename notifications
-FILTER_DELETES=true    # Filter deletion notifications for upgrades
-```
-
-**config.json:**
-```json
-{
-  "notifications": {
-    "filter_renames": true,
-    "filter_deletes": true
-  }
-}
-```
-
-#### Template Support
-
-New deletion templates are available:
-- `deleted_item.j2` - Standard deletion notification template
-- Custom templates can be created following the same structure
 
 ## 🔄 How It Works
 
@@ -335,6 +517,11 @@ graph TD
     Z -->|Music| AC[Music Webhook]
     Z -->|Default| AD[General Webhook]
     
+    %% Web Interface
+    WEB[Web Interface<br/>Port 1985] --> C
+    WEB --> L
+    WEB --> Y
+    
     %% Database Layer
     L --> AE[(SQLite + WAL)]
     AE --> AF[Concurrent Access]
@@ -354,6 +541,9 @@ graph TD
     style A fill:#aa5cc3,stroke:#8a3db3,stroke-width:2px,color:#fff
     style B fill:#a15dc5,stroke:#8144b5,stroke-width:2px,color:#fff
     style C fill:#975fc7,stroke:#774bb8,stroke-width:2px,color:#fff
+    
+    %% Web Interface (Teal)
+    style WEB fill:#26a69a,stroke:#00897b,stroke-width:3px,color:#fff
     
     %% Event Processing (Purple-Blue transition)
     style D fill:#8e61c9,stroke:#6e52ba,stroke-width:2px,color:#fff
@@ -410,131 +600,63 @@ graph TD
     style AM fill:#f48fb1,stroke:#f06292,stroke-width:2px,color:#fff
 ```
 
-### Detailed Component Flow
-
-#### 1. **Webhook Reception & Validation**
-```
-Jellyfin Event → Webhook Plugin → POST /webhook → FastAPI Validation → WebhookPayload Model
-```
-- Jellyfin detects library changes (ItemAdded/ItemDeleted) and triggers webhook
-- FastAPI validates incoming payload structure
-- Pydantic models ensure type safety and data integrity
-- Event type determines processing path (addition/deletion/update)
-
-#### 2. **Deletion Filtering Pipeline**
-```
-ItemDeleted → Deletion Queue (30s) → Upgrade Detection → True Delete vs Upgrade Filter
-```
-- ItemDeleted events enter deletion queue if `filter_deletes=true`
-- 30-second delay allows detection of upgrade patterns
-- Matches deletions with subsequent additions to identify upgrades
-- True deletions proceed to notification after timeout
-
-#### 3. **Media Processing Pipeline**
-```
-ItemAdded → Deletion Check → Rename Detection → Database Lookup → Change Detection
-```
-- Check deletion queue for matching items (upgrade/rename scenarios)
-- Compare file paths and properties for rename detection if `filter_renames=true`
-- Query SQLite database for existing item history
-- Analyze differences using content hashing algorithm
-- Classify as new item, quality upgrade, or filtered event
-
-#### 4. **Metadata Enhancement**
-```
-JellyfinAPI → External Services (OMDb/TMDb/TVDB) → Metadata Aggregation → Cache Storage
-```
-- Fetch additional details from Jellyfin API
-- Query external services for ratings and additional metadata
-- Aggregate all metadata into unified MediaItem object
-- Cache results to reduce API calls
-
-#### 5. **Template Processing**
-```
-Template Selection → Jinja2 Environment → Bytecode Cache → Discord Embed Creation
-```
-- Select appropriate template (new_item.j2, upgraded_item.j2, deleted_item.j2)
-- Render template with Jinja2 environment (8x faster with caching)
-- Use bytecode cache for compiled templates
-- Generate Discord-compatible JSON embed structure
-
-#### 6. **Notification Routing**
-```
-Content Type Detection → Webhook Selection → Channel Routing → Rate Limiting
-```
-- Detect content type (Movie, TV, Music)
-- Select configured webhook for content type
-- Fall back to default webhook if specific not configured
-- Route to appropriate Discord channel
-
-#### 7. **Delivery & Reliability**
-```
-Rate Limiter → Notification Queue → Discord API → Retry Logic → Success/Failure Handling
-```
-- Check Discord rate limits (30 requests/minute per webhook)
-- Queue notifications automatically when rate limited
-- Process queue with intelligent backoff and retry logic
-- Track success/failure with comprehensive statistics
-- Ensure no notifications lost during large library updates
-
-### Background Services
-
-1. **Library Synchronization**: Periodically syncs with Jellyfin using producer/consumer pattern
-2. **Deletion Cleanup**: Processes pending deletions after 30-second timeout for upgrade detection
-3. **Queue Processing**: Manages notification batching and grouped notifications
-4. **Health Monitoring**: Tracks service health and external API availability
-5. **Database Maintenance**: Performs VACUUM operations and WAL checkpoints
-
 ## 📡 API Endpoints
+
+### Webhook Service (Port 1984)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/webhook` | POST | Main webhook receiver from Jellyfin (includes debug logging when LOG_LEVEL=DEBUG) |
+| `/webhook` | POST | Main webhook receiver from Jellyfin |
 | `/health` | GET | Service health and status |
-| `/stats` | GET | Comprehensive statistics including database, queue metrics, and notification performance |
+| `/stats` | GET | Comprehensive statistics |
 | `/sync` | POST | Trigger manual library synchronization |
-| `/webhooks` | GET | List configured Discord webhooks |
-| `/queues` | GET | Show notification queue status |
-| `/flush-queues` | POST | Process all pending notifications |
-| `/test-webhook` | POST | Send test notification |
 | `/validate-templates` | GET | Validate all templates with sample data |
+| `/test-webhook` | POST | Send test notification |
 
-### Example API Usage
+### Web Interface API (Port 1985)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/overview` | GET | Dashboard statistics and health |
+| `/api/config` | GET/POST | Configuration management |
+| `/api/templates` | GET/POST | Template management |
+| `/api/logs` | GET | Log retrieval with filtering |
+| `/api/auth/login` | POST | User authentication |
+| `/api/auth/refresh` | POST | Token refresh |
+| `/api/security` | GET/POST | Security settings |
+| `/api/ssl` | GET/POST | SSL/TLS configuration |
+
+<details>
+<summary><b>📖 View API Examples</b></summary>
 
 ```bash
 # Check service health
-curl http://localhost:8080/health
+curl http://localhost:1984/health
 
 # View statistics (includes queue metrics)
-curl http://localhost:8080/stats
-# Returns: {
-#   "notification_queue": {
-#     "current_queue_size": 0,
-#     "total_queued": 42,
-#     "total_sent": 40,
-#     "total_failed": 2,
-#     "total_retried": 5,
-#     "rate_limit_hits": 3,
-#     "queue_utilization": 0.0,
-#     "success_rate": 95.2
-#   },
-#   "database": {...},
-#   "webhooks": {...}
-# }
+curl http://localhost:1984/stats
 
 # Trigger sync
-curl -X POST http://localhost:8080/sync
+curl -X POST http://localhost:1984/sync
 
 # Test specific webhook
-curl -X POST "http://localhost:8080/test-webhook?webhook_name=movies"
+curl -X POST "http://localhost:1984/test-webhook?webhook_name=movies"
 
-# Validate templates
-curl http://localhost:8080/validate-templates
+# Get dashboard data
+curl http://localhost:1985/api/overview
+
+# View current configuration
+curl http://localhost:1985/api/config
+
+# Get logs (last 100 entries)
+curl "http://localhost:1985/api/logs?limit=100"
 ```
+
+</details>
 
 ## 🎨 Templates
 
-Jellynouncer uses Jinja2 templates for complete control over Discord embed formatting.
+Jellynouncer uses Jinja2 templates for complete control over Discord embed formatting. Templates can be edited through the web interface or by modifying files directly.
 
 ### Template Types
 
@@ -543,31 +665,18 @@ Jellynouncer uses Jinja2 templates for complete control over Discord embed forma
 - **Grouped by Type**: `new_items_by_type.j2`, `upgraded_items_by_type.j2`
 - **Fully Grouped**: `new_items_grouped.j2`, `upgraded_items_grouped.j2`
 
-### Sample of Available Variables
-
-```jinja2
-{{ item.name }}              # Media title
-{{ item.year }}              # Release year
-{{ item.overview }}          # Plot summary
-{{ item.video_height }}      # Resolution (1080, 2160)
-{{ item.video_codec }}       # Codec (h264, hevc)
-{{ item.audio_codec }}       # Audio codec
-{{ item.audio_channels }}    # Channel layout (2.0, 5.1, 7.1)
-{{ item.video_range }}       # HDR type (SDR, HDR, HDR10+, DV)
-{{ item.imdb_rating }}       # IMDb rating
-{{ item.genres }}            # Genre list
-{{ item.cast }}              # Cast members
-```
-
-See the full template guide for all available variables
 **📚 [Complete Template Guide →](templates/Readme.md)**
 
 ## 🔧 Manual Installation
+
+<details>
+<summary><b>🛠️ View Manual Installation Steps</b></summary>
 
 ### Requirements
 - Python 3.13+
 - SQLite 3
 - Git
+- Node.js 20+ (for building web interface)
 
 ### Installation Steps
 
@@ -583,28 +692,33 @@ python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 ```
 
-3. **Install dependencies:**
+3. **Install Python dependencies:**
 ```bash
 pip install -r requirements.txt
 ```
 
-4. **Configure:**
+4. **Build web interface:**
+```bash
+cd web
+npm install
+npm run build
+cd ..
+```
+
+5. **Configure:**
 ```bash
 cp config/config.json.example config/config.json
 # Edit config.json with your settings
 ```
 
-5. **Run:**
+6. **Run:**
 ```bash
 python main.py
 ```
 
-6. **Configure Jellyfin Webhook Plugin:**
-   - Go to Jellyfin Dashboard → Plugins → Webhook
-   - Add new webhook with URL: `http://your-server:8080/webhook`
-   - Enable "Item Added" event or optionally "Item Deleted". The delete and rename filters are enabled by default.
-   - Check "Send All Properties"
-   - Save configuration
+7. **Access services:**
+   - Web Interface: `http://localhost:1985`
+   - Webhook: `http://localhost:1984`
 
 ### Systemd Service (Linux)
 
@@ -633,17 +747,26 @@ sudo systemctl enable jellynouncer
 sudo systemctl start jellynouncer
 ```
 
+</details>
+
 ## 🛠️ Troubleshooting
 
 ### Common Issues
 
-**No notifications received:**
-- Verify Jellyfin webhook plugin is configured correctly
-- Check webhook URL points to `http://your-server:8080/webhook`
-- Confirm Discord webhook URLs are valid
-- Review logs for connection errors
+<details>
+<summary><b>❓ No notifications received</b></summary>
 
-**Database errors:**
+- Verify Jellyfin webhook plugin is configured correctly
+- Check webhook URL points to `http://your-server:1984/webhook`
+- Confirm Discord webhook URLs are valid
+- Review logs in web interface or at `logs/jellynouncer.log`
+- Use the test webhook feature in the web interface
+
+</details>
+
+<details>
+<summary><b>❓ Database errors</b></summary>
+
 ```bash
 # Check permissions
 ls -la data/
@@ -653,14 +776,31 @@ rm data/jellynouncer.db
 docker restart jellynouncer
 ```
 
-**Rate limiting issues:**
+</details>
+
+<details>
+<summary><b>❓ Rate limiting issues</b></summary>
+
 - Reduce `max_items` in grouping configuration
 - Increase `delay_minutes` for batching
 - Check Discord rate limits in logs
+- Monitor queue status in web interface dashboard
+
+</details>
+
+<details>
+<summary><b>❓ Web interface not accessible</b></summary>
+
+- Ensure port 1985 is exposed in Docker
+- Check firewall rules
+- Verify `JELLYNOUNCER_RUN_MODE` includes web (default: "all")
+- Check logs for web service startup errors
+
+</details>
 
 ### Debug Mode
 
-Enable comprehensive debug logging to troubleshoot webhook issues:
+Enable comprehensive debug logging to troubleshoot issues:
 
 ```yaml
 # Docker Compose
@@ -674,13 +814,13 @@ export LOG_LEVEL=DEBUG
 python main.py
 ```
 
-When `LOG_LEVEL=DEBUG`, the `/webhook` endpoint will log:
+When `LOG_LEVEL=DEBUG`, the service will log:
 - Complete HTTP request headers (with sensitive values masked)
 - Raw request body content
 - JSON structure and field analysis
 - Webhook payload validation details
 - Item deletion queue status
-- Metadata API responses (OMDb, TMDb, TVDb)
+- Metadata API responses
 - Discord notification attempts and results
 
 ### Log Locations
@@ -688,6 +828,7 @@ When `LOG_LEVEL=DEBUG`, the `/webhook` endpoint will log:
 - **Application**: `logs/jellynouncer.log`
 - **Debug**: `logs/jellynouncer-debug.log` (when DEBUG enabled)
 - **Container**: `docker logs jellynouncer`
+- **Web Interface**: `http://your-server:1985` → Logs tab
 
 ## 📚 Documentation
 
@@ -695,6 +836,8 @@ When `LOG_LEVEL=DEBUG`, the `/webhook` endpoint will log:
 |----------|-------------|
 | [Configuration Guide](config/Readme.md) | Complete configuration reference |
 | [Template Guide](templates/Readme.md) | Template customization and examples |
+| [Web Interface Guide](docs/WebInterface.md) | Detailed web interface documentation |
+| [API Reference](docs/API.md) | Complete API endpoint documentation |
 
 ## 🤝 Contributing
 
@@ -714,6 +857,8 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 - PEP 8 compliance (Black formatter, 88 char limit)
 - Google-style docstrings
 - Comprehensive error handling
+- React 18 with TypeScript for web interface
+- Tailwind CSS for styling
 
 ## 📄 License
 
@@ -723,12 +868,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [Jellyfin](https://jellyfin.org/) for the amazing media server
 - [Discord](https://discord.com/) for the webhook API
+- [FastAPI](https://fastapi.tiangolo.com/) for the modern Python web framework
+- [React](https://react.dev/) and [Vite](https://vitejs.dev/) for the web interface
 - All contributors and users of this project
 
 ## 💬 Support
 
 - **Issues**: [GitHub Issues](https://github.com/MarkusMcNugen/Jellynouncer/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/MarkusMcNugen/Jellynouncer/discussions)
+- **Wiki**: [GitHub Wiki](https://github.com/MarkusMcNugen/Jellynouncer/wiki)
 
 ---
 

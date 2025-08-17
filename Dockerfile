@@ -1,55 +1,115 @@
-FROM python:3.13.7-slim
+# Multi-stage Dockerfile for Jellynouncer with Web Interface
+# Optimized for security, size, and build caching
 
-# Install system dependencies
+# ============================================
+# Stage 1: Frontend Builder
+# ============================================
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /build
+
+# Copy package files for dependency caching
+COPY web/package*.json ./
+
+# Install dependencies (npm ci is faster and more reliable for production)
+RUN npm ci
+
+# Copy frontend source code
+COPY web/ ./
+
+# Build the production bundle
+RUN npm run build
+
+# ============================================
+# Stage 2: Python Base 
+# ============================================
+FROM python:3.13-slim AS python-base
+
+# Install system dependencies and security updates
 RUN apt-get update && apt-get install -y \
     curl \
     sqlite3 \
     jq \
     gosu \
-    && rm -rf /var/lib/apt/lists/*
+    gcc \
+    g++ \
+    make \
+    libffi-dev \
+    libssl-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/*
+
+# Create non-root user for security
+RUN groupadd -r jellynouncer -g 1000 && \
+    useradd -r -g jellynouncer -u 1000 -m -s /bin/bash jellynouncer
 
 # Set working directory
 WORKDIR /app
 
-# Copy ONLY requirements.txt first
-COPY requirements.txt .
+# Copy and install Python requirements (cached layer)
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip cache purge
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# ============================================
+# Stage 3: Production Image
+# ============================================
+FROM python-base AS production
 
-# Create directory structure
-RUN mkdir -p /app/defaults/templates /app/defaults/config \
-    /app/data /app/logs /app/config /app/templates && \
-    chmod 755 /app/data /app/logs /app/config /app/templates
+# Copy application code with proper ownership
+COPY --chown=jellynouncer:jellynouncer main.py ./
+COPY --chown=jellynouncer:jellynouncer jellynouncer/ ./jellynouncer/
+COPY --chown=jellynouncer:jellynouncer docker-entrypoint.sh /usr/local/bin/
 
-# Set default environment variables
-ENV HOST=0.0.0.0
-ENV PORT=8080
-ENV TERM=xterm-256color
-ENV PYTHONUNBUFFERED=1
+# Copy default templates and config
+COPY --chown=jellynouncer:jellynouncer templates/ /app/defaults/templates/
+COPY --chown=jellynouncer:jellynouncer config/ /app/defaults/config/
 
-# Copy static files that rarely change first
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+# Copy built frontend from builder stage
+COPY --from=frontend-builder --chown=jellynouncer:jellynouncer /build/dist /app/web/dist
 
-# Copy default configuration (templates and config)
-COPY templates/ /app/defaults/templates/
-COPY config/config.json /app/defaults/config.json
+# Create necessary directories with proper permissions
+RUN mkdir -p \
+    /app/data \
+    /app/data/certificates \
+    /app/logs \
+    /app/config \
+    /app/templates \
+    /app/web/dist \
+    && chown -R jellynouncer:jellynouncer /app \
+    && chmod -R 755 /app \
+    && chmod 700 /app/data/certificates \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh \
+    && chmod +x /app/main.py
 
-# Copy Python application files LAST (these change most frequently)
-COPY main.py ./
-COPY jellynouncer/ ./jellynouncer/
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    HOST=0.0.0.0 \
+    PORT=1984 \
+    WEB_PORT=1985 \
+    TERM=xterm-256color \
+    LOG_LEVEL=INFO \
+    JELLYNOUNCER_RUN_MODE=all \
+    PATH="/app:${PATH}"
 
-# Expose port (configurable via build arg or environment)
-ARG PORT=8080
-EXPOSE ${PORT}
+# Expose ports
+# 1984: Webhook service
+# 1985: Web interface (HTTP)
+# 9000: Web interface (HTTPS when SSL is configured)
+EXPOSE 1984 1985 9000
 
-# Set entrypoint to our script
+# Volume mounts for persistent data
+VOLUME ["/app/config", "/app/data", "/app/logs", "/app/templates"]
+
+# Health check for both services
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-1984}/health && \
+        curl -f http://localhost:${WEB_PORT:-1985}/api/health || exit 1
+
+# Set the entrypoint
 ENTRYPOINT ["docker-entrypoint.sh"]
 
-# Health check using environment variable for port
-HEALTHCHECK --interval=300s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
-
-# Run the application directly
-CMD ["python", "main.py"]
+# Default command runs both services
+CMD ["python", "/app/main.py"]

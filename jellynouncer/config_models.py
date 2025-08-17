@@ -615,7 +615,7 @@ class ServerConfig(BaseModel):
 
     Example:
         ```python
-        # Default configuration (listens on all interfaces, port 8080)
+        # Default configuration (listens on all interfaces, port 1984)
         server = ServerConfig()
 
         # Custom configuration
@@ -629,7 +629,7 @@ class ServerConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     host: str = Field(default="0.0.0.0")
-    port: int = Field(default=8080, ge=1024, le=65535)  # Avoid system ports (<1024)
+    port: int = Field(default=1984, ge=1024, le=65535)  # Avoid system ports (<1024)
     log_level: str = Field(default="INFO")
 
     # noinspection PyDecorator

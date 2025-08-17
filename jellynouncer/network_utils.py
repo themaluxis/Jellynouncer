@@ -19,7 +19,7 @@ system to respect both config file settings and environment variable overrides.
 This module respects Jellynouncer's existing configuration hierarchy:
 1. Environment variables (HOST, PORT)
 2. Configuration file settings (config.json server section)
-3. Default values (0.0.0.0:8080)
+3. Default values (0.0.0.0:1984)
 
 **Detection Strategies:**
 1. Primary IP via external route (most reliable)
@@ -71,7 +71,7 @@ def _get_configured_port(config: Optional[Any] = None) -> int:
     Follows the same precedence as main.py:
     1. PORT environment variable
     2. config.server.port (if config provided)
-    3. Default 8080
+    3. Default 1984
 
     Args:
         config: Optional configuration object with server.port attribute
@@ -91,7 +91,7 @@ def _get_configured_port(config: Optional[Any] = None) -> int:
     if config and hasattr(config, 'server') and hasattr(config.server, 'port'):
         return int(os.getenv("PORT", str(config.server.port)))
     else:
-        return int(os.getenv("PORT", 8080))
+        return int(os.getenv("PORT", 1984))
 
 
 @dataclass
@@ -695,7 +695,7 @@ class NetworkDetector:
                 print("Available on:")
                 for interface in user_interfaces:
                     marker = " (primary)" if interface.is_primary else ""
-                    print(f"  http://{interface.ip_address}:8080{marker}")
+                    print(f"  http://{interface.ip_address}:1984{marker}")
             else:
                 print("No suitable interfaces found")
             ```
@@ -742,7 +742,7 @@ class NetworkDetector:
         1. port parameter (if provided)
         2. PORT environment variable
         3. config.server.port (if config provided)
-        4. Default 8080
+        4. Default 1984
 
         **URL Format:**
         Returns a complete HTTP URL including protocol and port number.
@@ -763,7 +763,7 @@ class NetworkDetector:
 
             # Use configured port from environment/config
             address = detector.get_server_address(config=config)
-            # Returns: "http://192.168.1.100:8080"
+            # Returns: "http://192.168.1.100:1984"
 
             # Override with specific port
             address = detector.get_server_address(port=9000)
@@ -837,7 +837,7 @@ def log_jellynouncer_startup(
     Log comprehensive Jellynouncer startup information with network details.
 
     This function provides the enhanced startup logging that replaces the original
-    "your-server:8080" placeholder with actual network interface information.
+    "your-server:1984" placeholder with actual network interface information.
     It creates user-friendly output that shows all available access methods.
 
     **Startup Message Features:**
@@ -852,9 +852,9 @@ def log_jellynouncer_startup(
     [2025-08-05 05:00:08 UTC] [system] [INFO] [jellynouncer] Jellynouncer app started successfully
     [2025-08-05 05:00:08 UTC] [system] [INFO] [jellynouncer] ============================================================
     [2025-08-05 05:00:08 UTC] [system] [INFO] [jellynouncer] 🎬 Jellynouncer is ready to receive webhooks!
-    [2025-08-05 05:00:08 UTC] [system] [INFO] [jellynouncer] Send webhooks to: http://192.168.1.100:8080/webhook
-    [2025-08-05 05:00:08 UTC] [system] [INFO] [jellynouncer] Health check: http://192.168.1.100:8080/health
-    [2025-08-05 05:00:08 UTC] [system] [INFO] [jellynouncer] Also available on: http://10.0.0.50:8080
+    [2025-08-05 05:00:08 UTC] [system] [INFO] [jellynouncer] Send webhooks to: http://192.168.1.100:1984/webhook
+    [2025-08-05 05:00:08 UTC] [system] [INFO] [jellynouncer] Health check: http://192.168.1.100:1984/health
+    [2025-08-05 05:00:08 UTC] [system] [INFO] [jellynouncer] Also available on: http://10.0.0.50:1984
     [2025-08-05 05:00:08 UTC] [system] [INFO] [jellynouncer] ============================================================
     ```
 

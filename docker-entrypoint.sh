@@ -150,6 +150,8 @@ readonly TEMPLATES_DIR="${APP_ROOT}/templates"
 readonly DATA_DIR="${APP_ROOT}/data"
 readonly LOGS_DIR="${APP_ROOT}/logs"
 readonly DEFAULTS_DIR="${APP_ROOT}/defaults"
+readonly WEB_DIR="${APP_ROOT}/web"
+readonly CERTS_DIR="${DATA_DIR}/certificates"
 
 # File paths
 readonly CONFIG_FILE="${CONFIG_DIR}/config.json"
@@ -446,6 +448,9 @@ create_required_directories() {
         ["${TEMPLATES_DIR}"]="Templates directory"
         ["${DATA_DIR}"]="Data directory"
         ["${LOGS_DIR}"]="Application logs directory"
+        ["${WEB_DIR}"]="Web interface directory"
+        ["${WEB_DIR}/dist"]="Web interface static files"
+        ["${CERTS_DIR}"]="SSL certificates directory"
     )
 
     local created_count=0
@@ -615,6 +620,8 @@ copy_default_files() {
             # Set proper permissions based on file type
             if [[ "${file_type}" == "Script" ]]; then
                 safe_chmod "${dest_file}" "755" "${component}"
+            elif [[ "${file_type}" == "Certificate" ]]; then
+                safe_chmod "${dest_file}" "600" "${component}"  # Restricted for certificates
             else
                 safe_chmod "${dest_file}" "644" "${component}"
             fi
