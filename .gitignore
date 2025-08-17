@@ -10,3 +10,7 @@ CLAUDE.md
 /__pycache__
 /__pycache__
 /.claude
+/__pycache__
+/__pycache__
+*.pyc
+.claude/settings.local.json

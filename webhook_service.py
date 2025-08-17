@@ -500,8 +500,16 @@ class WebhookService:
                     else:
                         self.logger.warning(f"Using basic item data for notification (enrichment failed)")
 
-                    # Send upgrade notification with enriched item
-                    await self.discord.send_notification(enriched_item, "upgraded_item", changes)
+                    # Get metadata for upgraded item
+                    metadata = {}
+                    if self.metadata_service and self.metadata_service.enabled:
+                        try:
+                            metadata = await self.metadata_service.enrich_media_item(enriched_item)
+                        except Exception as e:
+                            self.logger.error(f"Error enriching upgraded item with metadata: {e}")
+                    
+                    # Send upgrade notification with enriched item and metadata
+                    await self.discord.send_notification(enriched_item, "upgraded_item", changes, metadata=metadata)
 
                     return {
                         "status": "success",
@@ -534,10 +542,11 @@ class WebhookService:
                 await self.db.save_item(media_item)
 
                 # Enrich media item with metadata before rendering templates
+                metadata = {}
                 if self.metadata_service and self.metadata_service.enabled:
                     try:
-                        # Add all metadata from external sources (OMDb, TVDb, TMDb)
-                        media_item = await self.metadata_service.enrich_media_item(media_item)
+                        # Get metadata from external sources (OMDb, TVDb, TMDb)
+                        metadata = await self.metadata_service.enrich_media_item(media_item)
                         self.logger.info(
                             f"Added metadata from external sources for {media_item.name}"
                         )
@@ -545,8 +554,8 @@ class WebhookService:
                         self.logger.error(f"Error enriching item with metadata: {e}")
                         # Continue without metadata if enrichment fails
 
-                # Send new item notification with enriched item
-                await self.discord.send_notification(media_item, "new_item")
+                # Send new item notification with metadata
+                await self.discord.send_notification(media_item, "new_item", metadata=metadata)
 
                 return {
                     "status": "success",
@@ -1747,7 +1756,15 @@ class WebhookService:
                 enriched_item = await self.jellyfin.enrich_media_item_for_notification(
                     media_item, item_data, retry_on_failure=True
                 )
-                await self.discord.send_notification(enriched_item, "upgraded_item", changes)
+                # Get metadata for upgraded item
+                metadata = {}
+                if self.metadata_service and self.metadata_service.enabled:
+                    try:
+                        metadata = await self.metadata_service.enrich_media_item(enriched_item)
+                    except Exception as e:
+                        self.logger.error(f"Error enriching upgraded item with metadata: {e}")
+                
+                await self.discord.send_notification(enriched_item, "upgraded_item", changes, metadata=metadata)
                 return {
                     "status": "success",
                     "action": "upgraded_item",
@@ -1767,13 +1784,14 @@ class WebhookService:
                 }
         else:
             await self.db.save_item(media_item)
+            metadata = {}
             if self.metadata_service and self.metadata_service.enabled:
                 try:
-                    media_item = await self.metadata_service.enrich_media_item(media_item)
+                    metadata = await self.metadata_service.enrich_media_item(media_item)
                 except Exception as e:
                     self.logger.error(f"Error enriching item with metadata: {e}")
             
-            await self.discord.send_notification(media_item, "new_item")
+            await self.discord.send_notification(media_item, "new_item", metadata=metadata)
             return {
                 "status": "success",
                 "action": "new_item",

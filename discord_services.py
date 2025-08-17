@@ -658,7 +658,8 @@ class DiscordNotifier:
         
         return stats
 
-    async def send_notification(self, item: MediaItem, action: str, changes: Optional[List] = None) -> Dict[str, Any]:
+    async def send_notification(self, item: MediaItem, action: str, changes: Optional[List] = None, 
+                                metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Send Discord notification for a media item.
 
@@ -678,6 +679,8 @@ class DiscordNotifier:
         Args:
             item (MediaItem): Media item to create notification for
             action (str): Action that triggered the notification (added, updated, etc.)
+            changes (Optional[List]): List of changes for upgraded items
+            metadata (Optional[Dict[str, Any]]): External metadata (OMDb, TMDb, TVDb) data
 
         Returns:
             Dict[str, Any]: Detailed result information including:
@@ -688,8 +691,9 @@ class DiscordNotifier:
 
         Example:
             ```python
-            # Send notification for newly added movie
-            result = await notifier.send_notification(movie_item, "added")
+            # Send notification for newly added movie with metadata
+            metadata = {"omdb": omdb_data, "tmdb": tmdb_data}
+            result = await notifier.send_notification(movie_item, "added", metadata=metadata)
 
             if result["success"]:
                 logger.info(f"Movie notification sent: {result['message']}")
@@ -749,7 +753,7 @@ class DiscordNotifier:
             )
 
             # Render Discord embed using templates
-            embed_data = await self.render_embed(item, action, thumbnail_url, changes)
+            embed_data = await self.render_embed(item, action, thumbnail_url, changes, metadata)
             
             # Log the embed data for debugging
             self.logger.debug(f"Embed data returned from render_embed:")
@@ -998,7 +1002,7 @@ class DiscordNotifier:
         self.logger.debug("=" * 60)
 
     async def render_embed(self, item: MediaItem, action: str, thumbnail_url: Optional[str],
-                           changes: Optional[List] = None) -> Dict[str, Any]:
+                           changes: Optional[List] = None, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Render Discord embed using Jinja2 templates.
 
@@ -1031,6 +1035,7 @@ class DiscordNotifier:
             action (str): Action that triggered the notification ("new_item" or "upgraded_item")
             thumbnail_url (Optional[str]): Thumbnail URL for the embed image
             changes (Optional[List]): List of changes for upgraded items
+            metadata (Optional[Dict[str, Any]]): External metadata (OMDb, TMDb, TVDb) data
 
         Returns:
             Dict[str, Any]: Discord embed data structure
@@ -1040,7 +1045,8 @@ class DiscordNotifier:
 
         Example:
             ```python
-            embed = await notifier.render_embed(movie_item, "new_item", thumbnail_url)
+            metadata = {"omdb": omdb_data, "tmdb": tmdb_data}
+            embed = await notifier.render_embed(movie_item, "new_item", thumbnail_url, metadata=metadata)
             # Returns Discord embed structure ready for webhook
             ```
         """
@@ -1095,28 +1101,50 @@ class DiscordNotifier:
         self.logger.debug(f"  - 'tvdb' in item_dict: {'tvdb' in item_dict}")
         self.logger.debug(f"  - 'ratings' in item_dict: {'ratings' in item_dict}")
 
-        # If metadata is not in dict, we need to manually add it
-        if hasattr(item, 'omdb') and 'omdb' not in item_dict:
-            self.logger.debug("⚠️ OMDb metadata lost in asdict() - manually adding")
-            omdb_data = getattr(item, 'omdb', None)
-            if omdb_data:
+        # Add metadata from the passed parameter if available
+        if metadata:
+            self.logger.debug("Adding metadata from parameter")
+            if 'omdb' in metadata and metadata['omdb']:
+                self.logger.debug("  - Adding OMDb metadata")
+                omdb_data = metadata['omdb']
                 item_dict['omdb'] = omdb_data.to_dict() if hasattr(omdb_data, 'to_dict') else omdb_data
-
-        if hasattr(item, 'tmdb') and 'tmdb' not in item_dict:
-            self.logger.debug("⚠️ TMDb metadata lost in asdict() - manually adding")
-            tmdb_data = getattr(item, 'tmdb', None)
-            if tmdb_data:
+            
+            if 'tmdb' in metadata and metadata['tmdb']:
+                self.logger.debug("  - Adding TMDb metadata")
+                tmdb_data = metadata['tmdb']
                 item_dict['tmdb'] = tmdb_data.to_dict() if hasattr(tmdb_data, 'to_dict') else tmdb_data
-
-        if hasattr(item, 'tvdb') and 'tvdb' not in item_dict:
-            self.logger.debug("⚠️ TVDb metadata lost in asdict() - manually adding")
-            tvdb_data = getattr(item, 'tvdb', None)
-            if tvdb_data:
+            
+            if 'tvdb' in metadata and metadata['tvdb']:
+                self.logger.debug("  - Adding TVDb metadata")
+                tvdb_data = metadata['tvdb']
                 item_dict['tvdb'] = tvdb_data.to_dict() if hasattr(tvdb_data, 'to_dict') else tvdb_data
+            
+            if 'ratings' in metadata and metadata['ratings']:
+                self.logger.debug("  - Adding ratings data")
+                item_dict['ratings'] = metadata['ratings']
+        else:
+            # Try to get metadata from item attributes (backward compatibility)
+            if hasattr(item, 'omdb') and 'omdb' not in item_dict:
+                self.logger.debug("⚠️ OMDb metadata lost in asdict() - manually adding")
+                omdb_data = getattr(item, 'omdb', None)
+                if omdb_data:
+                    item_dict['omdb'] = omdb_data.to_dict() if hasattr(omdb_data, 'to_dict') else omdb_data
 
-        if hasattr(item, 'ratings') and 'ratings' not in item_dict:
-            self.logger.debug("⚠️ Ratings data lost in asdict() - manually adding")
-            item_dict['ratings'] = getattr(item, 'ratings', {})
+            if hasattr(item, 'tmdb') and 'tmdb' not in item_dict:
+                self.logger.debug("⚠️ TMDb metadata lost in asdict() - manually adding")
+                tmdb_data = getattr(item, 'tmdb', None)
+                if tmdb_data:
+                    item_dict['tmdb'] = tmdb_data.to_dict() if hasattr(tmdb_data, 'to_dict') else tmdb_data
+
+            if hasattr(item, 'tvdb') and 'tvdb' not in item_dict:
+                self.logger.debug("⚠️ TVDb metadata lost in asdict() - manually adding")
+                tvdb_data = getattr(item, 'tvdb', None)
+                if tvdb_data:
+                    item_dict['tvdb'] = tvdb_data.to_dict() if hasattr(tvdb_data, 'to_dict') else tvdb_data
+
+            if hasattr(item, 'ratings') and 'ratings' not in item_dict:
+                self.logger.debug("⚠️ Ratings data lost in asdict() - manually adding")
+                item_dict['ratings'] = getattr(item, 'ratings', {})
 
         self.logger.debug(f"Final item_dict keys: {list(item_dict.keys())}")
         self.logger.debug("=" * 60)

@@ -155,59 +155,66 @@ class MetadataService:
             try:
                 self.tvdb_client = TVDB(
                     api_key=self.tvdb_config.api_key,
-                    pin=self.tvdb_config.subscriber_pin,
-                    enable_caching=True,
-                    cache_ttl=self.config.tvdb_cache_ttl_hours * 3600  # Convert to seconds
+                    cache_duration_hours=self.cache_duration_hours
                 )
-                await self.tvdb_client.__aenter__()
-                self.logger.info("TVDb client initialized")
+                # TVDB needs its own session initialization
+                await self.tvdb_client.initialize(session)
+                self.logger.info("TVDb client initialized and authenticated")
             except Exception as e:
-                self.logger.error(f"TVDBv4 initialization error: {e}")
+                self.logger.error(f"Failed to initialize TVDb client: {e}")
                 self.tvdb_client = None
-        
-        # Log initialization status and available services after all clients are initialized
-        self.logger.info(f"Metadata service initialized - Enabled: {self.enabled}")
-        if self.enabled:
-            available_services = []
-            if self.omdb_client:
-                available_services.append("OMDb")
-            if self.tmdb_client:
-                available_services.append("TMDb")
-            if self.tvdb_client:  # Check actual client, not config
-                access_mode = "subscriber" if self.tvdb_config.subscriber_pin else "standard"
-                available_services.append(f"TVDb v4 ({access_mode})")
+
+        # Pass session to OMDb and TMDb clients
+        if self.omdb_client:
+            self.omdb_client.session = session
+            self.logger.debug("OMDb client assigned shared session")
+
+        if self.tmdb_client:
+            self.tmdb_client.session = session
+            self.logger.debug("TMDb client assigned shared session")
+
+        # Report available services
+        available_services = []
+        if self.omdb_client:
+            available_services.append("OMDb")
+        if self.tmdb_client:
+            available_services.append("TMDb")
+        if self.tvdb_client:
+            available_services.append("TVDb")
 
             service_list = ', '.join(available_services) if available_services else 'None (no API keys configured)'
             self.logger.info(f"Available metadata services: {service_list}")
 
-    async def enrich_media_item(self, item: MediaItem) -> MediaItem:
+    async def enrich_media_item(self, item: MediaItem) -> Dict[str, Any]:
         """
         Enrich a media item with metadata from all available sources.
 
         This is the main entry point for adding metadata to a media item before
-        template rendering. It adds data from OMDb, TMDb, and TVDb as nested
-        objects that can be accessed in templates.
+        template rendering. It returns metadata from OMDb, TMDb, and TVDb as a
+        dictionary that can be passed to the Discord notification service.
 
-        The enriched item will have the following additional attributes:
-        - item.omdb: OMDb metadata including all ratings
-        - item.tvdb: TVDb metadata for TV shows
-        - item.tmdb: TMDb community ratings (future)
-        - item.ratings: Simplified ratings dictionary for easy access
+        The returned dictionary contains:
+        - omdb: OMDb metadata including all ratings
+        - tvdb: TVDb metadata for TV shows
+        - tmdb: TMDb community ratings (future)
+        - ratings: Simplified ratings dictionary for easy access
 
         Args:
             item (MediaItem): Media item to enrich with metadata
 
         Returns:
-            MediaItem: The same item with added metadata attributes
+            Dict[str, Any]: Dictionary containing metadata from all sources
         """
         if not self.enabled:
-            return item
+            return {}
 
-            # Initialize metadata containers using setattr for dynamic attributes
-        setattr(item, 'omdb', None)
-        setattr(item, 'tvdb', None)
-        setattr(item, 'tmdb', None)
-        setattr(item, 'ratings', {})
+        # Initialize metadata containers
+        metadata = {
+            'omdb': None,
+            'tvdb': None,
+            'tmdb': None,
+            'ratings': {}
+        }
 
         # Fetch metadata from all available sources concurrently with semaphore control
         tasks = []
@@ -218,33 +225,37 @@ class MetadataService:
                 return await fetch_func(item)
 
         if self.omdb_client:
-            tasks.append(rate_limited_fetch(self._fetch_omdb_metadata, item))
+            tasks.append(('omdb', rate_limited_fetch(self._fetch_omdb_metadata, item)))
 
         if self.tvdb_client and item.item_type in ["Series", "Season", "Episode"]:
-            tasks.append(rate_limited_fetch(self._fetch_tvdb_metadata, item))
+            tasks.append(('tvdb', rate_limited_fetch(self._fetch_tvdb_metadata, item)))
 
         if self.tmdb_client:
-            tasks.append(rate_limited_fetch(self._fetch_tmdb_metadata, item))
+            tasks.append(('tmdb', rate_limited_fetch(self._fetch_tmdb_metadata, item)))
 
         # Execute all API calls concurrently with controlled concurrency
         if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            task_names = [name for name, _ in tasks]
+            task_futures = [future for _, future in tasks]
+            results = await asyncio.gather(*task_futures, return_exceptions=True)
 
-            # Process results
-            for result in results:
+            # Process results and store in metadata dict
+            for name, result in zip(task_names, results):
                 if isinstance(result, Exception):
-                    self.logger.warning(f"Metadata fetch error: {result}")
+                    self.logger.warning(f"Metadata fetch error for {name}: {result}")
+                else:
+                    metadata[name] = result
 
         # Create simplified ratings dictionary for easy template access
-        self._create_ratings_summary(item)
+        metadata['ratings'] = self._create_ratings_summary(metadata)
 
         # Count available metadata sources
         metadata_sources = []
-        if getattr(item, 'omdb', None):
+        if metadata.get('omdb'):
             metadata_sources.append('OMDb')
-        if getattr(item, 'tvdb', None):
+        if metadata.get('tvdb'):
             metadata_sources.append('TVDb')
-        if getattr(item, 'tmdb', None):
+        if metadata.get('tmdb'):
             metadata_sources.append('TMDb')
 
         self.logger.info(
@@ -252,7 +263,7 @@ class MetadataService:
             f"{len(metadata_sources)} sources: {', '.join(metadata_sources) if metadata_sources else 'none'}"
         )
 
-        return item
+        return metadata
 
     def _get_cache_key(self, provider: str, item: MediaItem) -> str:
         """
@@ -310,12 +321,15 @@ class MetadataService:
         # Clear the LRU cache to force refresh
         self._get_cached_metadata.cache_clear()
 
-    async def _fetch_omdb_metadata(self, item: MediaItem) -> None:
+    async def _fetch_omdb_metadata(self, item: MediaItem) -> Optional[Any]:
         """
-        Fetch and attach OMDb metadata to the media item with caching.
+        Fetch and return OMDb metadata for the media item with caching.
 
         Args:
             item (MediaItem): Media item to fetch OMDb data for
+            
+        Returns:
+            Optional[Any]: OMDb metadata object or None
         """
         try:
             # Check cache first
@@ -324,8 +338,7 @@ class MetadataService:
             
             if cached_data is not None:
                 self.logger.debug(f"Using cached OMDb metadata for {item.name}")
-                setattr(item, 'omdb', cached_data)
-                return
+                return cached_data
             
             # Fetch from API if not cached
             omdb_data = await self.omdb_client.get_metadata_for_item(item)
@@ -333,9 +346,6 @@ class MetadataService:
                 # Cache the fetched data
                 self._set_cached_metadata(cache_key, omdb_data)
                 
-                # Use setattr to add the dynamic attribute
-                setattr(item, 'omdb', omdb_data)
-
                 # Detailed debug logging
                 self.logger.debug("=" * 60)
                 self.logger.debug(f"📊 OMDb METADATA RECEIVED for: {item.name}")
@@ -367,47 +377,54 @@ class MetadataService:
                 self.logger.debug(f"  - Director: {getattr(omdb_data, 'director', 'N/A')}")
                 self.logger.debug(f"  - Writer: {getattr(omdb_data, 'writer', 'N/A')}")
                 self.logger.debug(f"  - Actors: {getattr(omdb_data, 'actors', 'N/A')}")
-                self.logger.debug(
-                    f"  - Plot: {(getattr(omdb_data, 'plot', 'N/A')[:100] + '...') if getattr(omdb_data, 'plot', None) and len(getattr(omdb_data, 'plot', '')) > 100 else getattr(omdb_data, 'plot', 'N/A')}")
+                self.logger.debug(f"  - Plot: {getattr(omdb_data, 'plot', 'N/A')[:100]}...")
                 self.logger.debug(f"  - Language: {getattr(omdb_data, 'language', 'N/A')}")
                 self.logger.debug(f"  - Country: {getattr(omdb_data, 'country', 'N/A')}")
                 self.logger.debug(f"  - Awards: {getattr(omdb_data, 'awards', 'N/A')}")
                 self.logger.debug(f"  - Poster URL: {getattr(omdb_data, 'poster', 'N/A')}")
-                self.logger.debug(f"  - Metascore: {getattr(omdb_data, 'metascore', 'N/A')}")
                 self.logger.debug(f"  - IMDb Rating: {getattr(omdb_data, 'imdb_rating', 'N/A')}")
                 self.logger.debug(f"  - IMDb Votes: {getattr(omdb_data, 'imdb_votes', 'N/A')}")
+                self.logger.debug(f"  - Metascore: {getattr(omdb_data, 'metascore', 'N/A')}")
+                self.logger.debug(f"  - Type: {getattr(omdb_data, 'type', 'N/A')}")
                 self.logger.debug(f"  - Box Office: {getattr(omdb_data, 'box_office', 'N/A')}")
-                self.logger.debug(f"  - Production: {getattr(omdb_data, 'production', 'N/A')}")
 
-                # Log ratings if available
-                if hasattr(omdb_data, 'ratings') and omdb_data.ratings:
-                    self.logger.debug(f"  - Ratings count: {len(omdb_data.ratings)}")
-                    for rating in omdb_data.ratings:
-                        self.logger.debug(f"    • {rating.source}: {rating.value}")
+                # Log ratings information if available
+                if hasattr(omdb_data, 'ratings'):
+                    self.logger.debug("  - Ratings (raw list):")
+                    for rating in getattr(omdb_data, 'ratings', []):
+                        self.logger.debug(f"    - {rating}")
 
-                # Log ratings dictionary if available
-                if hasattr(omdb_data, 'ratings_dict') and omdb_data.ratings_dict:
-                    self.logger.debug(f"  - Ratings dict keys: {list(omdb_data.ratings_dict.keys())}")
-                    for source, rating_info in omdb_data.ratings_dict.items():
-                        if hasattr(rating_info, 'value'):
-                            self.logger.debug(f"    • {source}: {rating_info.value}")
+                # Log the processed ratings_dict if available
+                if hasattr(omdb_data, 'ratings_dict'):
+                    self.logger.debug("  - Ratings Dictionary (processed):")
+                    ratings_dict = getattr(omdb_data, 'ratings_dict', {})
+                    for source, rating_obj in ratings_dict.items():
+                        if hasattr(rating_obj, 'value'):
+                            self.logger.debug(f"    - {source}: {rating_obj.value}")
+                        else:
+                            self.logger.debug(f"    - {source}: {rating_obj}")
 
                 self.logger.debug("=" * 60)
-            else:
-                self.logger.debug(f"No OMDb metadata returned for {item.name}")
+                return omdb_data
+            
+            return None
         except Exception as e:
-            self.logger.error(f"Error fetching OMDb metadata: {e}")
+            self.logger.error(f"Error fetching OMDb metadata for {item.name}: {e}")
+            return None
 
-    async def _fetch_tvdb_metadata(self, item: MediaItem) -> None:
+    async def _fetch_tvdb_metadata(self, item: MediaItem) -> Optional[Any]:
         """
-        Fetch and attach TVDb metadata to the media item with caching.
+        Fetch and return TVDb metadata for the media item with caching.
 
         Args:
             item (MediaItem): Media item to fetch TVDB data for
+            
+        Returns:
+            Optional[Any]: TVDb metadata object or None
         """
         try:
             if not self.tvdb_client or not item.tvdb_id:
-                return
+                return None
             
             # Check cache first
             cache_key = self._get_cache_key("tvdb", item)
@@ -415,250 +432,217 @@ class MetadataService:
             
             if cached_data is not None:
                 self.logger.debug(f"Using cached TVDb metadata for {item.name}")
-                setattr(item, 'tvdb', cached_data)
-                return
-
+                return cached_data
+            
+            # Determine which TVDb API method to use based on item type
             tvdb_data = None
-
             if item.item_type == "Series":
-                tvdb_data = await self.tvdb_client.get_series_metadata(int(item.tvdb_id))
-            elif item.item_type == "Episode":
-                series_data = await self.tvdb_client.get_series_metadata(int(item.tvdb_id))
-                if series_data:
-                    tvdb_data = series_data
-
+                tvdb_data = await self.tvdb_client.get_series_metadata(item.tvdb_id)
+            elif item.item_type == "Episode" and item.series_id:
+                # For episodes, we need the series TVDB ID, not the episode ID
+                tvdb_data = await self.tvdb_client.get_episode_metadata(
+                    series_tvdb_id=item.tvdb_id,
+                    season_number=item.season_number,
+                    episode_number=item.episode_number
+                )
+            
             if tvdb_data:
                 # Cache the fetched data
                 self._set_cached_metadata(cache_key, tvdb_data)
                 
-                # Use setattr to add the dynamic attribute
-                setattr(item, 'tvdb', tvdb_data)
-
-                # Detailed debug logging
                 self.logger.debug("=" * 60)
                 self.logger.debug(f"📺 TVDb METADATA RECEIVED for: {item.name}")
                 self.logger.debug("=" * 60)
-
-                # Log raw data structure first
-                self.logger.debug("📦 RAW TVDb DATA STRUCTURE:")
-                if hasattr(tvdb_data, '__dict__'):
-                    # If it's an object with __dict__
-                    import json
-                    try:
-                        # Try to serialize the object's dict representation
-                        raw_dict = tvdb_data.__dict__ if hasattr(tvdb_data, '__dict__') else tvdb_data
-                        self.logger.debug(json.dumps(raw_dict, indent=2, default=str))
-                    except Exception as e:
-                        # Fallback to repr if JSON serialization fails
-                        self.logger.debug(f"  {repr(tvdb_data)}")
-                else:
-                    # If it's already a dict or other type
-                    self.logger.debug(f"  {tvdb_data}")
-
                 self.logger.debug(f"  - TVDb ID: {getattr(tvdb_data, 'tvdb_id', 'N/A')}")
-                self.logger.debug(f"  - Name: {getattr(tvdb_data, 'name', 'N/A')}")
-                self.logger.debug(f"  - Status: {getattr(tvdb_data, 'status', 'N/A')}")
+                self.logger.debug(f"  - Series Name: {getattr(tvdb_data, 'series_name', 'N/A')}")
+                self.logger.debug(f"  - Season: {getattr(tvdb_data, 'season_number', 'N/A')}")
+                self.logger.debug(f"  - Episode: {getattr(tvdb_data, 'episode_number', 'N/A')}")
+                self.logger.debug(f"  - Episode Name: {getattr(tvdb_data, 'episode_name', 'N/A')}")
+                self.logger.debug(f"  - Overview: {getattr(tvdb_data, 'overview', 'N/A')[:100]}...")
                 self.logger.debug(f"  - First Aired: {getattr(tvdb_data, 'first_aired', 'N/A')}")
-                self.logger.debug(f"  - Network: {getattr(tvdb_data, 'network', 'N/A')}")
-                self.logger.debug(f"  - Runtime: {getattr(tvdb_data, 'runtime', 'N/A')} min")
-                self.logger.debug(f"  - Average Runtime: {getattr(tvdb_data, 'average_runtime', 'N/A')} min")
+                self.logger.debug(f"  - Runtime: {getattr(tvdb_data, 'runtime', 'N/A')}")
                 self.logger.debug(f"  - Rating: {getattr(tvdb_data, 'rating', 'N/A')}")
-                self.logger.debug(f"  - Rating Count: {getattr(tvdb_data, 'rating_count', 'N/A')}")
-                self.logger.debug(
-                    f"  - Overview: {(getattr(tvdb_data, 'overview', 'N/A')[:100] + '...') if getattr(tvdb_data, 'overview', None) and len(getattr(tvdb_data, 'overview', '')) > 100 else getattr(tvdb_data, 'overview', 'N/A')}")
-
-                # Log genres if available
-                if hasattr(tvdb_data, 'genres') and tvdb_data.genres:
-                    self.logger.debug(f"  - Genres: {', '.join(tvdb_data.genres)}")
-
-                # Log image URLs if available
+                self.logger.debug(f"  - Genres: {getattr(tvdb_data, 'genres', [])}")
+                self.logger.debug(f"  - Network: {getattr(tvdb_data, 'network', 'N/A')}")
+                self.logger.debug(f"  - Status: {getattr(tvdb_data, 'status', 'N/A')}")
                 self.logger.debug(f"  - Poster URL: {getattr(tvdb_data, 'poster_url', 'N/A')}")
-                self.logger.debug(f"  - Banner URL: {getattr(tvdb_data, 'banner_url', 'N/A')}")
-                self.logger.debug(f"  - Fanart URL: {getattr(tvdb_data, 'fanart_url', 'N/A')}")
-
+                self.logger.debug(f"  - Background URL: {getattr(tvdb_data, 'background_url', 'N/A')}")
                 self.logger.debug("=" * 60)
-            else:
-                self.logger.debug(f"No TVDb metadata returned for {item.name}")
-
+                
+                return tvdb_data
+            
+            return None
         except Exception as e:
-            self.logger.error(f"Error fetching TVDb metadata: {e}")
+            self.logger.error(f"Error fetching TVDb metadata for {item.name}: {e}")
+            return None
 
-    async def _fetch_tmdb_metadata(self, item: MediaItem) -> None:
+    async def _fetch_tmdb_metadata(self, item: MediaItem) -> Optional[Any]:
         """
-        Fetch and attach TMDb metadata to the media item with caching.
+        Fetch and return TMDb metadata for the media item with caching.
 
         Args:
             item (MediaItem): Media item to fetch TMDb data for
+            
+        Returns:
+            Optional[Any]: TMDb metadata object or None
         """
         try:
+            if not self.tmdb_client:
+                return None
+            
             # Check cache first
             cache_key = self._get_cache_key("tmdb", item)
             cached_data = self._get_cached_metadata(cache_key)
             
             if cached_data is not None:
                 self.logger.debug(f"Using cached TMDb metadata for {item.name}")
-                setattr(item, 'tmdb', cached_data)
-                return
+                return cached_data
             
+            # Fetch from API based on item type
             tmdb_data = await self.tmdb_client.get_metadata_for_item(item)
+            
             if tmdb_data:
                 # Cache the fetched data
                 self._set_cached_metadata(cache_key, tmdb_data)
                 
-                # Attach the TMDb metadata object to the item
-                setattr(item, 'tmdb', tmdb_data)
-
-                # Detailed debug logging
                 self.logger.debug("=" * 60)
                 self.logger.debug(f"🎬 TMDb METADATA RECEIVED for: {item.name}")
                 self.logger.debug("=" * 60)
-
-                # Log raw data structure first
-                self.logger.debug("📦 RAW TMDb DATA STRUCTURE:")
-                if hasattr(tmdb_data, '__dict__'):
-                    # If it's an object with __dict__
-                    import json
-                    try:
-                        # Try to serialize the object's dict representation
-                        raw_dict = tmdb_data.__dict__ if hasattr(tmdb_data, '__dict__') else tmdb_data
-                        self.logger.debug(json.dumps(raw_dict, indent=2, default=str))
-                    except Exception as e:
-                        # Fallback to repr if JSON serialization fails
-                        self.logger.debug(f"  {repr(tmdb_data)}")
-                else:
-                    # If it's already a dict or other type
-                    self.logger.debug(f"  {tmdb_data}")
-
-                # Log all available attributes
-                self.logger.debug("\n🔍 ALL AVAILABLE ATTRIBUTES:")
-                if hasattr(tmdb_data, '__dict__'):
-                    for attr_name in dir(tmdb_data):
-                        if not attr_name.startswith('_'):
-                            try:
-                                attr_value = getattr(tmdb_data, attr_name)
-                                if not callable(attr_value):
-                                    self.logger.debug(f"  - {attr_name}: {attr_value}")
-                            except:
-                                pass
-
                 self.logger.debug(f"  - TMDb ID: {getattr(tmdb_data, 'tmdb_id', 'N/A')}")
-                self.logger.debug(f"  - Media Type: {getattr(tmdb_data, 'media_type', 'N/A')}")
                 self.logger.debug(f"  - Title: {getattr(tmdb_data, 'title', 'N/A')}")
                 self.logger.debug(f"  - Original Title: {getattr(tmdb_data, 'original_title', 'N/A')}")
+                self.logger.debug(f"  - Overview: {getattr(tmdb_data, 'overview', 'N/A')[:100]}...")
                 self.logger.debug(f"  - Release Date: {getattr(tmdb_data, 'release_date', 'N/A')}")
-                self.logger.debug(f"  - Vote Average: {getattr(tmdb_data, 'vote_average', 'N/A')}/10")
-                self.logger.debug(f"  - Vote Count: {getattr(tmdb_data, 'vote_count', 'N/A')}")
                 self.logger.debug(f"  - Popularity: {getattr(tmdb_data, 'popularity', 'N/A')}")
-                self.logger.debug(
-                    f"  - Overview: {(getattr(tmdb_data, 'overview', 'N/A')[:100] + '...') if getattr(tmdb_data, 'overview', None) and len(getattr(tmdb_data, 'overview', '')) > 100 else getattr(tmdb_data, 'overview', 'N/A')}")
-                self.logger.debug(f"  - Tagline: {getattr(tmdb_data, 'tagline', 'N/A')}")
-                self.logger.debug(f"  - Status: {getattr(tmdb_data, 'status', 'N/A')}")
-                self.logger.debug(f"  - Runtime: {getattr(tmdb_data, 'runtime', 'N/A')} min")
-                self.logger.debug(f"  - Budget: ${getattr(tmdb_data, 'budget', 'N/A')}")
-                self.logger.debug(f"  - Revenue: ${getattr(tmdb_data, 'revenue', 'N/A')}")
-                self.logger.debug(f"  - Homepage: {getattr(tmdb_data, 'homepage', 'N/A')}")
-
-                # Log genres if available - FIXED VERSION
-                if hasattr(tmdb_data, 'genres') and tmdb_data.genres:
-                    self.logger.debug(f"  - Genres: {tmdb_data.genres}")
-
-                # Log production companies if available
-                if hasattr(tmdb_data, 'production_companies') and tmdb_data.production_companies:
-                    self.logger.debug(f"  - Production Companies: {tmdb_data.production_companies[:3]}")
-
-                # Log image paths
+                self.logger.debug(f"  - Vote Average: {getattr(tmdb_data, 'vote_average', 'N/A')}")
+                self.logger.debug(f"  - Vote Count: {getattr(tmdb_data, 'vote_count', 'N/A')}")
                 self.logger.debug(f"  - Poster Path: {getattr(tmdb_data, 'poster_path', 'N/A')}")
                 self.logger.debug(f"  - Backdrop Path: {getattr(tmdb_data, 'backdrop_path', 'N/A')}")
-
-                # Log TV-specific fields if present
-                if item.item_type in ["Series", "Episode", "Season"]:
-                    self.logger.debug(f"  - First Air Date: {getattr(tmdb_data, 'first_air_date', 'N/A')}")
-                    self.logger.debug(f"  - Last Air Date: {getattr(tmdb_data, 'last_air_date', 'N/A')}")
-                    self.logger.debug(f"  - Number of Seasons: {getattr(tmdb_data, 'number_of_seasons', 'N/A')}")
-                    self.logger.debug(f"  - Number of Episodes: {getattr(tmdb_data, 'number_of_episodes', 'N/A')}")
-                    self.logger.debug(f"  - Episode Runtime: {getattr(tmdb_data, 'episode_run_time', 'N/A')}")
-
+                self.logger.debug(f"  - Adult: {getattr(tmdb_data, 'adult', 'N/A')}")
+                self.logger.debug(f"  - Genres: {getattr(tmdb_data, 'genre_ids', [])}")
                 self.logger.debug("=" * 60)
-            else:
-                self.logger.debug(f"No TMDb metadata returned for {item.name}")
+                
+                return tmdb_data
+            
+            return None
         except Exception as e:
-            self.logger.error(f"Error fetching TMDb metadata: {e}")
+            self.logger.error(f"Error fetching TMDb metadata for {item.name}: {e}")
+            return None
 
-    def _create_ratings_summary(self, item: MediaItem) -> None:
+    def _create_ratings_summary(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Create a simplified ratings summary for easy template access.
+        Create a simplified ratings dictionary from all metadata sources.
 
-        This creates a flat dictionary of all ratings from various sources
-        that can be easily accessed in templates as item.ratings.imdb,
-        item.ratings.rotten_tomatoes, etc.
+        This combines ratings from OMDb, TMDb, and TVDb into a single dictionary
+        for easy access in templates.
 
         Args:
-            item (MediaItem): Media item with attached metadata
+            metadata: Dictionary containing metadata from all sources
+
+        Returns:
+            Dict[str, Any]: Simplified ratings dictionary
         """
-        # Create ratings dictionary
         ratings = {}
 
         # Extract OMDb ratings
-        omdb_data = getattr(item, 'omdb', None)
-        if omdb_data and hasattr(omdb_data, 'ratings_dict'):
-            for source, rating in omdb_data.ratings_dict.items():
-                ratings[source] = {
-                    "value": rating.value,
-                    "normalized": rating.normalized_value,
-                    "source": rating.source
+        omdb_data = metadata.get('omdb')
+        if omdb_data:
+            # IMDb rating
+            if hasattr(omdb_data, 'imdb_rating') and omdb_data.imdb_rating != 'N/A':
+                ratings['imdb'] = {
+                    'value': omdb_data.imdb_rating,
+                    'normalized': self._normalize_rating(omdb_data.imdb_rating, '/10'),
+                    'source': 'Internet Movie Database'
+                }
+                ratings['imdb_score'] = omdb_data.imdb_rating
+                if hasattr(omdb_data, 'imdb_votes'):
+                    ratings['imdb_votes'] = omdb_data.imdb_votes
+
+            # Metascore
+            if hasattr(omdb_data, 'metascore') and omdb_data.metascore != 'N/A':
+                ratings['metascore'] = {
+                    'value': omdb_data.metascore,
+                    'normalized': self._normalize_rating(omdb_data.metascore, '/100'),
+                    'source': 'Metacritic'
                 }
 
-        # Add IMDb rating as a direct field if available
-        if omdb_data and hasattr(omdb_data, 'imdb_rating'):
-            ratings["imdb_score"] = omdb_data.imdb_rating
-            if hasattr(omdb_data, 'imdb_votes'):
-                ratings["imdb_votes"] = omdb_data.imdb_votes
+            # Rotten Tomatoes
+            if hasattr(omdb_data, 'ratings_dict'):
+                rt_rating = omdb_data.ratings_dict.get('rotten_tomatoes')
+                if rt_rating:
+                    ratings['rotten_tomatoes'] = {
+                        'value': rt_rating.value if hasattr(rt_rating, 'value') else rt_rating,
+                        'normalized': self._normalize_rating(
+                            rt_rating.value if hasattr(rt_rating, 'value') else rt_rating, '%'
+                        ),
+                        'source': 'Rotten Tomatoes'
+                    }
 
-        # Add Metascore if available
-        if omdb_data and hasattr(omdb_data, 'metascore'):
-            ratings["metascore"] = omdb_data.metascore
+        # Extract TMDb ratings
+        tmdb_data = metadata.get('tmdb')
+        if tmdb_data:
+            if hasattr(tmdb_data, 'vote_average') and tmdb_data.vote_average:
+                ratings['tmdb'] = {
+                    'value': f"{tmdb_data.vote_average}/10",
+                    'normalized': tmdb_data.vote_average,
+                    'source': 'The Movie Database'
+                }
+                if hasattr(tmdb_data, 'vote_count'):
+                    ratings['tmdb_votes'] = tmdb_data.vote_count
 
-        # Add TVDb rating if available
-        tvdb_data = getattr(item, 'tvdb', None)
-        if tvdb_data and hasattr(tvdb_data, 'rating'):
-            ratings["tvdb"] = {
-                "value": tvdb_data.rating,
-                "count": getattr(tvdb_data, 'rating_count', None)
-            }
+        # Extract TVDb ratings
+        tvdb_data = metadata.get('tvdb')
+        if tvdb_data:
+            if hasattr(tvdb_data, 'rating') and tvdb_data.rating:
+                ratings['tvdb'] = {
+                    'value': f"{tvdb_data.rating}/10",
+                    'normalized': tvdb_data.rating,
+                    'source': 'The TV Database'
+                }
 
-        # Add TMDb rating if available
-        tmdb_data = getattr(item, 'tmdb', None)
-        if tmdb_data and hasattr(tmdb_data, 'vote_average'):
-            ratings["tmdb"] = {
-                "value": f"{tmdb_data.vote_average}/10",
-                "normalized": tmdb_data.vote_average,
-                "count": getattr(tmdb_data, 'vote_count', None)
-            }
+        return ratings
 
-        # Set the ratings attribute on the item
-        setattr(item, 'ratings', ratings)
+    def _normalize_rating(self, rating_value: str, rating_format: str) -> float:
+        """
+        Normalize various rating formats to a 0-10 scale.
 
-        # Debug logging for ratings summary
-        if ratings:
-            self.logger.debug("=" * 60)
-            self.logger.debug(f"⭐ RATINGS SUMMARY for: {item.name}")
-            self.logger.debug("=" * 60)
-            for key, value in ratings.items():
-                if isinstance(value, dict):
-                    self.logger.debug(f"  - {key}: {value.get('value', 'N/A')} (count: {value.get('count', 'N/A')})")
-                else:
-                    self.logger.debug(f"  - {key}: {value}")
-            self.logger.debug("=" * 60)
-        else:
-            self.logger.debug(f"No ratings data available for: {item.name}")
+        Args:
+            rating_value: Raw rating value string
+            rating_format: Format hint ('/10', '%', '/100')
+
+        Returns:
+            float: Normalized rating on 0-10 scale
+        """
+        try:
+            if rating_format == '/10':
+                # Extract number before /10
+                parts = rating_value.split('/')
+                return float(parts[0])
+            elif rating_format == '%':
+                # Convert percentage to 0-10 scale
+                value = rating_value.replace('%', '').strip()
+                return float(value) / 10.0
+            elif rating_format == '/100':
+                # Convert 0-100 to 0-10 scale
+                return float(rating_value) / 10.0
+            else:
+                # Try to parse as float directly
+                return float(rating_value)
+        except (ValueError, AttributeError, IndexError):
+            return 0.0
 
     async def cleanup(self) -> None:
         """
-        Clean up resources when shutting down the metadata service.
+        Clean up metadata service resources.
+
+        This should be called during application shutdown to properly close
+        connections and clean up resources.
         """
         if self.tvdb_client:
-            try:
-                await self.tvdb_client.__aexit__(None, None, None)
-                self.logger.info("TVDB client cleaned up")
-            except Exception as e:
-                self.logger.error(f"Error cleaning up TVDB client: {e}")
+            await self.tvdb_client.cleanup()
+            self.logger.debug("TVDb client cleaned up")
+
+        # Clear caches
+        self._metadata_cache.clear()
+        self._get_cached_metadata.cache_clear()
+        self.logger.debug("Metadata caches cleared")

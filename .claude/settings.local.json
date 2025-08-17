@@ -14,9 +14,15 @@
       "Bash(git --no-pager diff discord_services.py)",
       "Bash(python:*)",
       "WebFetch(domain:docs.python.org)",
-      "WebFetch(domain:jinja.palletsprojects.com)"
+      "WebFetch(domain:jinja.palletsprojects.com)",
+      "Bash(mv:*)",
+      "Bash(cp:*)",
+      "Bash(rm:*)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "C:\\mnt\\c\\Users\\Mark\\OneDrive\\Documents\\GitHub"
+    ]
   }
 }
