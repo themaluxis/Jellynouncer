@@ -20,7 +20,7 @@ Classes:
 
 Author: Mark Newton
 Project: Jellynouncer
-Version: 2.0.0
+Version: 1.0.0
 License: MIT
 """
 
@@ -603,7 +603,7 @@ class DiscordNotifier:
                 if await self.is_rate_limited(webhook_url):
                     # Calculate wait time
                     rate_limit_info = self.rate_limits.get(webhook_url, {})
-                    wait_time = max(0, rate_limit_info.get('blocked_until', 0) - time.time())
+                    wait_time = max(0.0, rate_limit_info.get('blocked_until', 0) - time.time())
                     
                     if wait_time > 0:
                         self.logger.debug(f"Rate limited, waiting {wait_time:.1f}s for {item_name}")
@@ -701,17 +701,17 @@ class DiscordNotifier:
             ```
         """
 
-        def _get_webhook_url_if_enabled(webhook_key: str) -> Optional[str]:
+        def _get_webhook_url_if_enabled(webhook_name: str) -> Optional[str]:
             """
             Helper function to safely get webhook URL if webhook exists, is enabled, and has URL.
 
             Args:
-                webhook_key (str): Key name in the webhooks dictionary
+                webhook_name (str): Key name in the webhooks dictionary
 
             Returns:
                 Optional[str]: Webhook URL if available and enabled, None otherwise
             """
-            webhook_config = self.config.webhooks.get(webhook_key)
+            webhook_config = self.config.webhooks.get(webhook_name)
             if (webhook_config and
                     webhook_config.enabled and
                     webhook_config.url):
@@ -772,9 +772,9 @@ class DiscordNotifier:
         
         total_processed = stats['total_sent'] + stats['total_failed']
         if total_processed > 0:
-            stats['success_rate'] = (stats['total_sent'] / total_processed * 100)
+            stats['success_rate'] = int(stats['total_sent'] / total_processed * 100)
         else:
-            stats['success_rate'] = 100.0
+            stats['success_rate'] = 100
         
         # Add configuration info
         stats['max_queue_size'] = self.max_queue_size
@@ -1141,7 +1141,7 @@ class DiscordNotifier:
                 self.logger.error(f"      Line {line_num:3d}: {lines[i]}")
         
         # Try to identify the specific issue
-        if position > 0 and position < len(rendered):
+        if 0 < position < len(rendered):
             char_at_error = rendered[position]
             self.logger.error(f"  - Character at error position: {repr(char_at_error)}")
             
@@ -1329,7 +1329,6 @@ class DiscordNotifier:
                 Dict[str, Any]: Grouping configuration from webhook config
             """
             # Determine which webhook would be used for this item
-            webhook_key = None
             if item.item_type in ["Movie"]:
                 webhook_key = "movies"
             elif item.item_type in ["Series", "Season", "Episode"]:
@@ -1352,54 +1351,54 @@ class DiscordNotifier:
             # Return empty config if no grouping found
             return {}
 
-        def _get_template_for_action_and_grouping(action: str, grouping_config: Dict[str, Any]) -> List[str]:
+        def _get_template_for_action_and_grouping(action_type: str, grouping_cfg: Dict[str, Any]) -> List[str]:
             """
             Get template filename(s) to try based on action and grouping configuration.
 
             Args:
-                action (str): Action type ("new_item" or "upgraded_item")
-                grouping_config (Dict[str, Any]): Grouping configuration from webhook
+                action_type (str): Action type ("new_item" or "upgraded_item")
+                grouping_cfg (Dict[str, Any]): Grouping configuration from webhook
 
             Returns:
                 List[str]: List of template filenames to try in order of preference
             """
             # Get grouping mode from config
-            grouping_mode = grouping_config.get("mode", "none")
+            grouping_mode = grouping_cfg.get("mode", "none")
 
             # Import templates_config from the webhook service
             # Note: This would need to be passed to the Discord service during initialization
             # For now, we'll use the default template configuration
 
-            template_candidates = []
+            candidates = []
 
-            if action == "new_item":
+            if action_type == "new_item":
                 if grouping_mode == "event_type" or grouping_mode == "by_event":
-                    template_candidates.append("new_items_by_event.j2")
+                    candidates.append("new_items_by_event.j2")
                 elif grouping_mode == "content_type" or grouping_mode == "by_type":
-                    template_candidates.append("new_items_by_type.j2")
+                    candidates.append("new_items_by_type.j2")
                 elif grouping_mode == "grouped" or grouping_mode == "both":
-                    template_candidates.append("new_items_grouped.j2")
+                    candidates.append("new_items_grouped.j2")
 
                 # Always fall back to individual template
-                template_candidates.append("new_item.j2")
+                candidates.append("new_item.j2")
 
-            elif action == "upgraded_item":
+            elif action_type == "upgraded_item":
                 if grouping_mode == "event_type" or grouping_mode == "by_event":
-                    template_candidates.append("upgraded_items_by_event.j2")
+                    candidates.append("upgraded_items_by_event.j2")
                 elif grouping_mode == "content_type" or grouping_mode == "by_type":
-                    template_candidates.append("upgraded_items_by_type.j2")
+                    candidates.append("upgraded_items_by_type.j2")
                 elif grouping_mode == "grouped" or grouping_mode == "both":
-                    template_candidates.append("upgraded_items_grouped.j2")
+                    candidates.append("upgraded_items_grouped.j2")
 
                 # Always fall back to individual template
-                template_candidates.append("upgraded_item.j2")
+                candidates.append("upgraded_item.j2")
 
             else:
                 # Unknown action, fall back to basic templates
-                self.logger.warning(f"Unknown action type: {action}, falling back to new_item template")
-                template_candidates.extend(["new_item.j2", "upgraded_item.j2"])
+                self.logger.warning(f"Unknown action type: {action_type}, falling back to new_item template")
+                candidates.extend(["new_item.j2", "upgraded_item.j2"])
 
-            return template_candidates
+            return candidates
 
         # Get grouping configuration for this webhook
         grouping_config = _get_webhook_grouping_config()
@@ -1613,7 +1612,7 @@ class DiscordNotifier:
             # Try to at least show the structure
             try:
                 self.logger.debug(f"Payload structure: {repr(payload)[:1000]}")
-            except:
+            except Exception:
                 self.logger.debug("Could not even repr() the payload")
 
         # Detailed embed analysis if embeds exist
@@ -2028,8 +2027,6 @@ class DiscordNotifier:
             
             # Timestamps
             timestamp="2025-08-16T14:42:44.9384606-04:00",
-            utc_timestamp="2025-08-16T18:42:44.9384614Z",
-            timestamp_created=datetime.now(timezone.utc).isoformat(),
             
             # Lists
             genres=["Anime", "Fantasy"],
@@ -2039,10 +2036,7 @@ class DiscordNotifier:
             # Image tags
             primary_image_tag="ef43347430d568667404c5ee65376c6b",
             logo_image_tag="a0bf9d1784cab4a4b125b543b3c7e77b",
-            thumb_image_tag="008b18a341d9a4483100823dbb50a2fc",
-            
-            # Content hash for change detection
-            content_hash="test_hash_12345"
+            thumb_image_tag="008b18a341d9a4483100823dbb50a2fc"
         )
         
         # Attach metadata to the item

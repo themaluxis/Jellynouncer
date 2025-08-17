@@ -15,7 +15,7 @@ Classes:
 
 Author: Mark Newton
 Project: Jellynouncer
-Version: 2.0.0
+Version: 1.0.0
 License: MIT
 """
 
@@ -192,7 +192,7 @@ class JellyfinAPI:
 
                 # Create and configure Jellyfin client
                 self.client = JellyfinClient()
-                self.client.config.app("Jellynouncer", "2.0.0", "jellynouncer", "1.0.0")
+                self.client.config.app("Jellynouncer", "1.0.0", "jellynouncer", "1.0.0")
 
                 # Auto-enable SSL verification for HTTPS URLs
                 if self.config.server_url.lower().startswith('https://'):
@@ -395,9 +395,9 @@ class JellyfinAPI:
         not available in webhook payloads.
 
         **API Call Details:**
-        Uses Jellyfin's Items API with specific field requests to ensure
-        all necessary metadata is included in the response. This provides
-        much more detail than webhook payloads.
+        Uses Jellyfin's Items API WITHOUT field filtering to get ALL available
+        metadata. This is intentionally different from get_all_items() which
+        uses minimal fields for performance during sync operations.
 
         Args:
             item_id (str): Unique Jellyfin item identifier
@@ -511,56 +511,21 @@ class JellyfinAPI:
 
             while True:
                 try:
-                    # Request batch of items with webhook-specific fields only
-                    # This field list maps directly to webhook payload fields for complete sync
-                    webhook_fields = ",".join([
-                        # Core item metadata (maps to webhook base fields)
-                        "Overview",  # → Overview
-                        "ProductionYear",  # → Year
-                        "RunTimeTicks",  # → RunTimeTicks
-                        "OfficialRating",  # → N/A (not in webhook but useful)
-                        "Tagline",  # → N/A (not in webhook but useful)
-                        "PremiereDate",  # → PremiereDate
-                        "DateCreated",  # → N/A (internal tracking)
-                        "DateModified",  # → N/A (internal tracking)
+                    # Request ONLY fields needed for DatabaseItem and content hash
+                    # This minimal field set reduces API payload by ~70% for faster syncing
+                    # Note: Path field removed - rename detection uses content hash + name instead
+                    sync_fields = ",".join([
+                        # Media stream information (required for change detection)
+                        "MediaStreams",  # → Video/Audio/Subtitle specs for content hash
+                        "MediaSources",  # → File size and container info
 
-                        # Media stream information (maps to Video_0_*, Audio_0_*, Subtitle_0_*)
-                        "MediaStreams",  # → All Video_0_*, Audio_0_*, Subtitle_0_* fields
-                        "MediaSources",  # → Container for MediaStreams + file info
-
-                        # Provider IDs (maps to Provider_* fields)
-                        "ProviderIds",  # → Provider_tvdb, Provider_imdb, Provider_tvdbslug
-
-                        # File system information
-                        "Path",  # → File path information
-
-                        # TV Series hierarchy (maps to Series*, Season*, Episode* fields)
-                        "IndexNumber",  # → EpisodeNumber, SeasonNumber (depending on type)
-                        "ParentIndexNumber",  # → SeasonNumber (for episodes)
-                        "SeriesName",  # → SeriesName
-                        "SeriesId",  # → SeriesId
-                        "SeasonId",  # → SeasonId
-                        "ParentId",  # → For hierarchy navigation
-                        "AirTime",  # → AirTime
-
-                        # Content metadata (maps to genres, studios, tags arrays)
-                        "Genres",  # → Not direct webhook field but needed for templates
-                        "Studios",  # → Not direct webhook field but needed for templates
-                        "Tags",  # → Not direct webhook field but needed for templates
-
-                        # Music-specific fields
-                        "Album",  # → Music metadata
-                        "Artists",  # → Artists array
-                        "AlbumArtist",  # → Album artist
-                        "ArtistItems",  # → Detailed artist information
-
-                        # Photo/image specific fields
-                        "Width",  # → Image width
-                        "Height",  # → Image height
-
-                        # Additional useful fields for templates
-                        "AspectRatio",  # → Video aspect ratio
-                        "CommunityRating"  # → Ratings for templates
+                        # TV Series hierarchy (required for episode identification)
+                        "IndexNumber",  # → Episode/Season number
+                        "ParentIndexNumber",  # → Season number for episodes
+                        "SeriesName",  # → Series name for episodes
+                        "SeriesId",  # → Series ID for hierarchy
+                        "SeasonId",  # → Season ID for hierarchy
+                        "ProductionYear"  # → Year for identification
                     ])
 
                     response = self.client.jellyfin.user_items(
@@ -568,7 +533,7 @@ class JellyfinAPI:
                             'StartIndex': start_index,
                             'Limit': batch_size,
                             'Recursive': True,
-                            'Fields': webhook_fields,
+                            'Fields': sync_fields,
                             'IncludeItemTypes': 'Movie,Series,Season,Episode,Audio,MusicAlbum,MusicArtist,MusicVideo,Video'
                         }
                     )

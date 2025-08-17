@@ -15,7 +15,7 @@ Classes:
 
 Author: Mark Newton
 Project: Jellynouncer
-Version: 2.0.0
+Version: 1.0.0
 License: MIT
 """
 
@@ -207,7 +207,6 @@ class MediaItem:
     Fields used for service operations and change detection:
 
     Attributes:
-        content_hash (str): MD5 hash for change detection (auto-generated)
         timestamp_created (str): When this object was created (auto-generated)
         timestamp (Optional[str]): Local timestamp with timezone from webhook
         utc_timestamp (Optional[str]): UTC timestamp from webhook

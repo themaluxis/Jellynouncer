@@ -39,7 +39,7 @@ Classes:
 
     Author: Mark Newton
     Project: Jellynouncer
-    Version: 2.0.0
+    Version: 1.0.0
     License: MIT
 """
 
@@ -111,7 +111,7 @@ class JellyfinConfig(BaseModel):
 
     # Optional fields with defaults
     client_name: str = Field(default="Jellynouncer-Discord-Webhook")
-    client_version: str = Field(default="2.0.0")
+    client_version: str = Field(default="1.0.0")
     device_name: str = Field(default="jellynouncer-webhook-service")
     device_id: str = Field(default="jellynouncer-discord-webhook-001")
 

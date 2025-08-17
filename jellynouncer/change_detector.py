@@ -16,7 +16,7 @@ Classes:
 
 Author: Mark Newton
 Project: Jellynouncer
-Version: 2.0.0
+Version: 1.0.0
 License: MIT
 """
 
@@ -398,6 +398,57 @@ class ChangeDetector:
 
         return changes
 
+    async def is_rename(self, new_item: Union[MediaItem, DatabaseItem], 
+                        existing_items: List[DatabaseItem]) -> tuple[bool, DatabaseItem]:
+        """
+        Detect if a new item is actually a rename/move of an existing item.
+        
+        This method identifies when a file has been renamed or moved without content changes.
+        It uses content hash and name comparison to detect renames without requiring
+        ItemDeleted webhooks from Jellyfin.
+        
+        **Rename Detection Logic:**
+        - Same content hash + same name = likely a rename/move
+        - Different item_id (Jellyfin generates new IDs for renamed files)
+        - No actual quality changes (verified by content hash)
+        
+        Args:
+            new_item: The new item from webhook or sync
+            existing_items: List of existing items from database
+            
+        Returns:
+            tuple: (is_rename: bool, old_item: DatabaseItem or None)
+                   Returns the old item if a rename is detected
+        
+        Example:
+            ```python
+            # Check if new webhook item is a rename
+            existing = await db.get_items_by_name(new_item.name)
+            is_rename, old_item = await detector.is_rename(new_item, existing)
+            
+            if is_rename:
+                # Update database with new item_id, skip notification
+                await db.replace_item(old_item.item_id, new_item)
+            ```
+        """
+        # Get content hash for comparison
+        new_hash = new_item.content_hash if hasattr(new_item, 'content_hash') else new_item._generate_content_hash()
+        
+        for existing_item in existing_items:
+            # Check if same content (hash) and same name but different item_id
+            if (existing_item.content_hash == new_hash and 
+                existing_item.name == new_item.name and
+                existing_item.item_id != new_item.item_id):
+                
+                self.logger.info(f"Rename detected for '{new_item.name}'")
+                self.logger.debug(f"  Old ItemId: {existing_item.item_id}")
+                self.logger.debug(f"  New ItemId: {new_item.item_id}")
+                self.logger.debug(f"  Content Hash: {new_hash}")
+                
+                return True, existing_item
+        
+        return False, None
+    
     def _normalize_hdr_status(self, video_range: str) -> str:
         """
         Normalize HDR status values for consistent comparison and reporting.

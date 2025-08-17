@@ -15,7 +15,7 @@ Classes:
 
 Author: Mark Newton
 Project: Jellynouncer
-Version: 2.0.0
+Version: 1.0.0
 License: MIT
 """
 
@@ -826,7 +826,7 @@ class WebhookService:
 
             stats = {
                 "service": {
-                    "version": "2.0.0",
+                    "version": "1.0.0",
                     "uptime_seconds": round(uptime_seconds, 2),
                     "sync_in_progress": self.sync_in_progress,
                     "initial_sync_complete": self.initial_sync_complete

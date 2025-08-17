@@ -15,7 +15,7 @@ Classes:
 
 Author: Mark Newton
 Project: Jellynouncer
-Version: 2.0.0
+Version: 1.0.0
 License: MIT
 """
 
@@ -421,8 +421,8 @@ class DatabaseManager:
                     item_dict['content_hash'] = item.content_hash
 
                 # Serialize list fields to JSON strings
-                for field in ['genres', 'studios', 'tags', 'artists']:
-                    if item_dict[field] is not None:
+                for field in ['genres', 'studios', 'tags', 'artists', 'subtitle_languages', 'subtitle_formats']:
+                    if field in item_dict and item_dict[field] is not None:
                         item_dict[field] = json.dumps(item_dict[field])
 
                 # Insert or replace the item (UPSERT operation)
@@ -488,7 +488,7 @@ class DatabaseManager:
                     item_dict = dict(row)
 
                     # Deserialize JSON fields back to lists
-                    for field in ['genres', 'studios', 'tags', 'artists']:
+                    for field in ['genres', 'studios', 'tags', 'artists', 'subtitle_languages', 'subtitle_formats']:
                         if item_dict[field]:
                             try:
                                 item_dict[field] = json.loads(item_dict[field])
@@ -584,7 +584,7 @@ class DatabaseManager:
                                     item_dict['content_hash'] = item.content_hash
                                 
                                 # Optimize JSON serialization with set lookup
-                                json_fields = {'genres', 'studios', 'tags', 'artists'}
+                                json_fields = {'genres', 'studios', 'tags', 'artists', 'subtitle_languages', 'subtitle_formats'}
                                 for field in json_fields:
                                     if field in item_dict and item_dict[field] is not None:
                                         item_dict[field] = json.dumps(item_dict[field])
@@ -619,7 +619,7 @@ class DatabaseManager:
                         for item in chunk:
                             try:
                                 item_dict = asdict(item)
-                                json_fields = {'genres', 'studios', 'tags', 'artists'}
+                                json_fields = {'genres', 'studios', 'tags', 'artists', 'subtitle_languages', 'subtitle_formats'}
                                 for field in json_fields:
                                     if field in item_dict and item_dict[field] is not None:
                                         item_dict[field] = json.dumps(item_dict[field])
@@ -706,7 +706,7 @@ class DatabaseManager:
                     item_dict = dict(row)
 
                     # Deserialize JSON fields
-                    for field in ['genres', 'studios', 'tags', 'artists']:
+                    for field in ['genres', 'studios', 'tags', 'artists', 'subtitle_languages', 'subtitle_formats']:
                         if item_dict.get(field):
                             try:
                                 item_dict[field] = json.loads(item_dict[field])
