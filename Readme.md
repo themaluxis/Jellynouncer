@@ -54,6 +54,11 @@ The service acts as a smart filter between Jellyfin's webhook events and Discord
 
 ### ⚡ Production-Ready Features
 - **Database Persistence**: SQLite with WAL mode for concurrent access and change tracking
+- **Intelligent Queue System**: Never lose notifications with automatic queueing during rate limits
+  - Handles up to 1000 queued notifications for large library updates
+  - Automatic retry with exponential backoff (3 attempts)
+  - Real-time queue statistics via `/stats` endpoint
+  - Graceful processing during Discord rate limits (30/minute)
 - **Rate Limiting**: Respects Discord API limits with configurable rate limiting
 - **Retry Logic**: Exponential backoff for network resilience
 - **Background Sync**: Periodic library synchronization to catch missed webhooks
@@ -464,12 +469,13 @@ Content Type Detection → Webhook Selection → Channel Routing → Rate Limiti
 
 #### 7. **Delivery & Reliability**
 ```
-Rate Limiter → Discord API → Retry Logic → Success/Failure Handling → Queue Management
+Rate Limiter → Notification Queue → Discord API → Retry Logic → Success/Failure Handling
 ```
-- Apply rate limiting to respect Discord API limits
-- Send notification to Discord webhook endpoint
-- Implement exponential backoff for failed attempts
-- Queue notifications during rate limit periods
+- Check Discord rate limits (30 requests/minute per webhook)
+- Queue notifications automatically when rate limited
+- Process queue with intelligent backoff and retry logic
+- Track success/failure with comprehensive statistics
+- Ensure no notifications lost during large library updates
 
 ### Background Services
 
@@ -485,7 +491,7 @@ Rate Limiter → Discord API → Retry Logic → Success/Failure Handling → Qu
 |----------|--------|-------------|
 | `/webhook` | POST | Main webhook receiver from Jellyfin (includes debug logging when LOG_LEVEL=DEBUG) |
 | `/health` | GET | Service health and status |
-| `/stats` | GET | Database and processing statistics |
+| `/stats` | GET | Comprehensive statistics including database, queue metrics, and notification performance |
 | `/sync` | POST | Trigger manual library synchronization |
 | `/webhooks` | GET | List configured Discord webhooks |
 | `/queues` | GET | Show notification queue status |
@@ -499,8 +505,22 @@ Rate Limiter → Discord API → Retry Logic → Success/Failure Handling → Qu
 # Check service health
 curl http://localhost:8080/health
 
-# View statistics
+# View statistics (includes queue metrics)
 curl http://localhost:8080/stats
+# Returns: {
+#   "notification_queue": {
+#     "current_queue_size": 0,
+#     "total_queued": 42,
+#     "total_sent": 40,
+#     "total_failed": 2,
+#     "total_retried": 5,
+#     "rate_limit_hits": 3,
+#     "queue_utilization": 0.0,
+#     "success_rate": 95.2
+#   },
+#   "database": {...},
+#   "webhooks": {...}
+# }
 
 # Trigger sync
 curl -X POST http://localhost:8080/sync

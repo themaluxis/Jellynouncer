@@ -468,6 +468,23 @@ class DiscordNotifier:
         self.template_dir = None
         self.webhooks = {}  # Make sure this is initialized
         
+        # Notification queue for handling rate limits and retries
+        self.notification_queue: Optional[asyncio.Queue] = None
+        self.queue_processor_task: Optional[asyncio.Task] = None
+        self.max_queue_size = 1000  # Support large library updates
+        self.max_retries = 3
+        self.retry_delay = 60  # Base retry delay in seconds
+        
+        # Queue statistics
+        self.queue_stats = {
+            'total_queued': 0,
+            'total_sent': 0,
+            'total_failed': 0,
+            'total_retried': 0,
+            'current_queue_size': 0,
+            'rate_limit_hits': 0
+        }
+        
         # Template performance tracking
         self.template_stats = {
             'render_count': 0,
@@ -523,6 +540,13 @@ class DiscordNotifier:
             self.logger.debug(f"Template bytecode cache directory: {cache_dir}")
             self.logger.info("Template caching enabled for improved performance")
 
+        # Initialize notification queue
+        self.notification_queue = asyncio.Queue(maxsize=self.max_queue_size)
+        
+        # Start queue processor background task
+        self.queue_processor_task = asyncio.create_task(self._process_notification_queue())
+        self.logger.info(f"Notification queue initialized (max size: {self.max_queue_size})")
+
         self.logger.info("Discord notifier initialized successfully")
 
     async def cleanup(self) -> None:
@@ -532,10 +556,110 @@ class DiscordNotifier:
         This method should be called during application shutdown to properly
         close the HTTP session and prevent resource leaks.
         """
+        # Stop queue processor task
+        if self.queue_processor_task and not self.queue_processor_task.done():
+            self.queue_processor_task.cancel()
+            try:
+                await self.queue_processor_task
+            except asyncio.CancelledError:
+                pass
+            self.logger.debug("Notification queue processor stopped")
+        
+        # Process any remaining queued notifications
+        if self.notification_queue and not self.notification_queue.empty():
+            remaining = self.notification_queue.qsize()
+            self.logger.warning(f"Shutting down with {remaining} notifications still in queue")
+        
         if self.session:
             await self.session.close()
             self.session = None
             self.logger.debug("Discord notifier HTTP session closed")
+
+    async def _process_notification_queue(self) -> None:
+        """
+        Background task to process queued notifications with rate limiting and retry logic.
+        
+        This task continuously processes the notification queue, handling:
+        - Rate limiting with intelligent backoff
+        - Retry logic with exponential backoff
+        - Batch processing during high load
+        - Queue statistics tracking
+        """
+        self.logger.info("Notification queue processor started")
+        
+        while True:
+            try:
+                # Get notification from queue (blocks until item available)
+                notification = await self.notification_queue.get()
+                self.queue_stats['current_queue_size'] = self.notification_queue.qsize()
+                
+                # Extract notification data
+                webhook_url = notification['webhook_url']
+                data = notification['data']
+                item_name = notification.get('item_name', 'Unknown')
+                retry_count = notification.get('retry_count', 0)
+                
+                # Check rate limiting
+                if await self.is_rate_limited(webhook_url):
+                    # Calculate wait time
+                    rate_limit_info = self.rate_limits.get(webhook_url, {})
+                    wait_time = max(0, rate_limit_info.get('blocked_until', 0) - time.time())
+                    
+                    if wait_time > 0:
+                        self.logger.debug(f"Rate limited, waiting {wait_time:.1f}s for {item_name}")
+                        self.queue_stats['rate_limit_hits'] += 1
+                        
+                        # Re-queue with same retry count (rate limit doesn't count as retry)
+                        notification['retry_count'] = retry_count
+                        await self.notification_queue.put(notification)
+                        
+                        # Wait before processing next item
+                        await asyncio.sleep(min(wait_time, 5))  # Check every 5 seconds max
+                        continue
+                
+                # Attempt to send the notification
+                success = await self.send_webhook(webhook_url, data)
+                
+                if success:
+                    self.queue_stats['total_sent'] += 1
+                    self.logger.debug(f"Successfully sent queued notification for {item_name}")
+                else:
+                    # Handle failure with retry logic
+                    if retry_count < self.max_retries:
+                        retry_count += 1
+                        retry_delay = self.retry_delay * (2 ** (retry_count - 1))  # Exponential backoff
+                        
+                        self.logger.warning(
+                            f"Failed to send notification for {item_name}, "
+                            f"retry {retry_count}/{self.max_retries} in {retry_delay}s"
+                        )
+                        
+                        # Re-queue with increased retry count
+                        notification['retry_count'] = retry_count
+                        notification['retry_after'] = time.time() + retry_delay
+                        
+                        self.queue_stats['total_retried'] += 1
+                        
+                        # Wait before re-queuing to implement backoff
+                        await asyncio.sleep(retry_delay)
+                        await self.notification_queue.put(notification)
+                    else:
+                        # Max retries reached, notification is lost
+                        self.queue_stats['total_failed'] += 1
+                        self.logger.error(
+                            f"Failed to send notification for {item_name} after "
+                            f"{self.max_retries} retries - notification dropped"
+                        )
+                
+                # Small delay between notifications to prevent overwhelming Discord
+                await asyncio.sleep(0.5)
+                
+            except asyncio.CancelledError:
+                self.logger.info("Notification queue processor shutting down")
+                break
+            except Exception as e:
+                self.logger.error(f"Error in notification queue processor: {e}")
+                await asyncio.sleep(1)  # Prevent tight error loop
 
     def get_webhook_url(self, media_type: str) -> Optional[str]:
         """
@@ -622,6 +746,41 @@ class DiscordNotifier:
         # No webhook configured
         self.logger.warning(f"No webhook configured for media type: {media_type}")
         return None
+    
+    def get_queue_stats(self) -> Dict[str, Any]:
+        """
+        Get notification queue statistics.
+        
+        Returns current queue metrics including queue size, success/failure rates,
+        and rate limit information.
+        
+        Returns:
+            Dict[str, Any]: Queue statistics including:
+                - current_queue_size: Number of notifications currently queued
+                - total_queued: Total notifications added to queue
+                - total_sent: Successfully sent notifications
+                - total_failed: Permanently failed notifications
+                - total_retried: Notifications that were retried
+                - rate_limit_hits: Number of rate limit encounters
+                - queue_utilization: Percentage of max queue size used
+                - success_rate: Percentage of successfully sent notifications
+        """
+        stats = self.queue_stats.copy()
+        
+        # Calculate additional metrics
+        stats['queue_utilization'] = (stats['current_queue_size'] / self.max_queue_size * 100) if self.max_queue_size > 0 else 0
+        
+        total_processed = stats['total_sent'] + stats['total_failed']
+        if total_processed > 0:
+            stats['success_rate'] = (stats['total_sent'] / total_processed * 100)
+        else:
+            stats['success_rate'] = 100.0
+        
+        # Add configuration info
+        stats['max_queue_size'] = self.max_queue_size
+        stats['max_retries'] = self.max_retries
+        
+        return stats
     
     def get_template_performance_stats(self) -> Dict[str, Any]:
         """
@@ -762,14 +921,56 @@ class DiscordNotifier:
             if isinstance(embed_data, dict) and 'embeds' not in embed_data:
                 self.logger.error(f"ERROR: embed_data missing 'embeds' key! Data: {embed_data}")
 
-            # Check rate limits before sending
+            # Check rate limits and queue if necessary
             if await self.is_rate_limited(webhook_url):
-                self.logger.warning(f"Rate limited for webhook: {webhook_url}")
-                return {
-                    "success": False,
-                    "error": "Rate limited",
-                    "webhook_url": webhook_url
-                }
+                # Queue the notification instead of dropping it
+                try:
+                    # Check if queue is full
+                    if self.notification_queue.full():
+                        self.logger.error(f"Notification queue is full ({self.max_queue_size} items), dropping notification for {item.name}")
+                        self.queue_stats['total_failed'] += 1
+                        return {
+                            "success": False,
+                            "error": "Queue full",
+                            "webhook_url": webhook_url
+                        }
+                    
+                    # Prepare webhook data
+                    webhook_data = {
+                        "embeds": embed_data.get("embeds", [embed_data]) if isinstance(embed_data, dict) else [],
+                        "username": "Jellynouncer"
+                    }
+                    
+                    # Queue the notification
+                    notification_item = {
+                        'webhook_url': webhook_url,
+                        'data': webhook_data,
+                        'item_name': item.name,
+                        'retry_count': 0,
+                        'queued_at': time.time()
+                    }
+                    
+                    await self.notification_queue.put(notification_item)
+                    self.queue_stats['total_queued'] += 1
+                    self.queue_stats['current_queue_size'] = self.notification_queue.qsize()
+                    
+                    self.logger.info(f"Rate limited - queued notification for {item.name} (queue size: {self.notification_queue.qsize()})")
+                    
+                    return {
+                        "success": True,
+                        "queued": True,
+                        "message": f"Notification queued due to rate limit",
+                        "queue_size": self.notification_queue.qsize(),
+                        "webhook_url": webhook_url
+                    }
+                except asyncio.QueueFull:
+                    self.logger.error(f"Failed to queue notification for {item.name} - queue full")
+                    self.queue_stats['total_failed'] += 1
+                    return {
+                        "success": False,
+                        "error": "Queue full",
+                        "webhook_url": webhook_url
+                    }
 
             # Send the webhook
             webhook_data = {

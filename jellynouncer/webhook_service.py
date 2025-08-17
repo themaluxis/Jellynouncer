@@ -848,6 +848,14 @@ class WebhookService:
             except Exception as e:
                 self.logger.warning(f"Could not get webhook status: {e}")
                 stats["webhooks"] = {"error": str(e)}
+            
+            # Get Discord notification queue statistics
+            try:
+                queue_stats = self.discord.get_queue_stats()
+                stats["notification_queue"] = queue_stats
+            except Exception as e:
+                self.logger.warning(f"Could not get queue stats: {e}")
+                stats["notification_queue"] = {"error": str(e)}
 
             # Get Jellyfin connection status
             try:
@@ -1289,31 +1297,48 @@ class WebhookService:
                                 if len(failed_items) > 3:
                                     self.logger.debug(f"  ... and {len(failed_items) - 3} more")
                             
-                            # Pre-generate content hashes in parallel for better performance during sync
-                            # This avoids sequential hash generation during database batch save
-                            # Only do this for sync operations (not needed for single webhook items)
-                            if media_items and len(media_items) > 10:  # Only parallelize for larger batches
+                            # Pre-generate content hashes to measure performance
+                            # This triggers the lazy hash calculation before database save
+                            # Note: We don't parallelize this because:
+                            # 1. Our hash data is <2KB (below GIL release threshold of 2047 bytes)
+                            # 2. Blake2b is already very fast for small data
+                            # 3. Database I/O is the actual bottleneck
+                            if media_items:
                                 hash_start_time = time.time()
+                                hash_generation_times = []
                                 
-                                # Create tasks to generate hashes in parallel
-                                async def generate_hash(item):
-                                    """Pre-generate content hash for an item."""
+                                for item in media_items:
                                     try:
+                                        item_hash_start = time.time()
                                         # Access the property to trigger hash generation
                                         _ = item.content_hash
+                                        item_hash_time = time.time() - item_hash_start
+                                        hash_generation_times.append(item_hash_time)
                                     except Exception as e:
                                         self.logger.debug(f"Hash generation failed for {item.name}: {e}")
                                 
-                                # Generate all hashes in parallel
-                                hash_tasks = [generate_hash(item) for item in media_items]
-                                await asyncio.gather(*hash_tasks, return_exceptions=True)
+                                total_hash_time = time.time() - hash_start_time
                                 
-                                hash_time = time.time() - hash_start_time
-                                self.logger.debug(f"Pre-generated {len(media_items)} content hashes in {hash_time:.2f}s")
+                                # Log hash generation performance statistics
+                                if hash_generation_times:
+                                    avg_hash_time_ms = (sum(hash_generation_times) / len(hash_generation_times)) * 1000
+                                    max_hash_time_ms = max(hash_generation_times) * 1000
+                                    total_hash_time_ms = total_hash_time * 1000
+                                    hashes_per_second = len(hash_generation_times) / total_hash_time if total_hash_time > 0 else 0
+                                    
+                                    self.logger.info(
+                                        f"Hash generation stats for {len(media_items)} items: "
+                                        f"Total: {total_hash_time_ms:.1f}ms, "
+                                        f"Avg: {avg_hash_time_ms:.2f}ms/item, "
+                                        f"Max: {max_hash_time_ms:.2f}ms, "
+                                        f"Rate: {hashes_per_second:.0f} hashes/sec"
+                                    )
                             
-                            # Save batch to database
+                            # Save batch to database with timing
                             if media_items:
+                                db_save_start = time.time()
                                 batch_results = await self.db.save_items_batch(media_items)
+                                db_save_time = time.time() - db_save_start
                                 
                                 # Check if entire batch failed
                                 if batch_results['failed'] == len(media_items) and batch_results['successful'] == 0:
@@ -1346,12 +1371,25 @@ class WebhookService:
                                     
                                     batch_time = time.time() - batch_start_time
                                     
-                                    # Log batch save completion
+                                    # Log batch save completion with breakdown
                                     self.logger.info(
                                         f"Batch {batch_num} saved to database: "
                                         f"{batch_results['successful']}/{len(media_items)} items "
-                                        f"({batch_time:.2f}s)"
+                                        f"(Total: {batch_time:.2f}s, DB: {db_save_time:.2f}s)"
                                     )
+                                    
+                                    # Log performance breakdown if hash timing is available
+                                    if 'total_hash_time' in locals():
+                                        hash_percent = (total_hash_time / batch_time) * 100 if batch_time > 0 else 0
+                                        db_percent = (db_save_time / batch_time) * 100 if batch_time > 0 else 0
+                                        other_percent = 100 - hash_percent - db_percent
+                                        
+                                        self.logger.debug(
+                                            f"Batch {batch_num} performance breakdown: "
+                                            f"Hashing: {hash_percent:.1f}%, "
+                                            f"DB Save: {db_percent:.1f}%, "
+                                            f"Other: {other_percent:.1f}%"
+                                        )
                                     
                                     # Log failures if any
                                     if batch_results['failed'] > 0:

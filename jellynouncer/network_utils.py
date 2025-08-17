@@ -905,7 +905,7 @@ def log_jellynouncer_startup(
     logger.info("Jellynouncer app started successfully")
     
     # Display the Jellyfin ASCII art logo with gradient coloring
-    from utils import display_jellyfin_logo
+    from .utils import display_jellyfin_logo
     display_jellyfin_logo()
     
     logger.info("=" * 60)
