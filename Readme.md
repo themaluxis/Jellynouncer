@@ -278,53 +278,131 @@ New deletion templates are available:
 
 ```mermaid
 graph TD
-    A[Jellyfin Server] -->|Webhook Event| B[FastAPI Endpoint]
+    %% External Systems
+    A[Jellyfin Server] -->|ItemAdded/ItemDeleted| B[FastAPI /webhook]
+    
+    %% Core Orchestration
     B --> C[WebhookService]
+    C --> D{Event Type?}
     
-    C --> D[Media Processing]
-    D --> E[Database Check]
-    E --> F{New or Update?}
+    %% Deletion Flow
+    D -->|ItemDeleted| E[Deletion Queue<br/>30s delay]
+    E --> F{Upgrade Detection}
+    F -->|True Delete| G[deleted_item.j2]
+    F -->|Upgrade| H[Filter Event]
     
-    F -->|New Item| G[Fetch Metadata]
-    F -->|Update| H[Change Detection]
+    %% Addition Flow  
+    D -->|ItemAdded| I[Check Deletion Queue]
+    I -->|Found Match| H
+    I -->|No Match| J[JellyfinAPI.get_item]
     
-    G --> I[Template Rendering]
-    H --> I
+    %% Processing Pipeline
+    H --> J
+    J --> K[Convert to MediaItem]
+    K --> L[DatabaseManager]
     
-    I --> J[Discord Routing]
-    J --> K[Rate Limiting]
-    K --> L[Discord Channels]
+    L --> M{Existing Item?}
+    M -->|Yes| N[ChangeDetector]
+    M -->|No| O[New Item]
     
-    C --> M[Background Tasks]
-    M --> N[Library Sync]
-    M --> O[Queue Processing]
+    %% Change Detection
+    N --> P{Changes?}
+    P -->|Quality Upgrade| Q[upgraded_item.j2]
+    P -->|Metadata Only| R[Update DB Only]
     
-    %% External Services (Blue)
-    style A fill:#1976d2,stroke:#0d47a1,stroke-width:2px,color:#fff
-    style L fill:#5865f2,stroke:#4752c4,stroke-width:2px,color:#fff
+    %% Metadata Enrichment
+    O --> S[MetadataService]
+    S --> T[OMDb API]
+    S --> U[TMDb API]  
+    S --> V[TVDb API]
     
-    %% Core Service (Purple)
-    style B fill:#9c27b0,stroke:#6a1b9a,stroke-width:2px,color:#fff
-    style C fill:#7b1fa2,stroke:#4a148c,stroke-width:2px,color:#fff
+    %% Template Processing
+    Q --> W[Jinja2 Environment<br/>+Cache]
+    G --> W
+    O --> W
+    W --> X[Render Template]
     
-    %% Processing Components (Green)
-    style D fill:#4caf50,stroke:#2e7d32,stroke-width:2px,color:#fff
-    style E fill:#66bb6a,stroke:#388e3c,stroke-width:2px,color:#fff
-    style F fill:#43a047,stroke:#2e7d32,stroke-width:2px,color:#fff
+    %% Discord Routing
+    X --> Y[DiscordNotifier]
+    Y --> Z{Content Router}
+    Z -->|Movies| AA[Movies Webhook]
+    Z -->|TV Shows| AB[TV Webhook]
+    Z -->|Music| AC[Music Webhook]
+    Z -->|Default| AD[General Webhook]
     
-    %% Metadata & Enhancement (Orange)
-    style G fill:#ff9800,stroke:#f57c00,stroke-width:2px,color:#fff
-    style H fill:#ffa726,stroke:#fb8c00,stroke-width:2px,color:#fff
+    %% Database Layer
+    L --> AE[(SQLite + WAL)]
+    AE --> AF[Concurrent Access]
     
-    %% Output Processing (Teal)
-    style I fill:#26a69a,stroke:#00897b,stroke-width:2px,color:#fff
-    style J fill:#00acc1,stroke:#00838f,stroke-width:2px,color:#fff
-    style K fill:#00bcd4,stroke:#0097a7,stroke-width:2px,color:#fff
+    %% Background Services
+    C --> AG[Background Tasks]
+    AG --> AH[Library Sync<br/>Producer/Consumer]
+    AG --> AI[Deletion Cleanup]
+    AG --> AJ[Database Vacuum]
     
-    %% Background Tasks (Pink)
-    style M fill:#ec407a,stroke:#c2185b,stroke-width:2px,color:#fff
-    style N fill:#f06292,stroke:#e91e63,stroke-width:2px,color:#fff
-    style O fill:#f48fb1,stroke:#f06292,stroke-width:2px,color:#fff
+    %% Health Monitoring
+    B --> AK[/health]
+    B --> AL[/stats]
+    B --> AM[/sync]
+    
+    %% Jellyfin Gradient Colors (Purple to Blue)
+    style A fill:#aa5cc3,stroke:#8a3db3,stroke-width:2px,color:#fff
+    style B fill:#a15dc5,stroke:#8144b5,stroke-width:2px,color:#fff
+    style C fill:#975fc7,stroke:#774bb8,stroke-width:2px,color:#fff
+    
+    %% Event Processing (Purple-Blue transition)
+    style D fill:#8e61c9,stroke:#6e52ba,stroke-width:2px,color:#fff
+    style E fill:#8563cb,stroke:#6559bc,stroke-width:2px,color:#fff
+    style F fill:#7b65cd,stroke:#5c60bf,stroke-width:2px,color:#fff
+    style G fill:#7267cf,stroke:#5367c1,stroke-width:2px,color:#fff
+    style H fill:#6969d1,stroke:#4a6ec4,stroke-width:2px,color:#fff
+    style I fill:#5f6bd3,stroke:#4175c6,stroke-width:2px,color:#fff
+    
+    %% Core Processing (Blue)
+    style J fill:#566dd5,stroke:#387cc9,stroke-width:2px,color:#fff
+    style K fill:#4d6fd7,stroke:#2f83cb,stroke-width:2px,color:#fff
+    style L fill:#4371d9,stroke:#268ace,stroke-width:2px,color:#fff
+    style M fill:#3a73db,stroke:#1d91d0,stroke-width:2px,color:#fff
+    style N fill:#3175dd,stroke:#1498d3,stroke-width:2px,color:#fff
+    style O fill:#2877df,stroke:#0b9fd5,stroke-width:2px,color:#fff
+    
+    %% Detection & Analysis (Light Blue)
+    style P fill:#1e79e1,stroke:#02a6d8,stroke-width:2px,color:#fff
+    style Q fill:#157be3,stroke:#00addb,stroke-width:2px,color:#fff
+    style R fill:#0c7de5,stroke:#00b4de,stroke-width:2px,color:#fff
+    
+    %% External APIs (Cyan)
+    style S fill:#00acc1,stroke:#00838f,stroke-width:2px,color:#fff
+    style T fill:#00bcd4,stroke:#0097a7,stroke-width:2px,color:#fff
+    style U fill:#00bcd4,stroke:#0097a7,stroke-width:2px,color:#fff
+    style V fill:#00bcd4,stroke:#0097a7,stroke-width:2px,color:#fff
+    
+    %% Template Engine (Teal)
+    style W fill:#26a69a,stroke:#00897b,stroke-width:2px,color:#fff
+    style X fill:#4db6ac,stroke:#00897b,stroke-width:2px,color:#fff
+    
+    %% Discord (Discord Blue)
+    style Y fill:#5865f2,stroke:#4752c4,stroke-width:2px,color:#fff
+    style Z fill:#5865f2,stroke:#4752c4,stroke-width:2px,color:#fff
+    style AA fill:#5865f2,stroke:#4752c4,stroke-width:2px,color:#fff
+    style AB fill:#5865f2,stroke:#4752c4,stroke-width:2px,color:#fff
+    style AC fill:#5865f2,stroke:#4752c4,stroke-width:2px,color:#fff
+    style AD fill:#5865f2,stroke:#4752c4,stroke-width:2px,color:#fff
+    
+    %% Database (Green)
+    style AE fill:#4caf50,stroke:#2e7d32,stroke-width:2px,color:#fff
+    style AF fill:#66bb6a,stroke:#388e3c,stroke-width:2px,color:#fff
+    
+    %% Background (Orange)
+    style AG fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#fff
+    style AH fill:#ffa726,stroke:#ef6c00,stroke-width:2px,color:#fff
+    style AI fill:#ffb74d,stroke:#f57c00,stroke-width:2px,color:#fff
+    style AJ fill:#ffc947,stroke:#f9a825,stroke-width:2px,color:#fff
+    
+    %% Health (Pink)
+    style AK fill:#ec407a,stroke:#c2185b,stroke-width:2px,color:#fff
+    style AL fill:#f06292,stroke:#e91e63,stroke-width:2px,color:#fff
+    style AM fill:#f48fb1,stroke:#f06292,stroke-width:2px,color:#fff
 ```
 
 ### Detailed Component Flow
