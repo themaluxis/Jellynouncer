@@ -28,8 +28,8 @@ from dataclasses import dataclass, field, asdict
 from tmdbv3api import TMDb, Movie, TV, Season, Episode, Search, Configuration
 from tmdbv3api.exceptions import TMDbException
 
-from media_models import MediaItem
-from utils import get_logger
+from .media_models import MediaItem
+from .utils import get_logger
 
 
 @dataclass(slots=True)

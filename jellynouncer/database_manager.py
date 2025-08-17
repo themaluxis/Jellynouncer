@@ -29,9 +29,9 @@ from typing import Dict, Any, Optional, List
 
 import aiosqlite
 
-from config_models import DatabaseConfig
-from media_models import MediaItem
-from utils import get_logger
+from .config_models import DatabaseConfig
+from .media_models import MediaItem
+from .utils import get_logger
 
 
 class DatabaseManager:

@@ -28,9 +28,9 @@ from typing import Dict, Any, Optional, List, Callable, Union, Tuple, AsyncGener
 
 from jellyfin_apiclient_python import JellyfinClient
 
-from config_models import JellyfinConfig
-from media_models import MediaItem
-from utils import get_logger
+from .config_models import JellyfinConfig
+from .media_models import MediaItem
+from .utils import get_logger
 
 
 class JellyfinAPI:

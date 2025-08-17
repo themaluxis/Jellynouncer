@@ -90,11 +90,11 @@ import uvicorn
 from pydantic import ValidationError
 
 # Import our custom modules
-from webhook_models import WebhookPayload
-from webhook_service import WebhookService
-from config_models import ConfigurationValidator
-from utils import setup_logging, get_logger
-from network_utils import log_jellynouncer_startup
+from jellynouncer.webhook_models import WebhookPayload
+from jellynouncer.webhook_service import WebhookService
+from jellynouncer.config_models import ConfigurationValidator
+from jellynouncer.utils import setup_logging, get_logger
+from jellynouncer.network_utils import log_jellynouncer_startup
 
 # Global service instance - shared across the FastAPI application
 # This pattern allows us to initialize the service once during startup

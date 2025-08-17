@@ -23,9 +23,9 @@ License: MIT
 import logging
 from typing import List, Dict, Any
 
-from config_models import NotificationsConfig
-from media_models import MediaItem
-from utils import get_logger
+from .config_models import NotificationsConfig
+from .media_models import MediaItem
+from .utils import get_logger
 
 
 class ChangeDetector:

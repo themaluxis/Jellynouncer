@@ -28,8 +28,8 @@ from dataclasses import dataclass, field, asdict
 
 import omdb
 
-from media_models import MediaItem
-from utils import get_logger
+from .media_models import MediaItem
+from .utils import get_logger
 
 
 @dataclass(slots=True)

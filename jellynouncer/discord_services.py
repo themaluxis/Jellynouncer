@@ -37,9 +37,9 @@ from dataclasses import asdict
 import aiohttp
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError
 
-from config_models import DiscordConfig
-from media_models import MediaItem
-from utils import get_logger
+from .config_models import DiscordConfig
+from .media_models import MediaItem
+from .utils import get_logger
 
 
 class ThumbnailManager:

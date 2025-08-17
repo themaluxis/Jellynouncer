@@ -37,9 +37,8 @@ COPY templates/ /app/defaults/templates/
 COPY config/config.json /app/defaults/config.json
 
 # Copy Python application files LAST (these change most frequently)
-COPY *.py ./
-# Remove any backup files that might have been copied
-RUN rm -f *.bak 2>/dev/null || true
+COPY main.py ./
+COPY jellynouncer/ ./jellynouncer/
 
 # Expose port (configurable via build arg or environment)
 ARG PORT=8080

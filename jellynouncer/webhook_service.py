@@ -29,15 +29,15 @@ from typing import Dict, Any, Optional
 import aiohttp
 import aiosqlite
 
-from config_models import AppConfig, ConfigurationValidator
-from webhook_models import WebhookPayload
-from media_models import MediaItem
-from database_manager import DatabaseManager
-from jellyfin_api import JellyfinAPI
-from discord_services import DiscordNotifier
-from metadata_services import MetadataService
-from change_detector import ChangeDetector
-from utils import get_logger
+from .config_models import AppConfig, ConfigurationValidator
+from .webhook_models import WebhookPayload
+from .media_models import MediaItem
+from .database_manager import DatabaseManager
+from .jellyfin_api import JellyfinAPI
+from .discord_services import DiscordNotifier
+from .metadata_services import MetadataService
+from .change_detector import ChangeDetector
+from .utils import get_logger
 
 
 class WebhookService:

@@ -11,3 +11,8 @@ CLAUDE.md
 *.pyc
 .claude/settings.local.json
 *.pyc
+
+# Python cache in module directory
+jellynouncer/__pycache__/
+jellynouncer/*.pyc
+jellynouncer/*.pyo

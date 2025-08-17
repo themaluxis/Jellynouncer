@@ -22,17 +22,15 @@ import asyncio
 import logging
 from functools import lru_cache
 from typing import Optional, Dict, Any
-import hashlib
-import json
 
 import aiohttp
 
-from config_models import MetadataServicesConfig
-from media_models import MediaItem
-from metadata_tvdb import TVDB
-from metadata_omdb import OMDbAPI
-from metadata_tmdb import TMDbAPI
-from utils import get_logger
+from .config_models import MetadataServicesConfig
+from .media_models import MediaItem
+from .metadata_tvdb import TVDB
+from .metadata_omdb import OMDbAPI
+from .metadata_tmdb import TMDbAPI
+from .utils import get_logger
 
 
 class MetadataService:
@@ -426,7 +424,9 @@ class MetadataService:
         try:
             if not self.tvdb_client:
                 return None
-            
+
+            series_tvdb_id = None
+
             # For episodes, we need either the episode TVDB ID or the series TVDB ID to look it up
             if item.item_type == "Episode":
                 # Try to get series TVDB ID from parent series if episode doesn't have its own ID

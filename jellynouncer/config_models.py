@@ -52,7 +52,7 @@ from urllib.parse import urlparse
 
 import yaml
 from pydantic import BaseModel, Field, ConfigDict, ValidationError, field_validator
-from utils import get_logger
+from .utils import get_logger
 
 
 # ==================== JELLYFIN CONFIGURATION ====================
