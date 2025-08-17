@@ -374,13 +374,15 @@ async def receive_webhook(request: Request):
             webhook_service.logger.debug(f"    ItemId: {payload.ItemId}")
             webhook_service.logger.debug(f"    Name: {payload.Name}")
             webhook_service.logger.debug(f"    ItemType: {payload.ItemType}")
-            webhook_service.logger.debug(f"    NotificationType: {payload.NotificationType}")
-            webhook_service.logger.debug(f"    ServerId: {payload.ServerId}")
-            webhook_service.logger.debug(f"    ServerName: {payload.ServerName}")
-            webhook_service.logger.debug(f"    Username: {payload.Username}")
-            webhook_service.logger.debug(f"    UserId: {payload.UserId}")
+            webhook_service.logger.debug(f"    NotificationType: {getattr(payload, 'NotificationType', 'N/A')}")
+            webhook_service.logger.debug(f"    ServerId: {getattr(payload, 'ServerId', 'N/A')}")
+            webhook_service.logger.debug(f"    ServerName: {getattr(payload, 'ServerName', 'N/A')}")
             
-            # Log additional fields if present
+            # Log additional fields if present (checking for attributes that might not exist)
+            if hasattr(payload, 'Username'):
+                webhook_service.logger.debug(f"    Username: {payload.Username}")
+            if hasattr(payload, 'UserId'):
+                webhook_service.logger.debug(f"    UserId: {payload.UserId}")
             if hasattr(payload, 'LibraryName'):
                 webhook_service.logger.debug(f"    LibraryName: {payload.LibraryName}")
             if hasattr(payload, 'Path'):

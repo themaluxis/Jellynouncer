@@ -159,9 +159,8 @@ class MetadataService:
                     api_key=self.tvdb_config.api_key,
                     cache_ttl=cache_ttl_seconds
                 )
-                # TVDB needs its own session initialization
-                await self.tvdb_client.initialize(session)
-                self.logger.info("TVDb client initialized and authenticated")
+                # TVDB manages its own session internally
+                self.logger.info("TVDb client initialized")
             except Exception as e:
                 self.logger.error(f"Failed to initialize TVDb client: {e}")
                 self.tvdb_client = None
