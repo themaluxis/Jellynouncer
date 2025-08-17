@@ -279,7 +279,7 @@ New deletion templates are available:
 ```mermaid
 graph TD
     %% External Systems
-    A[Jellyfin Server] -->|ItemAdded/ItemDeleted| B[FastAPI /webhook]
+    A[Jellyfin Server] -->|ItemAdded/ItemDeleted| B[FastAPI webhook]
     
     %% Core Orchestration
     B --> C[WebhookService]
@@ -341,9 +341,9 @@ graph TD
     AG --> AJ[Database Vacuum]
     
     %% Health Monitoring
-    B --> AK[/health]
-    B --> AL[/stats]
-    B --> AM[/sync]
+    B --> AK[Health Endpoint]
+    B --> AL[Stats Endpoint]
+    B --> AM[Sync Endpoint]
     
     %% Jellyfin Gradient Colors (Purple to Blue)
     style A fill:#aa5cc3,stroke:#8a3db3,stroke-width:2px,color:#fff
