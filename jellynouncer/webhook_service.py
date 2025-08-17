@@ -1178,13 +1178,13 @@ class WebhookService:
                     "processing_time": round(time.time() - sync_start_time, 2)
                 }
 
-            # Get configured batch size from sync configuration
-            api_batch_size = self.config.sync.sync_batch_size
-            self.logger.info(f"Starting streaming sync with batch size: {api_batch_size}")
+            # Use adaptive batch sizing (will be determined based on library size)
+            # API will automatically select optimal batch size
+            self.logger.info("Starting streaming sync with adaptive batch sizing")
 
             # Create async queue for producer-consumer pattern
-            # Queue size of 3 provides good balance between memory usage and throughput
-            batch_queue = asyncio.Queue(maxsize=3)
+            # Queue size of 20 provides plenty of headroom for API requests without overloading memory
+            batch_queue = asyncio.Queue(maxsize=20)
             
             # Shared state for tracking progress (thread-safe via asyncio)
             sync_state = {
@@ -1207,7 +1207,7 @@ class WebhookService:
                 """Fetch batches from Jellyfin API and queue them for processing."""
                 batch_num = 0
                 try:
-                    async for batch_items, total_count in self.jellyfin.get_items_stream(batch_size=api_batch_size):
+                    async for batch_items, total_count in self.jellyfin.get_items_stream():
                         batch_num += 1
                         sync_state['total_items'] = total_count
                         sync_state['items_fetched'] += len(batch_items)
@@ -1461,7 +1461,7 @@ class WebhookService:
                         
                         # Small delay to prevent overwhelming the database
                         if not sync_state['producer_done']:
-                            await asyncio.sleep(self.config.sync.api_request_delay)
+                            await asyncio.sleep(0.1)  # Hardcoded optimal delay
                     
                     sync_state['consumer_done'] = True
                     self.logger.info(f"Database processing completed: {sync_state['items_processed']} items saved")

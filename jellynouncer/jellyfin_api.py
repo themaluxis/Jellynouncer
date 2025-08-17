@@ -442,8 +442,50 @@ class JellyfinAPI:
             self.logger.error(f"Failed to retrieve item {item_id}: {e}")
             return None
 
+    def _calculate_optimal_batch_size(self, total_items: int) -> int:
+        """
+        Calculate optimal batch size based on library size.
+        
+        Adaptive sizing ensures good performance across different library sizes:
+        - Small libraries (<1000): Use smaller batches for quick response
+        - Medium libraries (1000-10000): Balanced batch size
+        - Large libraries (>10000): Larger batches to reduce API calls
+        
+        Args:
+            total_items: Total number of items in library
+            
+        Returns:
+            int: Optimal batch size (100-500)
+        """
+        if total_items < 1000:
+            return 100  # Small library, small batches
+        elif total_items < 10000:
+            return 200  # Medium library, balanced
+        else:
+            return 500  # Large library, but controlled for stability
+    
+    def _calculate_request_timeout(self, batch_size: int) -> float:
+        """
+        Calculate dynamic timeout based on batch size.
+        
+        Formula: base_timeout + (batch_size * per_item_overhead) + buffer
+        This prevents timeouts on large batches while keeping responsiveness.
+        
+        Args:
+            batch_size: Number of items in the batch
+            
+        Returns:
+            float: Timeout in seconds
+        """
+        base_timeout = 30  # Base timeout for any request
+        per_item_overhead = 0.015  # 15ms per item for processing
+        network_buffer = 10  # Extra buffer for network latency
+        
+        timeout = base_timeout + (batch_size * per_item_overhead) + network_buffer
+        return min(timeout, 120)  # Cap at 2 minutes max
+    
     async def get_all_items(self,
-                            batch_size: int = 1000,
+                            batch_size: Optional[int] = None,
                             progress_callback: Optional[Callable[[int, int], None]] = None) -> List[Dict[str, Any]]:
         """
         Retrieve all items from Jellyfin library with efficient batch processing.
@@ -469,7 +511,7 @@ class JellyfinAPI:
         synchronization coverage.
 
         Args:
-            batch_size (int): Number of items to fetch per API call (default: 100)
+            batch_size (Optional[int]): Number of items per request. If None, uses adaptive sizing
             progress_callback (Optional[Callable[[int, int], None]]): Optional callback
                 function called with (current_count, total_count) for progress updates
 
@@ -506,8 +548,33 @@ class JellyfinAPI:
             all_items = []
             start_index = 0
             total_record_count = None
-
-            self.logger.info(f"Starting library retrieval with batch size {batch_size}")
+            
+            # Hardcoded optimal API request delay (based on research of other projects)
+            API_REQUEST_DELAY = 0.1  # 100ms between requests, standard for Jellyfin projects
+            
+            # Get initial count to determine adaptive batch size
+            if batch_size is None:
+                # Make a small request to get total count
+                initial_response = self.client.jellyfin.user_items(
+                    params={
+                        'StartIndex': 0,
+                        'Limit': 1,
+                        'Recursive': True
+                    }
+                )
+                if initial_response and 'TotalRecordCount' in initial_response:
+                    total_record_count = initial_response['TotalRecordCount']
+                    batch_size = self._calculate_optimal_batch_size(total_record_count)
+                    self.logger.info(f"Library has {total_record_count} items, using adaptive batch size of {batch_size}")
+                else:
+                    batch_size = 200  # Default if we can't get count
+                    self.logger.info(f"Could not determine library size, using default batch size of {batch_size}")
+            else:
+                self.logger.info(f"Using specified batch size of {batch_size}")
+            
+            # Calculate timeout for this batch size
+            request_timeout = self._calculate_request_timeout(batch_size)
+            self.logger.debug(f"Using request timeout of {request_timeout:.1f} seconds for batch size {batch_size}")
 
             while True:
                 try:
@@ -528,6 +595,10 @@ class JellyfinAPI:
                         "ProductionYear"  # → Year for identification
                     ])
 
+                    # Add delay between requests to avoid overwhelming the server
+                    if start_index > 0:  # No delay for first request
+                        await asyncio.sleep(API_REQUEST_DELAY)
+                    
                     response = self.client.jellyfin.user_items(
                         params={
                             'StartIndex': start_index,
@@ -579,7 +650,7 @@ class JellyfinAPI:
 
     async def get_items_stream(
         self,
-        batch_size: int = 100
+        batch_size: Optional[int] = None
     ) -> AsyncGenerator[Tuple[List[Dict[str, Any]], int], None]:
         """
         Stream library items in batches as an async generator.
@@ -605,7 +676,7 @@ class JellyfinAPI:
         - Consumer can decide how to handle partial results
         
         Args:
-            batch_size (int): Number of items to fetch per API call (default: 100)
+            batch_size (Optional[int]): Number of items per request. If None, uses adaptive sizing
             
         Yields:
             Tuple[List[Dict[str, Any]], int]: Tuple of (batch_items, total_record_count)
@@ -640,40 +711,54 @@ class JellyfinAPI:
             start_index = 0
             total_record_count = None
             
-            self.logger.info(f"Starting library streaming with batch size {batch_size}")
+            # Hardcoded optimal API request delay
+            API_REQUEST_DELAY = 0.1  # 100ms between requests
+            
+            # Get initial count to determine adaptive batch size if not specified
+            if batch_size is None:
+                initial_response = self.client.jellyfin.user_items(
+                    params={
+                        'StartIndex': 0,
+                        'Limit': 1,
+                        'Recursive': True
+                    }
+                )
+                if initial_response and 'TotalRecordCount' in initial_response:
+                    total_record_count = initial_response['TotalRecordCount']
+                    batch_size = self._calculate_optimal_batch_size(total_record_count)
+                    self.logger.info(f"Library streaming: {total_record_count} items, using adaptive batch size of {batch_size}")
+                else:
+                    batch_size = 200  # Default if we can't get count
+                    self.logger.info(f"Library streaming: using default batch size of {batch_size}")
+            else:
+                self.logger.info(f"Library streaming: using specified batch size of {batch_size}")
             
             while True:
                 try:
-                    # Request batch of items with webhook-specific fields
-                    webhook_fields = ",".join([
-                        # Core item metadata
-                        "Overview", "ProductionYear", "RunTimeTicks", "OfficialRating",
-                        "Tagline", "PremiereDate", "DateCreated", "DateModified",
-                        # Media stream information
-                        "MediaStreams", "MediaSources",
-                        # Provider IDs
-                        "ProviderIds",
-                        # File system information
-                        "Path",
-                        # TV Series hierarchy
-                        "IndexNumber", "ParentIndexNumber", "SeriesName", "SeriesId",
-                        "SeasonId", "ParentId", "AirTime",
-                        # Content metadata
-                        "Genres", "Studios", "Tags",
-                        # Music-specific fields
-                        "Album", "Artists", "AlbumArtist", "ArtistItems",
-                        # Photo/image specific fields
-                        "Width", "Height",
-                        # Additional fields
-                        "AspectRatio", "CommunityRating"
+                    # Use minimal sync fields for streaming (same as get_all_items)
+                    sync_fields = ",".join([
+                        # Media stream information (required for change detection)
+                        "MediaStreams",  # → Video/Audio/Subtitle specs for content hash
+                        "MediaSources",  # → File size and container info
+                        # TV Series hierarchy (required for episode identification)
+                        "IndexNumber",  # → Episode/Season number
+                        "ParentIndexNumber",  # → Season number for episodes
+                        "SeriesName",  # → Series name for episodes
+                        "SeriesId",  # → Series ID for hierarchy
+                        "SeasonId",  # → Season ID for hierarchy
+                        "ProductionYear"  # → Year for identification
                     ])
+                    
+                    # Add delay between requests to avoid overwhelming the server
+                    if start_index > 0:  # No delay for first request
+                        await asyncio.sleep(API_REQUEST_DELAY)
                     
                     response = self.client.jellyfin.user_items(
                         params={
                             'StartIndex': start_index,
                             'Limit': batch_size,
                             'Recursive': True,
-                            'Fields': webhook_fields,
+                            'Fields': sync_fields,
                             'IncludeItemTypes': 'Movie,Series,Season,Episode,Audio,MusicAlbum,Book,Photo',
                             'EnableTotalRecordCount': True
                         }

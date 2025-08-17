@@ -28,7 +28,7 @@
         Shows appropriate emoji and type label for each media category
       #}
       "title": {% if item.item_type == 'Episode' -%}
-        {{ ("🆕📺 " ~ (item.name | default('Unknown Episode') | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕📺 " ~ ((item.series_name | default('Unknown Series')) ~ " " ~ "S" ~ ("%02d" % (item.season_number | default(0))) ~ "E" ~ ("%02d" % (item.episode_number | default(0))) | truncate(200, True, '...'))) | tojson }}
       {%- elif item.item_type == 'Series' -%}
         {{ ("🆕📺 " ~ (item.name | default('Unknown Series') | truncate(200, True, '...'))) | tojson }}
       {%- elif item.item_type == 'Movie' -%}
@@ -55,24 +55,22 @@
         Music: Artist/album info from Jellyfin
       #}
       "description": {% if item.item_type == 'Episode' -%}
-        {{ ("**" ~ (item.series_name | default('Unknown Series')) ~ "**\n" ~
-        "S" ~ ("%02d" % (item.season_number | default(0))) ~ "E" ~ ("%02d" % (item.episode_number | default(0))) ~ "\n" ~
-        (item.name | default('Unknown Episode')) ~
-        ("\n\n" ~ ((item.tvdb.overview[:250] ~ '...') if item.tvdb.overview | length > 250 else item.tvdb.overview) if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0 else
-         "\n\n" ~ ((item.overview[:250] ~ '...') if item.overview | length > 250 else item.overview) if item.overview and item.overview | length > 0 else
+        {{ ("**" ~ (item.name | default('Unknown Episode')) ~ "**" ~
+        ("\n\n" ~ "📝 Overview" ~ "\n" ~ ((item.tvdb.overview[:400] ~ '...') if item.tvdb.overview | length > 400 else item.tvdb.overview) if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0 else
+         "\n\n" ~ ((item.overview[:400] ~ '...') if item.overview | length > 400 else item.overview) if item.overview and item.overview | length > 0 else
          "")) | tojson }}
       {%- elif item.item_type in ['Series', 'Season'] -%}
         {{ ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
         (" (" ~ item.year ~ ")" if item.year else "") ~
-        ("\n\n" ~ ((item.tvdb.overview[:250] ~ '...') if item.tvdb.overview | length > 250 else item.tvdb.overview) if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0 else
-         "\n\n" ~ ((item.overview[:250] ~ '...') if item.overview | length > 250 else item.overview) if item.overview and item.overview | length > 0 else
+        ("\n\n" ~ ((item.tvdb.overview[:400] ~ '...') if item.tvdb.overview | length > 400 else item.tvdb.overview) if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0 else
+         "\n\n" ~ ((item.overview[:400] ~ '...') if item.overview | length > 400 else item.overview) if item.overview and item.overview | length > 0 else
          "")) | tojson }}
       {%- elif item.item_type == 'Movie' -%}
         {{ ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
         (" (" ~ item.year ~ ")" if item.year else "") ~
-        ("\n\n" ~ ((item.tmdb.overview[:250] ~ '...') if item.tmdb.overview | length > 250 else item.tmdb.overview) if item.tmdb and item.tmdb.overview and item.tmdb.overview | length > 0 else
-         "\n\n" ~ ((item.omdb.plot[:250] ~ '...') if item.omdb.plot | length > 250 else item.omdb.plot) if item.omdb and item.omdb.plot and item.omdb.plot != 'N/A' else
-         "\n\n" ~ ((item.overview[:250] ~ '...') if item.overview | length > 250 else item.overview) if item.overview and item.overview | length > 0 else
+        ("\n\n" ~ ((item.tmdb.overview[:400] ~ '...') if item.tmdb.overview | length > 400 else item.tmdb.overview) if item.tmdb and item.tmdb.overview and item.tmdb.overview | length > 0 else
+         "\n\n" ~ ((item.omdb.plot[:400] ~ '...') if item.omdb.plot | length > 400 else item.omdb.plot) if item.omdb and item.omdb.plot and item.omdb.plot != 'N/A' else
+         "\n\n" ~ ((item.overview[:400] ~ '...') if item.overview | length > 400 else item.overview) if item.overview and item.overview | length > 0 else
          "")) | tojson }}
       {%- elif item.item_type == 'Audio' -%}
         {{ ("**" ~ (item.name | default('Unknown Song')) ~ "**" ~
@@ -88,7 +86,7 @@
          "")) | tojson }}
       {%- else -%}
         {{ ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
-        ("\n\n" ~ ((item.overview[:250] ~ '...') if item.overview | length > 250 else item.overview) if item.overview and item.overview | length > 0 else
+        ("\n\n" ~ ((item.overview[:400] ~ '...') if item.overview | length > 400 else item.overview) if item.overview and item.overview | length > 0 else
          "")) | tojson }}
       {%- endif %},
 

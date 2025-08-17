@@ -560,8 +560,9 @@ class DatabaseManager:
                 # Begin transaction for all items with immediate lock
                 await db.execute("BEGIN IMMEDIATE")
 
-                # Process items in chunks to avoid SQL parameter limits
-                chunk_size = 2000  # Balanced size for reliability and performance
+                # Process items in chunks matching API batch size for consistency
+                # Uses same adaptive sizing as API calls for optimal performance
+                chunk_size = 500  # Maximum batch size, matches API's max batch size
                 
                 for chunk_start in range(0, len(items), chunk_size):
                     chunk = items[chunk_start:chunk_start + chunk_size]

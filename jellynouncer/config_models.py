@@ -676,52 +676,6 @@ class ServerConfig(BaseModel):
         return v
 
 
-# ==================== SYNC CONFIGURATION ====================
-
-class SyncConfig(BaseModel):
-    """
-    Configuration for Jellyfin library synchronization behavior.
-
-    This model controls when and how the service syncs with Jellyfin's library,
-    including startup behavior and performance tuning parameters.
-
-    **Understanding Library Synchronization:**
-        The service needs to periodically sync with Jellyfin to ensure its
-        local database matches Jellyfin's library. This configuration controls
-        how that synchronization works.
-
-    **Performance Tuning Explained:**
-        - batch_size: How many items to process at once (larger = faster but more memory)
-        - api_request_delay: Pause between requests to avoid overwhelming Jellyfin
-
-    Attributes:
-        startup_sync (bool): Whether to sync library on service startup
-        sync_batch_size (int): Number of items to process per API request (10-1000)
-        api_request_delay (float): Delay between API requests in seconds (0.0-5.0)
-
-    Example:
-        ```python
-        # High-performance configuration for powerful servers
-        sync_config = SyncConfig(
-            startup_sync=True,
-            sync_batch_size=500,      # Large batches
-            api_request_delay=0.05    # Short delays
-        )
-
-        # Conservative configuration for slower servers
-        sync_config = SyncConfig(
-            startup_sync=True,
-            sync_batch_size=50,       # Small batches
-            api_request_delay=1.0     # Longer delays
-        )
-        ```
-    """
-    model_config = ConfigDict(extra='forbid')
-
-    startup_sync: bool = Field(default=True)
-    sync_batch_size: int = Field(default=2000, ge=1000, le=10000)
-    api_request_delay: float = Field(default=0.1, ge=0.0, le=5.0)
-
 
 # ==================== METADATA SERVICES CONFIGURATION ====================
 
@@ -978,7 +932,6 @@ class AppConfig(BaseModel):
     templates: TemplatesConfig = Field(default_factory=TemplatesConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
-    sync: SyncConfig = Field(default_factory=SyncConfig)
     metadata_services: MetadataServicesConfig = Field(default_factory=MetadataServicesConfig)
 
 
