@@ -474,6 +474,20 @@ class WebhookService:
             media_item.server_version = payload.ServerVersion
             media_item.server_url = payload.ServerUrl
             self.logger.debug(f"Added server info: {media_item.server_name}")
+            
+            # Use provider IDs from webhook as they are the real-time notification data
+            if hasattr(payload, 'Provider_imdb') and payload.Provider_imdb:
+                media_item.imdb_id = payload.Provider_imdb
+                self.logger.debug(f"Using IMDB ID from webhook: {payload.Provider_imdb}")
+            if hasattr(payload, 'Provider_tmdb') and payload.Provider_tmdb:
+                media_item.tmdb_id = payload.Provider_tmdb
+                self.logger.debug(f"Using TMDB ID from webhook: {payload.Provider_tmdb}")
+            if hasattr(payload, 'Provider_tvdb') and payload.Provider_tvdb:
+                media_item.tvdb_id = payload.Provider_tvdb
+                self.logger.debug(f"Using TVDB ID from webhook: {payload.Provider_tvdb}")
+            if hasattr(payload, 'Provider_tvdbslug') and payload.Provider_tvdbslug:
+                media_item.tvdb_slug = payload.Provider_tvdbslug
+                self.logger.debug(f"Using TVDB slug from webhook: {payload.Provider_tvdbslug}")
 
             # Check if this is a new item or an update
             existing_item = await self.db.get_item(media_item.item_id)
@@ -1772,6 +1786,21 @@ class WebhookService:
         media_item.server_name = payload.ServerName
         media_item.server_version = payload.ServerVersion
         media_item.server_url = payload.ServerUrl
+        
+        # Use provider IDs from webhook as they are the real-time notification data
+        # The webhook is the source of truth for what was just added
+        if hasattr(payload, 'Provider_imdb') and payload.Provider_imdb:
+            media_item.imdb_id = payload.Provider_imdb
+            self.logger.debug(f"Using IMDB ID from webhook: {payload.Provider_imdb}")
+        if hasattr(payload, 'Provider_tmdb') and payload.Provider_tmdb:
+            media_item.tmdb_id = payload.Provider_tmdb  
+            self.logger.debug(f"Using TMDB ID from webhook: {payload.Provider_tmdb}")
+        if hasattr(payload, 'Provider_tvdb') and payload.Provider_tvdb:
+            media_item.tvdb_id = payload.Provider_tvdb
+            self.logger.debug(f"Using TVDB ID from webhook: {payload.Provider_tvdb}")
+        if hasattr(payload, 'Provider_tvdbslug') and payload.Provider_tvdbslug:
+            media_item.tvdb_slug = payload.Provider_tvdbslug
+            self.logger.debug(f"Using TVDB slug from webhook: {payload.Provider_tvdbslug}")
         
         existing_item = await self.db.get_item(media_item.item_id)
         

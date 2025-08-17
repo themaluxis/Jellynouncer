@@ -424,7 +424,24 @@ class MetadataService:
             Optional[Any]: TVDb metadata object or None
         """
         try:
-            if not self.tvdb_client or not item.tvdb_id:
+            if not self.tvdb_client:
+                return None
+            
+            # For episodes, we need either the episode TVDB ID or the series TVDB ID to look it up
+            if item.item_type == "Episode":
+                # Try to get series TVDB ID from parent series if episode doesn't have its own ID
+                if not item.tvdb_id and item.series_id:
+                    # Need to fetch the series to get its TVDB ID
+                    series_item = await self.db_manager.get_item(item.series_id) if self.db_manager else None
+                    if series_item and hasattr(series_item, 'tvdb_id'):
+                        series_tvdb_id = series_item.tvdb_id
+                    else:
+                        series_tvdb_id = None
+                        self.logger.debug(f"Episode '{item.name}' has no TVDB ID and parent series TVDB ID not found")
+                else:
+                    series_tvdb_id = None
+            elif not item.tvdb_id:
+                self.logger.debug(f"{item.item_type} '{item.name}' has no TVDB ID")
                 return None
             
             # Check cache first
@@ -437,11 +454,20 @@ class MetadataService:
             
             # Determine which TVDb API method to use based on item type
             tvdb_data = None
-            if item.item_type == "Series":
+            if item.item_type == "Series" and item.tvdb_id:
                 tvdb_data = await self.tvdb_client.get_series_metadata(item.tvdb_id)
-            elif item.item_type == "Episode" and item.tvdb_id:
-                # For episodes, use the episode's TVDB ID directly
-                tvdb_data = await self.tvdb_client.get_episode_metadata(item.tvdb_id)
+            elif item.item_type == "Episode":
+                if item.tvdb_id:
+                    # Episode has its own TVDB ID
+                    tvdb_data = await self.tvdb_client.get_episode_metadata(item.tvdb_id)
+                elif series_tvdb_id and item.season_number is not None and item.episode_number is not None:
+                    # Look up episode by series ID, season, and episode number
+                    self.logger.debug(f"Looking up episode '{item.name}' by series TVDB ID {series_tvdb_id}, S{item.season_number}E{item.episode_number}")
+                    tvdb_data = await self.tvdb_client.find_episode_metadata(
+                        series_tvdb_id=int(series_tvdb_id),
+                        season_number=item.season_number,
+                        episode_number=item.episode_number
+                    )
             
             if tvdb_data:
                 # Cache the fetched data

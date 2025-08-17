@@ -529,7 +529,7 @@ class JellyfinAPI:
                         "MediaSources",  # → Container for MediaStreams + file info
 
                         # Provider IDs (maps to Provider_* fields)
-                        "ProviderIds",  # → Provider_tvdb, Provider_imdb, Provider_tvrage
+                        "ProviderIds",  # → Provider_tvdb, Provider_imdb, Provider_tvdbslug
 
                         # File system information
                         "Path",  # → File path information
@@ -881,6 +881,18 @@ class JellyfinAPI:
             imdb_id = provider_ids.get('Imdb')
             tmdb_id = provider_ids.get('Tmdb')
             tvdb_id = provider_ids.get('Tvdb')
+            tvdb_slug = provider_ids.get('Tvdbslug')
+            
+            # Debug logging for provider IDs
+            if provider_ids:
+                self.logger.debug(f"Provider IDs from Jellyfin for {item_data.get('Name', 'Unknown')}:")
+                self.logger.debug(f"  - Raw ProviderIds: {provider_ids}")
+                self.logger.debug(f"  - IMDB: {imdb_id}")
+                self.logger.debug(f"  - TMDB: {tmdb_id}")
+                self.logger.debug(f"  - TVDB: {tvdb_id}")
+                self.logger.debug(f"  - TVDB Slug: {tvdb_slug}")
+            else:
+                self.logger.debug(f"No provider IDs found for {item_data.get('Name', 'Unknown')}")
 
             # ==================== TV SERIES HIERARCHY ====================
             # Extract TV series information for episodes and seasons
@@ -1192,6 +1204,7 @@ class JellyfinAPI:
                 imdb_id=imdb_id,
                 tmdb_id=tmdb_id,
                 tvdb_id=tvdb_id,
+                tvdb_slug=tvdb_slug,
 
                 # TV series hierarchy fields
                 series_id=series_id,
