@@ -615,14 +615,18 @@ class MetadataService:
         Returns:
             float: Normalized rating on 0-10 scale
         """
+        # Handle None or empty values
+        if not rating_value or rating_value == 'N/A':
+            return 0.0
+            
         try:
             if rating_format == '/10':
                 # Extract number before /10
-                parts = rating_value.split('/')
+                parts = str(rating_value).split('/')
                 return float(parts[0])
             elif rating_format == '%':
                 # Convert percentage to 0-10 scale
-                value = rating_value.replace('%', '').strip()
+                value = str(rating_value).replace('%', '').strip()
                 return float(value) / 10.0
             elif rating_format == '/100':
                 # Convert 0-100 to 0-10 scale
@@ -630,7 +634,7 @@ class MetadataService:
             else:
                 # Try to parse as float directly
                 return float(rating_value)
-        except (ValueError, AttributeError, IndexError):
+        except (ValueError, AttributeError, IndexError, TypeError):
             return 0.0
 
     async def cleanup(self) -> None:

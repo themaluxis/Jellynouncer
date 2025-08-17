@@ -113,7 +113,7 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "📐 Quality",
-          "value": {{ (item.video_height ~ "p" ~ 
+          "value": {{ (item.video_height ~ "p" ~
             (" " ~ item.video_range if item.video_range and item.video_range != 'SDR' else "")) | tojson }},
           "inline": true
         }
@@ -124,7 +124,7 @@
           {% set fields_added.count = fields_added.count + 1 %}
         {
           "name": "🎞️ Video",
-          "value": {{ ((item.video_codec | upper) ~ 
+          "value": {{ ((item.video_codec | upper) ~
             (" " ~ item.video_profile if item.video_profile else "")) | tojson }},
           "inline": true
         }
@@ -237,7 +237,11 @@
           "name": "⭐ Ratings",
           "value": {%- set rating_parts = [] -%}
             {%- if item.omdb and item.omdb.imdb_rating and item.omdb.imdb_rating != 'N/A' -%}
-              {%- set _ = rating_parts.append('**IMDb:** ' ~ item.omdb.imdb_rating) -%}
+              {%- if item.imdb_id -%}
+                {%- set _ = rating_parts.append('[**IMDb:** ' ~ item.omdb.imdb_rating ~ '](https://www.imdb.com/title/' ~ item.imdb_id ~ ')') -%}
+              {%- else -%}
+                {%- set _ = rating_parts.append('**IMDb:** ' ~ item.omdb.imdb_rating) -%}
+              {%- endif -%}
             {%- endif -%}
             {%- if item.omdb and item.omdb.ratings_dict.rotten_tomatoes -%}
               {%- set _ = rating_parts.append('**RT:** ' ~ item.omdb.ratings_dict.rotten_tomatoes.value) -%}
@@ -246,18 +250,34 @@
               {%- set _ = rating_parts.append('**MC:** ' ~ item.omdb.metascore) -%}
             {%- endif -%}
             {%- if item.tmdb and item.tmdb.rating_display -%}
-              {%- set _ = rating_parts.append('**TMDb:** ' ~ item.tmdb.rating_display ~ '/10') -%}
+              {%- if item.tmdb_id -%}
+                {%- if item.item_type == 'Movie' -%}
+                  {%- set _ = rating_parts.append('[**TMDb:** ' ~ item.tmdb.rating_display ~ '/10](https://www.themoviedb.org/movie/' ~ item.tmdb_id ~ ')') -%}
+                {%- elif item.item_type in ['Series', 'Season', 'Episode'] -%}
+                  {%- set _ = rating_parts.append('[**TMDb:** ' ~ item.tmdb.rating_display ~ '/10](https://www.themoviedb.org/tv/' ~ item.tmdb_id ~ ')') -%}
+                {%- else -%}
+                  {%- set _ = rating_parts.append('**TMDb:** ' ~ item.tmdb.rating_display ~ '/10') -%}
+                {%- endif -%}
+              {%- else -%}
+                {%- set _ = rating_parts.append('**TMDb:** ' ~ item.tmdb.rating_display ~ '/10') -%}
+              {%- endif -%}
             {%- elif item.omdb and item.omdb.ratings_dict.tmdb -%}
               {%- set _ = rating_parts.append('**TMDb:** ' ~ item.omdb.ratings_dict.tmdb.value) -%}
             {%- endif -%}
             {%- if item.tvdb and item.tvdb.rating -%}
-              {%- set _ = rating_parts.append('**TVDb:** ' ~ item.tvdb.rating) -%}
+              {%- if item.tvdb_slug -%}
+                {%- set _ = rating_parts.append('[**TVDb:** ' ~ item.tvdb.rating ~ '](https://www.thetvdb.com/series/' ~ item.tvdb_slug ~ ')') -%}
+              {%- elif item.tvdb_id -%}
+                {%- set _ = rating_parts.append('[**TVDb:** ' ~ item.tvdb.rating ~ '](https://www.thetvdb.com/dereferrer/series/' ~ item.tvdb_id ~ ')') -%}
+              {%- else -%}
+                {%- set _ = rating_parts.append('**TVDb:** ' ~ item.tvdb.rating) -%}
+              {%- endif -%}
             {%- endif -%}
             {{ (rating_parts | join(' • ')) | tojson }},
           "inline": false
         }
         {% endif %}
-      ],
+      ]
 
       {#
         Image Selection with Priority
