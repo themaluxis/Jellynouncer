@@ -77,6 +77,7 @@ import time
 import json
 import signal
 import sys
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
@@ -86,7 +87,6 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 import uvicorn
-from pydantic import ValidationError
 
 # Import our custom modules
 from webhook_models import WebhookPayload
@@ -249,16 +249,20 @@ app = FastAPI(
 
 
 @app.post("/webhook")
-async def receive_webhook(payload: WebhookPayload):
+async def receive_webhook(payload: WebhookPayload, request: Request):
     """
     Main webhook endpoint for receiving notifications from Jellyfin.
 
     This endpoint processes incoming webhooks from Jellyfin's webhook plugin
     and triggers the appropriate notification workflow. It validates the
     payload format and handles the complete notification pipeline.
+    
+    When LOG_LEVEL is set to DEBUG, provides comprehensive request analysis
+    including headers, body content, and field-by-field validation.
 
     Args:
         payload (WebhookPayload): Validated webhook data from Jellyfin
+        request (Request): FastAPI request object for debug logging
 
     Returns:
         dict: Processing result with status and details
@@ -290,8 +294,100 @@ async def receive_webhook(payload: WebhookPayload):
         )
 
     try:
+        # Debug logging when enabled
+        if webhook_service.logger.isEnabledFor(logging.DEBUG):
+            # Get raw body for comprehensive debugging
+            raw_body = await request.body()
+            
+            # Get client information
+            client_info = getattr(request, "client", None)
+            client_host = getattr(client_info, "host", "unknown") if client_info else "unknown"
+            client_port = getattr(client_info, "port", "unknown") if client_info else "unknown"
+            
+            # Log comprehensive request details
+            webhook_service.logger.debug("=" * 80)
+            webhook_service.logger.debug("📡 WEBHOOK REQUEST RECEIVED")
+            webhook_service.logger.debug("=" * 80)
+            webhook_service.logger.debug(f"📡 Client: {client_host}:{client_port}")
+            webhook_service.logger.debug(f"🌐 Method: {request.method}")
+            webhook_service.logger.debug(f"📍 URL: {request.url}")
+            webhook_service.logger.debug(f"📋 Content-Type: {request.headers.get('content-type', 'none')}")
+            webhook_service.logger.debug(f"🤖 User-Agent: {request.headers.get('user-agent', 'none')}")
+            webhook_service.logger.debug(f"📏 Body Length: {len(raw_body)} bytes")
+            
+            # Log headers (mask sensitive ones)
+            webhook_service.logger.debug("📨 REQUEST HEADERS:")
+            for header_name, header_value in request.headers.items():
+                if header_name.lower() in ['authorization', 'x-api-key', 'x-jellyfin-token']:
+                    masked_value = header_value[:8] + "***" if len(header_value) > 8 else "***"
+                    webhook_service.logger.debug(f"    {header_name}: {masked_value}")
+                else:
+                    webhook_service.logger.debug(f"    {header_name}: {header_value}")
+            
+            # Log raw body content
+            webhook_service.logger.debug("📦 RAW BODY CONTENT:")
+            try:
+                body_text = raw_body.decode('utf-8', errors='replace')
+                if len(body_text) > 2000:
+                    webhook_service.logger.debug(f"    {body_text[:2000]}... (truncated, total length: {len(body_text)})")
+                else:
+                    webhook_service.logger.debug(f"    {body_text}")
+            except Exception as decode_error:
+                webhook_service.logger.debug(f"    Failed to decode body as UTF-8: {decode_error}")
+                webhook_service.logger.debug(f"    Raw bytes (first 200): {raw_body[:200]}")
+            
+            # Parse and log JSON structure
+            webhook_service.logger.debug("📋 PARSED JSON STRUCTURE:")
+            try:
+                json_data = json.loads(raw_body)
+                webhook_service.logger.debug(f"    Top-level keys: {list(json_data.keys())}")
+                webhook_service.logger.debug(f"    Total fields: {len(json_data)}")
+                
+                # Log each field with type information
+                webhook_service.logger.debug("🔍 FIELD DETAILS:")
+                for key, value in json_data.items():
+                    value_type = type(value).__name__
+                    if value is None:
+                        value_str = "null"
+                    elif isinstance(value, str):
+                        value_str = f'"{value[:100]}..."' if len(value) > 100 else f'"{value}"'
+                    else:
+                        value_str = str(value)
+                    webhook_service.logger.debug(f"    {key} ({value_type}): {value_str}")
+            except json.JSONDecodeError as e:
+                webhook_service.logger.debug(f"    JSON parse error: {e}")
+            
+            # Log payload details (structured)
+            webhook_service.logger.debug("📦 WEBHOOK PAYLOAD (Validated):")
+            webhook_service.logger.debug(f"    ItemId: {payload.ItemId}")
+            webhook_service.logger.debug(f"    Name: {payload.Name}")
+            webhook_service.logger.debug(f"    ItemType: {payload.ItemType}")
+            webhook_service.logger.debug(f"    NotificationType: {payload.NotificationType}")
+            webhook_service.logger.debug(f"    ServerId: {payload.ServerId}")
+            webhook_service.logger.debug(f"    ServerName: {payload.ServerName}")
+            webhook_service.logger.debug(f"    Username: {payload.Username}")
+            webhook_service.logger.debug(f"    UserId: {payload.UserId}")
+            
+            # Log additional fields if present
+            if hasattr(payload, 'LibraryName'):
+                webhook_service.logger.debug(f"    LibraryName: {payload.LibraryName}")
+            if hasattr(payload, 'Path'):
+                webhook_service.logger.debug(f"    Path: {payload.Path}")
+            if hasattr(payload, 'Year'):
+                webhook_service.logger.debug(f"    Year: {payload.Year}")
+            
+            # Show payload as formatted JSON for easy copying
+            webhook_service.logger.debug("📋 PAYLOAD AS FORMATTED JSON:")
+            webhook_service.logger.debug(json.dumps(payload.model_dump(), indent=2))
+            webhook_service.logger.debug("=" * 80)
+        
         # Process the webhook through our service layer
         result = await webhook_service.process_webhook(payload)
+        
+        # Log success in debug mode
+        if webhook_service.logger.isEnabledFor(logging.DEBUG):
+            webhook_service.logger.debug(f"✅ Webhook processed successfully: {result.get('status')}")
+        
         return result
 
     except Exception as e:
@@ -303,369 +399,27 @@ async def receive_webhook(payload: WebhookPayload):
         )
 
 
-@app.post("/webhook/debug")
-async def webhook_debug_endpoint(request: Request) -> Dict[str, Any]:
+# Debug webhook endpoint has been removed - its functionality is now in the main /webhook endpoint
+# To enable debug logging, set LOG_LEVEL=DEBUG in your environment or config
+
+@app.post("/webhook/debug", deprecated=True, include_in_schema=False)
+async def webhook_debug_endpoint_deprecated(request: Request) -> Dict[str, Any]:
     """
-    Enhanced debug webhook endpoint for troubleshooting webhook configuration issues.
-
-    This endpoint accepts any JSON payload and provides comprehensive analysis
-    of the request, including headers, body content, validation results, and
-    field-by-field analysis with detailed logging.
-
-    Args:
-        request: FastAPI request object containing raw webhook data
-
-    Returns:
-        Dict[str, Any]: Comprehensive debug information including validation results
-
-    Raises:
-        HTTPException: If service is not ready or critical processing fails
+    DEPRECATED: This endpoint has been removed. Debug functionality is now in /webhook.
+    
+    Set LOG_LEVEL=DEBUG to enable comprehensive request/response logging.
     """
-    # Check if webhook service is initialized
-    if webhook_service is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Debug service not ready - still initializing"
-        )
-
-    client_info = getattr(request, "client", None)
-    client_host = getattr(client_info, "host", "unknown") if client_info else "unknown"
-    client_port = getattr(client_info, "port", "unknown") if client_info else "unknown"
-
-    # Initialize response structure
-    debug_response = {
-        "status": "success",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "client": {
-            "host": client_host,
-            "port": client_port
+    return {
+        "status": "deprecated",
+        "message": "The /webhook/debug endpoint has been deprecated",
+        "recommendation": "Use the main /webhook endpoint with LOG_LEVEL=DEBUG for debugging",
+        "migration_guide": {
+            "old_endpoint": "/webhook/debug",
+            "new_endpoint": "/webhook",
+            "enable_debug": "Set LOG_LEVEL=DEBUG in environment variables or config.json"
         },
-        "request_analysis": {},
-        "json_analysis": {},
-        "validation_results": {},
-        "webhook_payload": None,
-        "recommendations": []
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
-
-    try:
-        # ==================== REQUEST ANALYSIS ====================
-
-        # Get raw request data for analysis
-        raw_body = await request.body()
-        content_type = request.headers.get("content-type", "")
-        user_agent = request.headers.get("user-agent", "")
-
-        # Store request metadata
-        debug_response["request_analysis"] = {
-            "method": request.method,
-            "url": str(request.url),
-            "content_type": content_type,
-            "user_agent": user_agent,
-            "body_length": len(raw_body),
-            "headers": dict(request.headers),
-            "query_params": dict(request.query_params) if request.query_params else {}
-        }
-
-        # Log comprehensive request details
-        webhook_service.logger.info("=" * 80)
-        webhook_service.logger.info("🔍 ENHANCED DEBUG WEBHOOK REQUEST RECEIVED")
-        webhook_service.logger.info("=" * 80)
-        webhook_service.logger.info(f"📡 Client: {client_host}:{client_port}")
-        webhook_service.logger.info(f"🌐 Method: {request.method}")
-        webhook_service.logger.info(f"📍 URL: {request.url}")
-        webhook_service.logger.info(f"📋 Content-Type: {content_type}")
-        webhook_service.logger.info(f"🤖 User-Agent: {user_agent}")
-        webhook_service.logger.info(f"📏 Body Length: {len(raw_body)} bytes")
-
-        # Log all headers (mask sensitive ones)
-        webhook_service.logger.info("📨 REQUEST HEADERS:")
-        for header_name, header_value in request.headers.items():
-            if header_name.lower() in ['authorization', 'x-api-key', 'x-jellyfin-token']:
-                masked_value = header_value[:8] + "***" if len(header_value) > 8 else "***"
-                webhook_service.logger.info(f"    {header_name}: {masked_value}")
-            else:
-                webhook_service.logger.info(f"    {header_name}: {header_value}")
-
-        # Log query parameters if any
-        if request.query_params:
-            webhook_service.logger.info("🔗 QUERY PARAMETERS:")
-            for param_name, param_value in request.query_params.items():
-                webhook_service.logger.info(f"    {param_name}: {param_value}")
-
-        # Log raw body content (first 1000 chars for safety)
-        webhook_service.logger.info("📦 RAW BODY CONTENT:")
-        try:
-            body_text = raw_body.decode('utf-8', errors='replace')
-            if len(body_text) > 1000:
-                webhook_service.logger.info(f"    {body_text[:1000]}... (truncated, total length: {len(body_text)})")
-            else:
-                webhook_service.logger.info(f"    {body_text}")
-
-            debug_response["request_analysis"]["body_preview"] = body_text[:1000] if len(
-                body_text) > 1000 else body_text
-
-        except Exception as decode_error:
-            webhook_service.logger.error(f"    Failed to decode body as UTF-8: {decode_error}")
-            webhook_service.logger.info(f"    Raw bytes (first 200): {raw_body[:200]}")
-            debug_response["request_analysis"]["decode_error"] = str(decode_error)
-
-        # ==================== JSON PARSING ====================
-
-        json_data = None
-        json_parse_error = None
-
-        # Attempt to parse JSON
-        try:
-            json_data = json.loads(raw_body)
-            webhook_service.logger.info("✅ JSON PARSING SUCCESSFUL")
-
-            if isinstance(json_data, dict):
-                webhook_service.logger.info(f"📊 JSON Structure:")
-                webhook_service.logger.info(f"    Top-level keys: {list(json_data.keys())}")
-                webhook_service.logger.info(f"    Total keys: {len(json_data)}")
-
-                # Store JSON analysis
-                debug_response["json_analysis"] = {
-                    "parse_success": True,
-                    "is_dictionary": True,
-                    "top_level_keys": list(json_data.keys()),
-                    "total_keys": len(json_data),
-                    "field_analysis": {}
-                }
-
-                # Log each field in detail
-                webhook_service.logger.info("🔍 DETAILED FIELD ANALYSIS:")
-                for key, value in json_data.items():
-                    value_type = type(value).__name__
-                    if value is None:
-                        value_str = "null"
-                    elif isinstance(value, str):
-                        # Truncate long strings in logs
-                        value_str = f'"{value[:100]}..."' if len(value) > 100 else f'"{value}"'
-                    else:
-                        value_str = str(value)
-
-                    webhook_service.logger.info(f"    {key} ({value_type}): {value_str}")
-
-                    # Store field analysis
-                    debug_response["json_analysis"]["field_analysis"][key] = {
-                        "type": value_type,
-                        "value": value,
-                        "is_null": value is None,
-                        "is_empty": value == "" if isinstance(value, str) else False
-                    }
-            else:
-                webhook_service.logger.warning(f"⚠️  JSON is not a dictionary, it's a {type(json_data).__name__}")
-                debug_response["json_analysis"] = {
-                    "parse_success": True,
-                    "is_dictionary": False,
-                    "actual_type": type(json_data).__name__,
-                    "value": json_data
-                }
-
-        except json.JSONDecodeError as e:
-            json_parse_error = str(e)
-            webhook_service.logger.error(f"❌ JSON PARSING FAILED: {e}")
-            debug_response["json_analysis"] = {
-                "parse_success": False,
-                "error": json_parse_error,
-                "error_position": getattr(e, 'pos', None)
-            }
-
-        # ==================== WEBHOOK PAYLOAD VALIDATION ====================
-
-        validation_results = {
-            "webhook_model_validation": {},
-            "required_fields_check": {},
-            "field_type_validation": {},
-            "recommendations": []
-        }
-
-        if json_data and isinstance(json_data, dict):
-            debug_response["webhook_payload"] = json_data
-
-            # Try to validate against WebhookPayload model
-            try:
-                webhook_payload = WebhookPayload(**json_data)
-                validation_results["webhook_model_validation"] = {
-                    "success": True,
-                    "message": "Payload successfully validates against WebhookPayload model"
-                }
-                webhook_service.logger.info("✅ WEBHOOK PAYLOAD VALIDATION SUCCESSFUL")
-
-            except ValidationError as ve:
-                validation_errors = []
-                for error in ve.errors():
-                    field_path = " → ".join(str(loc) for loc in error["loc"])
-                    validation_errors.append({
-                        "field": field_path,
-                        "message": error["msg"],
-                        "input": error.get("input"),
-                        "type": error["type"]
-                    })
-
-                validation_results["webhook_model_validation"] = {
-                    "success": False,
-                    "errors": validation_errors
-                }
-                webhook_service.logger.error(f"❌ WEBHOOK PAYLOAD VALIDATION FAILED: {len(validation_errors)} errors")
-                for error in validation_errors:
-                    webhook_service.logger.error(f"    {error['field']}: {error['message']}")
-
-            except Exception as e:
-                validation_results["webhook_model_validation"] = {
-                    "success": False,
-                    "error": f"Unexpected validation error: {str(e)}"
-                }
-                webhook_service.logger.error(f"❌ UNEXPECTED VALIDATION ERROR: {e}")
-
-            # Check for common required fields
-            required_fields = ["ItemId", "Name", "ItemType", "NotificationType"]
-            missing_fields = [field for field in required_fields if field not in json_data]
-
-            validation_results["required_fields_check"] = {
-                "required_fields": required_fields,
-                "missing_fields": missing_fields,
-                "present_fields": [field for field in required_fields if field in json_data]
-            }
-
-            if missing_fields:
-                webhook_service.logger.warning(f"⚠️  MISSING REQUIRED FIELDS: {missing_fields}")
-                validation_results["recommendations"].append(
-                    f"Add missing required fields to Jellyfin webhook: {', '.join(missing_fields)}"
-                )
-            else:
-                webhook_service.logger.info("✅ ALL REQUIRED FIELDS PRESENT")
-
-        # ==================== GENERATE RECOMMENDATIONS ====================
-
-        if json_parse_error:
-            validation_results["recommendations"].append(
-                "Fix JSON syntax errors in webhook payload"
-            )
-
-        if not json_data:
-            validation_results["recommendations"].append(
-                "Ensure webhook sends valid JSON payload"
-            )
-
-        if content_type != "application/json":
-            validation_results["recommendations"].append(
-                f"Set Content-Type to 'application/json' (currently: '{content_type}')"
-            )
-
-        if not user_agent.startswith("Jellyfin"):
-            validation_results["recommendations"].append(
-                "Verify request is coming from Jellyfin server"
-            )
-
-        debug_response["validation_results"] = validation_results
-        debug_response["recommendations"] = validation_results["recommendations"]
-
-        # ==================== DISCORD NOTIFICATION TEST ====================
-
-        notification_result = None
-
-        # Only attempt Discord notification if webhook payload validation was successful
-        if (json_data and isinstance(json_data, dict) and
-                validation_results["webhook_model_validation"].get("success", False)):
-
-            try:
-                webhook_service.logger.info("🚀 ATTEMPTING DISCORD NOTIFICATION TEST...")
-
-                # Create WebhookPayload from validated JSON data
-                webhook_payload = WebhookPayload(**json_data)
-
-                # Process through the same pipeline as main webhook endpoint
-                notification_result = await webhook_service.process_webhook(webhook_payload)
-
-                webhook_service.logger.info(
-                    f"✅ DISCORD NOTIFICATION RESULT: {notification_result.get('status', 'unknown')}")
-
-                debug_response["discord_notification"] = {
-                    "attempted": True,
-                    "success": notification_result.get("status") == "success",
-                    "result": notification_result
-                }
-
-                if notification_result.get("status") == "success":
-                    webhook_service.logger.info(f"🎉 DISCORD NOTIFICATION SENT SUCCESSFULLY!")
-                    webhook_service.logger.info(f"    Action: {notification_result.get('action', 'unknown')}")
-                    webhook_service.logger.info(f"    Item: {notification_result.get('item_name', 'unknown')}")
-                else:
-                    webhook_service.logger.warning(
-                        f"⚠️  DISCORD NOTIFICATION FAILED: {notification_result.get('message', 'unknown error')}")
-
-            except ValidationError as ve:
-                # This shouldn't happen since we already validated, but just in case
-                webhook_service.logger.error("❌ DISCORD NOTIFICATION VALIDATION ERROR (unexpected)")
-                debug_response["discord_notification"] = {
-                    "attempted": True,
-                    "success": False,
-                    "error": "Webhook payload validation failed during notification attempt",
-                    "validation_errors": [{"field": " → ".join(str(loc) for loc in error["loc"]),
-                                           "message": error["msg"]} for error in ve.errors()]
-                }
-
-            except Exception as notification_error:
-                webhook_service.logger.error(f"❌ DISCORD NOTIFICATION ERROR: {notification_error}", exc_info=True)
-                debug_response["discord_notification"] = {
-                    "attempted": True,
-                    "success": False,
-                    "error": str(notification_error),
-                    "error_type": type(notification_error).__name__
-                }
-        else:
-            # Skip notification if validation failed
-            webhook_service.logger.info("⏭️  SKIPPING DISCORD NOTIFICATION (validation failed)")
-            debug_response["discord_notification"] = {
-                "attempted": False,
-                "skipped_reason": "Webhook payload validation failed",
-                "success": False
-            }
-
-        # ==================== FINAL LOGGING ====================
-
-        webhook_service.logger.info("=" * 80)
-        webhook_service.logger.info("🎯 DEBUG ANALYSIS COMPLETE")
-        webhook_service.logger.info("=" * 80)
-
-        if validation_results["recommendations"]:
-            webhook_service.logger.info("💡 RECOMMENDATIONS:")
-            for i, recommendation in enumerate(validation_results["recommendations"], 1):
-                webhook_service.logger.info(f"    {i}. {recommendation}")
-        else:
-            webhook_service.logger.info("✅ NO ISSUES DETECTED - WEBHOOK LOOKS GOOD!")
-
-        # Add Discord notification summary to recommendations
-        if debug_response["discord_notification"]["attempted"]:
-            if debug_response["discord_notification"]["success"]:
-                debug_response["recommendations"].append("✅ Discord notification sent successfully!")
-            else:
-                error_msg = debug_response["discord_notification"].get("error", "Unknown error")
-                debug_response["recommendations"].append(f"❌ Discord notification failed: {error_msg}")
-
-        return debug_response
-
-    except Exception as e:
-        # Handle any unexpected errors
-        webhook_service.logger.error(f"❌ DEBUG ENDPOINT ERROR: {e}", exc_info=True)
-
-        debug_response["status"] = "error"
-        debug_response["error"] = {
-            "type": type(e).__name__,
-            "message": str(e),
-            "occurred_at": datetime.now(timezone.utc).isoformat()
-        }
-        debug_response["recommendations"] = [
-            "Check application logs for detailed error information",
-            "Verify webhook service is properly initialized",
-            "Contact administrator if error persists"
-        ]
-
-        # Return error response instead of raising exception
-        return debug_response
-
 @app.get("/health")
 async def health_check():
     """
@@ -737,14 +491,14 @@ async def validate_templates():
             detail="Service not ready - still initializing"
         )
     
-    if not webhook_service.discord_notifier:
+    if not webhook_service.discord:
         raise HTTPException(
             status_code=503,
             detail="Discord notifier not initialized"
         )
     
     try:
-        results = await webhook_service.discord_notifier.validate_all_templates()
+        results = await webhook_service.discord.validate_all_templates()
         
         # Count valid/invalid templates
         valid_count = sum(1 for r in results.values() if r["status"].startswith("✅"))

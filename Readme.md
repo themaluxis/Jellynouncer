@@ -483,8 +483,7 @@ Rate Limiter → Discord API → Retry Logic → Success/Failure Handling → Qu
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/webhook` | POST | Main webhook receiver from Jellyfin |
-| `/webhook/debug` | POST | Debug endpoint with detailed analysis |
+| `/webhook` | POST | Main webhook receiver from Jellyfin (includes debug logging when LOG_LEVEL=DEBUG) |
 | `/health` | GET | Service health and status |
 | `/stats` | GET | Database and processing statistics |
 | `/sync` | POST | Trigger manual library synchronization |
@@ -641,7 +640,7 @@ docker restart jellynouncer
 
 ### Debug Mode
 
-Enable detailed logging:
+Enable comprehensive debug logging to troubleshoot webhook issues:
 
 ```yaml
 # Docker Compose
@@ -654,6 +653,15 @@ environment:
 export LOG_LEVEL=DEBUG
 python main.py
 ```
+
+When `LOG_LEVEL=DEBUG`, the `/webhook` endpoint will log:
+- Complete HTTP request headers (with sensitive values masked)
+- Raw request body content
+- JSON structure and field analysis
+- Webhook payload validation details
+- Item deletion queue status
+- Metadata API responses (OMDb, TMDb, TVDb)
+- Discord notification attempts and results
 
 ### Log Locations
 

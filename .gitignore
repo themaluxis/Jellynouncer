@@ -10,3 +10,4 @@ CLAUDE.md
 /.claude
 *.pyc
 .claude/settings.local.json
+*.pyc
