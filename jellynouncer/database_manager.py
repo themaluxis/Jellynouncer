@@ -30,7 +30,7 @@ from typing import Dict, Any, Optional, List
 import aiosqlite
 
 from .config_models import DatabaseConfig
-from .media_models import MediaItem
+from .database_models import DatabaseItem
 from .utils import get_logger
 
 
@@ -96,7 +96,7 @@ class DatabaseManager:
         await db_manager.initialize()
 
         # Save a media item
-        item = MediaItem(
+        item = DatabaseItem(
             item_id="abc123",
             name="The Matrix",
             item_type="Movie",
@@ -218,206 +218,82 @@ class DatabaseManager:
                 await db.execute("PRAGMA journal_size_limit=67108864")  # 64MB journal limit
                 await db.execute("PRAGMA wal_autocheckpoint=10000")  # Less frequent checkpoints
 
-                # Create the complete media_items table with ALL MediaItem fields
-                # This ensures complete webhook field synchronization and prevents data loss
+                # Create the slim media_items table with only DatabaseItem fields
+                # This stores only fields needed for change detection, reducing database size by ~70%
                 await db.execute("""
-                                    CREATE TABLE IF NOT EXISTS media_items (
-                                    -- =============================================================================
-                                    -- CORE IDENTIFICATION (Required Fields)
-                                    -- =============================================================================
-                                    -- Primary identification fields that are always present
-                                    item_id                   TEXT PRIMARY KEY,          -- Unique Jellyfin identifier (primary key)
-                                    name                      TEXT NOT NULL,             -- Display name of the media item
-                                    item_type                 TEXT NOT NULL,             -- Media type (Movie, Episode, Series, Audio, etc.)
+                    CREATE TABLE IF NOT EXISTS media_items (
+                        -- =============================================================================
+                        -- CORE IDENTIFICATION (Required Fields)
+                        -- =============================================================================
+                        item_id                   TEXT PRIMARY KEY,          -- Unique Jellyfin identifier
+                        name                      TEXT NOT NULL,             -- Display name of the item
+                        item_type                 TEXT NOT NULL,             -- Media type (Movie, Episode, Series, etc.)
 
-                                    -- =============================================================================
-                                    -- CONTENT METADATA
-                                    -- =============================================================================
-                                    -- Basic metadata common across media types
-                                    year                      INTEGER,                   -- Production/release year
-                                    series_name               TEXT,                      -- TV series name (for episodes)
-                                    season_number             INTEGER,                   -- Season number for TV episodes
-                                    episode_number            INTEGER,                   -- Episode number for TV episodes
-                                    overview                  TEXT,                      -- Plot summary/description
+                        -- =============================================================================
+                        -- TV SERIES DATA
+                        -- =============================================================================
+                        series_name               TEXT,                      -- TV series name (for episodes)
+                        series_id                 TEXT,                      -- Parent series ID
+                        season_number             INTEGER,                   -- Season number for TV episodes
+                        episode_number            INTEGER,                   -- Episode number for TV episodes
+                        year                      INTEGER,                   -- Release/air year
 
-                                    -- =============================================================================
-                                    -- IMAGE TAGS AND ARTWORK
-                                    -- =============================================================================
-                                    -- Jellyfin image identifiers for artwork retrieval via API
-                                    primary_image_tag         TEXT,                      -- Primary/poster image tag identifier
-                                    backdrop_image_tag        TEXT,                      -- Backdrop/fanart image tag identifier
-                                    logo_image_tag            TEXT,                      -- Logo image tag identifier
-                                    thumb_image_tag           TEXT,                      -- Thumbnail image tag identifier
-                                    banner_image_tag          TEXT,                      -- Banner image tag identifier
-                                    
-                                    -- Parent/series image tags for episodes that need fallback images
-                                    series_primary_image_tag  TEXT,                      -- Series poster for episodes without own image
-                                    parent_backdrop_image_tag TEXT,                      -- Parent item backdrop (for episodes/seasons)
-                                    parent_logo_image_tag     TEXT,                      -- Parent logo image tag
+                        -- =============================================================================
+                        -- VIDEO SPECIFICATIONS (for change detection)
+                        -- =============================================================================
+                        video_height              INTEGER,                   -- Resolution height in pixels
+                        video_width               INTEGER,                   -- Resolution width in pixels
+                        video_codec               TEXT,                      -- Video codec (h264, hevc, av1, etc.)
+                        video_profile             TEXT,                      -- Codec profile
+                        video_range               TEXT,                      -- Video range (SDR, HDR10, Dolby Vision, etc.)
+                        video_framerate           REAL,                      -- Frames per second
+                        video_bitrate             INTEGER,                   -- Video bitrate
+                        video_bitdepth            INTEGER,                   -- Color bit depth
 
-                                    -- =============================================================================
-                                    -- VIDEO TECHNICAL SPECIFICATIONS
-                                    -- =============================================================================
-                                    -- Core video stream properties for quality detection and upgrade notifications
-                                    video_height              INTEGER,                   -- Video resolution height (720, 1080, 2160, etc.)
-                                    video_width               INTEGER,                   -- Video resolution width (1280, 1920, 3840, etc.)
-                                    video_codec               TEXT,                      -- Video codec (h264, hevc, av1, etc.)
-                                    video_profile             TEXT,                      -- Codec profile (High, Main, Main10, etc.)
-                                    video_range               TEXT,                      -- Video range (SDR, HDR10, HDR10+, Dolby Vision)
-                                    video_framerate           REAL,                      -- Frames per second (23.976, 24, 25, 29.97, etc.)
-                                    aspect_ratio              TEXT,                      -- Display aspect ratio (16:9, 21:9, etc.)
+                        -- =============================================================================
+                        -- AUDIO SPECIFICATIONS (for change detection)
+                        -- =============================================================================
+                        audio_codec               TEXT,                      -- Audio codec
+                        audio_channels            INTEGER,                   -- Number of audio channels
+                        audio_language            TEXT,                      -- Primary audio language
+                        audio_bitrate             INTEGER,                   -- Audio bitrate
+                        audio_samplerate          INTEGER,                   -- Sample rate in Hz
 
-                                    -- Additional video properties from webhook for complete template customization
-                                    video_title               TEXT,                      -- Video stream title/name from container
-                                    video_type                TEXT,                      -- Stream type identifier
-                                    video_language            TEXT,                      -- Video stream language code (eng, spa, fra, etc.)
-                                    video_level               TEXT,                      -- Codec level specification (3.1, 4.0, 5.1, etc.)
-                                    video_interlaced          BOOLEAN,                   -- Whether video uses interlaced scanning
-                                    video_bitrate             INTEGER,                   -- Video bitrate in bits per second
-                                    video_bitdepth            INTEGER,                   -- Color bit depth (8, 10, 12)
-                                    video_colorspace          TEXT,                      -- Color space specification (bt709, bt2020nc, etc.)
-                                    video_colortransfer       TEXT,                      -- Color transfer characteristics (bt709, smpte2084, etc.)
-                                    video_colorprimaries      TEXT,                      -- Color primaries specification (bt709, bt2020, etc.)
-                                    video_pixelformat         TEXT,                      -- Pixel format (yuv420p, yuv420p10le, etc.)
-                                    video_refframes           INTEGER,                   -- Number of reference frames used by codec
+                        -- =============================================================================
+                        -- SUBTITLE INFORMATION (for change detection)
+                        -- =============================================================================
+                        subtitle_count            INTEGER,                   -- Total number of subtitle tracks
+                        subtitle_languages        TEXT,                      -- JSON array of available languages
+                        subtitle_formats          TEXT,                      -- JSON array of subtitle formats
 
-                                    -- =============================================================================
-                                    -- AUDIO TECHNICAL SPECIFICATIONS
-                                    -- =============================================================================
-                                    -- Core audio stream properties for quality detection
-                                    audio_codec               TEXT,                      -- Audio codec (aac, ac3, dts, flac, mp3, etc.)
-                                    audio_channels            INTEGER,                   -- Number of audio channels (2, 6, 8 for stereo, 5.1, 7.1)
-                                    audio_language            TEXT,                      -- Audio language code (eng, spa, fra, etc.)
-                                    audio_bitrate             INTEGER,                   -- Audio bitrate in bits per second
+                        -- =============================================================================
+                        -- FILE INFORMATION
+                        -- =============================================================================
+                        file_path                 TEXT,                      -- File system path (for rename detection)
+                        file_size                 INTEGER,                   -- File size in bytes
+                        library_name              TEXT,                      -- Jellyfin library name
 
-                                    -- Additional audio properties from webhook for template customization
-                                    audio_title               TEXT,                      -- Audio stream title/name from container
-                                    audio_type                TEXT,                      -- Stream type identifier
-                                    audio_samplerate          INTEGER,                   -- Sample rate in Hz (48000, 44100, 96000, etc.)
-                                    audio_default             BOOLEAN,                   -- Whether this is the default audio track
-
-                                    -- =============================================================================
-                                    -- SUBTITLE INFORMATION
-                                    -- =============================================================================
-                                    -- Subtitle/caption tracks available for the content
-                                    subtitle_title            TEXT,                      -- Subtitle stream title/name
-                                    subtitle_type             TEXT,                      -- Subtitle stream type identifier
-                                    subtitle_language         TEXT,                      -- Subtitle language code (eng, spa, fra, etc.)
-                                    subtitle_codec            TEXT,                      -- Subtitle format (srt, ass, pgs, vtt, etc.)
-                                    subtitle_default          BOOLEAN,                   -- Whether this is the default subtitle track
-                                    subtitle_forced           BOOLEAN,                   -- Whether subtitle is forced display
-                                    subtitle_external         BOOLEAN,                   -- Whether subtitle is external file vs embedded
-
-                                    -- =============================================================================
-                                    -- EXTERNAL PROVIDER IDS
-                                    -- =============================================================================
-                                    -- Links to external movie/TV databases for metadata enrichment
-                                    imdb_id                   TEXT,                      -- Internet Movie Database ID (tt1234567)
-                                    tmdb_id                   TEXT,                      -- The Movie Database ID
-                                    tvdb_id                   TEXT,                      -- The TV Database ID
-                                    tvdb_slug                 TEXT,                      -- TVDB URL slug identifier
-
-                                    -- =============================================================================
-                                    -- SERVER INFORMATION
-                                    -- =============================================================================
-                                    -- Context about the Jellyfin server for webhook compatibility
-                                    server_id                 TEXT,                      -- Jellyfin server unique identifier
-                                    server_name               TEXT,                      -- Human-readable server name
-                                    server_version            TEXT,                      -- Jellyfin server version string
-                                    server_url                TEXT,                      -- Public URL of the Jellyfin server
-                                    notification_type         TEXT,                      -- Type of notification event (ItemAdded, etc.)
-
-                                    -- =============================================================================
-                                    -- FILE SYSTEM INFORMATION
-                                    -- =============================================================================
-                                    -- File system data from webhook for template customization
-                                    file_path                 TEXT,                      -- Full file system path
-                                    library_name              TEXT,                      -- Jellyfin library name
-                                    file_size                 INTEGER,                   -- File size in bytes
-
-                                    -- =============================================================================
-                                    -- TV SERIES HIERARCHY DATA
-                                    -- =============================================================================
-                                    -- TV series organization and hierarchy for episodes and seasons
-                                    series_id                 TEXT,                      -- Parent series unique identifier
-                                    series_premiere_date      TEXT,                      -- Series original premiere date
-                                    season_id                 TEXT,                      -- Season unique identifier
-                                    season_number_padded      TEXT,                      -- Zero-padded season number (02, 03, etc.)
-                                    season_number_padded_3    TEXT,                      -- Three-digit padded season number (002, 003, etc.)
-                                    episode_number_padded     TEXT,                      -- Zero-padded episode number (04, 05, etc.)
-                                    episode_number_padded_3   TEXT,                      -- Three-digit padded episode number (004, 005, etc.)
-                                    air_time                  TEXT,                      -- Original broadcast time/date
-
-                                    -- =============================================================================
-                                    -- TIMESTAMP INFORMATION
-                                    -- =============================================================================
-                                    -- Timestamp data for tracking and template customization
-                                    timestamp                 TEXT,                      -- Local timestamp with timezone
-                                    utc_timestamp             TEXT,                      -- UTC timestamp
-                                    premiere_date             TEXT,                      -- Original release/air date
-
-                                    -- =============================================================================
-                                    -- EXTENDED METADATA FROM API
-                                    -- =============================================================================
-                                    -- Additional fields from Jellyfin API calls (not available in webhook)
-                                    date_created              TEXT,                      -- When item was added to Jellyfin
-                                    date_modified             TEXT,                      -- When item was last modified
-                                    runtime_ticks             INTEGER,                   -- Duration in Jellyfin ticks (10,000 ticks = 1ms)
-                                    runtime_formatted         TEXT,                      -- Human-readable runtime (1h 23m)
-                                    official_rating           TEXT,                      -- MPAA rating (G, PG, R), TV rating (TV-MA), etc.
-                                    tagline                   TEXT,                      -- Marketing tagline or promotional text
-
-                                    -- Serialized JSON fields for list data
-                                    genres                    TEXT,                      -- JSON array of genre names (Action, Comedy, Drama)
-                                    studios                   TEXT,                      -- JSON array of production companies/studios
-                                    tags                      TEXT,                      -- JSON array of user-defined or imported tags
-
-                                    -- =============================================================================
-                                    -- MUSIC-SPECIFIC METADATA
-                                    -- =============================================================================
-                                    -- Fields specific to audio content
-                                    album                     TEXT,                      -- Album name (for music tracks)
-                                    album_artist              TEXT,                      -- Primary album artist
-
-                                    -- Serialized JSON field for list data
-                                    artists                   TEXT,                      -- JSON array of artist names
-
-                                    -- =============================================================================
-                                    -- PHOTO-SPECIFIC METADATA
-                                    -- =============================================================================
-                                    -- Fields specific to image content
-                                    width                     INTEGER,                   -- Image width in pixels
-                                    height                    INTEGER,                   -- Image height in pixels
-
-                                    -- =============================================================================
-                                    -- INTERNAL TRACKING FIELDS
-                                    -- =============================================================================
-                                    -- Fields used for service operations and change detection
-                                    content_hash              TEXT NOT NULL,             -- MD5 hash for change detection (auto-generated)
-                                    timestamp_created         TEXT NOT NULL              -- Object creation timestamp (auto-generated)
-                                );
-                                """)
+                        -- =============================================================================
+                        -- INTERNAL TRACKING
+                        -- =============================================================================
+                        content_hash              TEXT NOT NULL,             -- Blake2b hash for change detection
+                        timestamp_created         TEXT NOT NULL              -- When this record was created
+                    );
+                """)
 
                 # =============================================================================
                 # INDEXES FOR PERFORMANCE OPTIMIZATION
                 # =============================================================================
-                # Create indexes for optimal query performance
-                # These indexes support common query patterns used by the service
+                # Create indexes for optimal query performance on DatabaseItem fields only
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_item_type ON media_items(item_type)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_series_name ON media_items(series_name)")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON media_items(timestamp)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_content_hash ON media_items(content_hash)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_series_id ON media_items(series_id)")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_season_id ON media_items(season_id)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_video_height ON media_items(video_height)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_video_codec ON media_items(video_codec)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_audio_codec ON media_items(audio_codec)")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_tvdb_slug ON media_items(tvdb_slug)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_year ON media_items(year)")
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_timestamp_created ON media_items(timestamp_created)")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_imdb_id ON media_items(imdb_id)")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_tmdb_id ON media_items(tmdb_id)")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_tvdb_id ON media_items(tvdb_id)")
                 await db.execute(
                     "CREATE INDEX IF NOT EXISTS idx_season_episode ON media_items(series_name, season_number, episode_number)")
                 await db.execute(
@@ -483,14 +359,14 @@ class DatabaseManager:
                 await db.commit()
                 self._connection_count -= 1
 
-            self.logger.info("Database initialization completed successfully with complete webhook field schema")
-            self.logger.debug("Schema includes all MediaItem fields for comprehensive webhook synchronization")
+            self.logger.info("Database initialization completed successfully with slim DatabaseItem schema")
+            self.logger.debug("Schema includes only essential fields for change detection - ~70% size reduction")
 
         except Exception as e:
             self.logger.error(f"Database initialization failed: {e}")
             raise
 
-    async def save_item(self, item: MediaItem) -> bool:
+    async def save_item(self, item: DatabaseItem) -> bool:
         """
         Save or update a media item in the database.
 
@@ -505,7 +381,7 @@ class DatabaseManager:
         - Provides atomic operation for concurrent safety
 
         Args:
-            item (MediaItem): Media item to save or update
+            item (DatabaseItem): Database item to save or update
 
         Returns:
             bool: True if save was successful, False otherwise
@@ -513,7 +389,7 @@ class DatabaseManager:
         Example:
             ```python
             # Save a new movie
-            movie = MediaItem(
+            movie = DatabaseItem(
                 item_id="movie123",
                 name="The Matrix",
                 item_type="Movie",
@@ -534,7 +410,7 @@ class DatabaseManager:
             async with aiosqlite.connect(self.db_path) as db:
                 self._connection_count += 1
 
-                # Convert MediaItem to dictionary for database insertion
+                # Convert DatabaseItem to dictionary for database insertion
                 item_dict = asdict(item)
                 
                 # Remove private fields that shouldn't be saved to database
@@ -568,7 +444,7 @@ class DatabaseManager:
             self.logger.error(f"Failed to save item {item.item_id}: {e}")
             return False
 
-    async def get_item(self, item_id: str) -> Optional[MediaItem]:
+    async def get_item(self, item_id: str) -> Optional[DatabaseItem]:
         """
         Retrieve a media item from the database by ID.
 
@@ -579,7 +455,7 @@ class DatabaseManager:
             item_id (str): Unique identifier of the media item
 
         Returns:
-            Optional[MediaItem]: MediaItem object if found, None otherwise
+            Optional[DatabaseItem]: DatabaseItem object if found, None otherwise
 
         Example:
             ```python
@@ -621,12 +497,12 @@ class DatabaseManager:
                         else:
                             item_dict[field] = None
 
-                    # Remove content_hash from dict as it's a computed property in MediaItem
+                    # Remove content_hash from dict as it's already computed in DatabaseItem
                     if 'content_hash' in item_dict:
                         del item_dict['content_hash']
                     
                     self.logger.debug(f"Retrieved item: {item_dict['name']}")
-                    return MediaItem(**item_dict)
+                    return DatabaseItem.from_dict(item_dict)
                 else:
                     self.logger.debug(f"Item not found: {item_id}")
                     return None
@@ -635,7 +511,7 @@ class DatabaseManager:
             self.logger.error(f"Failed to retrieve item {item_id}: {e}")
             return None
 
-    async def save_items_batch(self, items: List[MediaItem]) -> Dict[str, int]:
+    async def save_items_batch(self, items: List[DatabaseItem]) -> Dict[str, int]:
         """
         Save multiple media items in a single transaction for better performance.
 
@@ -650,7 +526,7 @@ class DatabaseManager:
         the number of individual database commits.
 
         Args:
-            items (List[MediaItem]): List of media items to save
+            items (List[DatabaseItem]): List of database items to save
 
         Returns:
             Dict[str, int]: Statistics about the batch operation
@@ -780,7 +656,7 @@ class DatabaseManager:
                 'total': len(items)
             }
 
-    async def get_items_by_type(self, item_type: str, limit: Optional[int] = None) -> List[MediaItem]:
+    async def get_items_by_type(self, item_type: str, limit: Optional[int] = None) -> List[DatabaseItem]:
         """
         Retrieve all media items of a specific type.
 
@@ -793,7 +669,7 @@ class DatabaseManager:
             limit (Optional[int]): Maximum number of items to return (None for all)
 
         Returns:
-            List[MediaItem]: List of matching media items, sorted by timestamp (newest first)
+            List[DatabaseItem]: List of matching database items, sorted by timestamp (newest first)
 
         Example:
             ```python
@@ -839,11 +715,11 @@ class DatabaseManager:
                         else:
                             item_dict[field] = None
 
-                    # Remove content_hash from dict as it's a computed property in MediaItem
+                    # Remove content_hash from dict as it's already computed in DatabaseItem
                     if 'content_hash' in item_dict:
                         del item_dict['content_hash']
                     
-                    items.append(MediaItem(**item_dict))
+                    items.append(DatabaseItem.from_dict(item_dict))
 
                 self._connection_count -= 1
                 return items

@@ -752,6 +752,157 @@ class JellyfinAPI:
             self.logger.error(f"Failed during library streaming: {e}")
             # Generator will naturally terminate on exception
             
+    async def convert_to_database_item(self, item_data: Dict[str, Any]):
+        """
+        Convert Jellyfin API response directly to DatabaseItem for efficient syncs.
+        
+        This method extracts only the essential fields needed for database storage
+        and change detection, skipping all the extra metadata that's not needed
+        during syncs. This significantly speeds up sync operations.
+        
+        Args:
+            item_data: Raw item data from Jellyfin API
+            
+        Returns:
+            DatabaseItem: Slim item for database storage
+            
+        Example:
+            ```python
+            # During sync - fast conversion to DatabaseItem
+            item_data = await jellyfin_api.get_item("item123")
+            db_item = await jellyfin_api.convert_to_database_item(item_data)
+            await database.save_item(db_item)
+            ```
+        """
+        from .database_models import DatabaseItem
+        
+        try:
+            # Extract only essential fields for database storage
+            item_id = item_data.get('Id', 'unknown')
+            name = item_data.get('Name', 'Unknown Item')
+            item_type = item_data.get('Type', 'Unknown')
+            
+            # TV series data
+            series_name = item_data.get('SeriesName')
+            series_id = item_data.get('SeriesId')
+            season_number = item_data.get('ParentIndexNumber')
+            episode_number = item_data.get('IndexNumber')
+            year = item_data.get('ProductionYear')
+            
+            # File information
+            file_path = item_data.get('Path')
+            file_size = None
+            library_name = None
+            
+            # Get file size from MediaSources
+            if item_data.get('MediaSources'):
+                for source in item_data['MediaSources']:
+                    if 'Size' in source:
+                        file_size = source['Size']
+                        break
+            
+            # Process media streams for technical specs
+            media_streams = []
+            if item_data.get('MediaSources'):
+                for source in item_data['MediaSources']:
+                    if 'MediaStreams' in source:
+                        media_streams.extend(source['MediaStreams'])
+            elif 'MediaStreams' in item_data:
+                media_streams = item_data['MediaStreams']
+            
+            # Extract video specs (only first stream for efficiency)
+            video_height = None
+            video_width = None
+            video_codec = None
+            video_profile = None
+            video_range = None
+            video_framerate = None
+            video_bitrate = None
+            video_bitdepth = None
+            
+            video_streams = [s for s in media_streams if s.get('Type') == 'Video']
+            if video_streams:
+                video = video_streams[0]
+                video_height = video.get('Height')
+                video_width = video.get('Width')
+                video_codec = video.get('Codec')
+                video_profile = video.get('Profile')
+                video_range = video.get('VideoRange')
+                video_framerate = video.get('RealFrameRate')
+                video_bitrate = video.get('BitRate')
+                video_bitdepth = video.get('BitDepth')
+            
+            # Extract audio specs (only first stream for efficiency)
+            audio_codec = None
+            audio_channels = None
+            audio_language = None
+            audio_bitrate = None
+            audio_samplerate = None
+            
+            audio_streams = [s for s in media_streams if s.get('Type') == 'Audio']
+            if audio_streams:
+                audio = audio_streams[0]
+                audio_codec = audio.get('Codec')
+                audio_channels = audio.get('Channels')
+                audio_language = audio.get('Language')
+                audio_bitrate = audio.get('BitRate')
+                audio_samplerate = audio.get('SampleRate')
+            
+            # Process subtitle information for change detection
+            subtitle_streams = [s for s in media_streams if s.get('Type') == 'Subtitle']
+            subtitle_count = len(subtitle_streams)
+            subtitle_languages = []
+            subtitle_formats = []
+            
+            for sub_stream in subtitle_streams:
+                lang = sub_stream.get('Language')
+                if lang and lang not in subtitle_languages:
+                    subtitle_languages.append(lang)
+                
+                codec = sub_stream.get('Codec')
+                if codec and codec not in subtitle_formats:
+                    subtitle_formats.append(codec)
+            
+            # Create DatabaseItem with only essential fields
+            return DatabaseItem(
+                item_id=item_id,
+                name=name,
+                item_type=item_type,
+                series_name=series_name,
+                series_id=series_id,
+                season_number=season_number,
+                episode_number=episode_number,
+                year=year,
+                video_height=video_height,
+                video_width=video_width,
+                video_codec=video_codec,
+                video_profile=video_profile,
+                video_range=video_range,
+                video_framerate=video_framerate,
+                video_bitrate=video_bitrate,
+                video_bitdepth=video_bitdepth,
+                audio_codec=audio_codec,
+                audio_channels=audio_channels,
+                audio_language=audio_language,
+                audio_bitrate=audio_bitrate,
+                audio_samplerate=audio_samplerate,
+                subtitle_count=subtitle_count,
+                subtitle_languages=subtitle_languages,
+                subtitle_formats=subtitle_formats,
+                file_path=file_path,
+                file_size=file_size,
+                library_name=library_name
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Failed to convert item to DatabaseItem: {e}")
+            # Return minimal DatabaseItem to prevent complete failure
+            return DatabaseItem(
+                item_id=item_data.get('Id', 'unknown'),
+                name=item_data.get('Name', 'Unknown Item'),
+                item_type=item_data.get('Type', 'Unknown')
+            )
+    
     async def convert_to_media_item(self, item_data: Dict[str, Any]) -> MediaItem:
         """
         Convert Jellyfin API response to internal MediaItem format.
@@ -1035,12 +1186,21 @@ class JellyfinAPI:
                 audio_language = audio_stream.get('Language')
                 audio_default = audio_stream.get('IsDefault')
 
-            # Process subtitle streams (map to Subtitle_0_* webhook fields)
+            # Process subtitle streams for both single-stream webhook fields and aggregation
             subtitle_streams = [s for s in media_streams if s.get('Type') == 'Subtitle']
+            
+            # Single subtitle stream properties (for webhook compatibility)
+            subtitle_title = None
+            subtitle_type = None
+            subtitle_language = None
+            subtitle_codec = None
+            subtitle_default = None
+            subtitle_forced = None
+            subtitle_external = None
+            
             if subtitle_streams:
-                subtitle_stream = subtitle_streams[0]  # Primary subtitle stream
-
-                # Subtitle properties for webhook compatibility
+                # First subtitle stream for webhook compatibility
+                subtitle_stream = subtitle_streams[0]
                 subtitle_title = subtitle_stream.get('DisplayTitle')
                 subtitle_type = 'Subtitle'
                 subtitle_language = subtitle_stream.get('Language')
@@ -1048,6 +1208,22 @@ class JellyfinAPI:
                 subtitle_default = subtitle_stream.get('IsDefault')
                 subtitle_forced = subtitle_stream.get('IsForced')
                 subtitle_external = subtitle_stream.get('IsExternal')
+            
+            # Aggregate subtitle information for change detection
+            subtitle_count = len(subtitle_streams)
+            subtitle_languages = []
+            subtitle_formats = []
+            
+            for sub_stream in subtitle_streams:
+                # Collect unique languages
+                lang = sub_stream.get('Language')
+                if lang and lang not in subtitle_languages:
+                    subtitle_languages.append(lang)
+                
+                # Collect unique formats/codecs
+                codec = sub_stream.get('Codec')
+                if codec and codec not in subtitle_formats:
+                    subtitle_formats.append(codec)
 
             # ==================== FILE INFORMATION ====================
             # Extract file system information

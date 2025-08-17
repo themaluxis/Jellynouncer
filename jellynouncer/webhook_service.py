@@ -1066,22 +1066,23 @@ class WebhookService:
 
         self.logger.info("Background tasks stopped - service is shutting down")
     
-    async def _convert_item_safe(self, item_data: Dict[str, Any]) -> Optional[MediaItem]:
+    async def _convert_item_safe(self, item_data: Dict[str, Any]):
         """
-        Safely convert Jellyfin API item to MediaItem with error handling.
+        Safely convert Jellyfin API item to DatabaseItem for efficient sync storage.
         
         This wrapper method ensures that conversion errors don't crash the batch
         processing and provides detailed error information for debugging.
+        Uses DatabaseItem for efficient storage during syncs.
         
         Args:
             item_data: Raw item data from Jellyfin API
             
         Returns:
-            MediaItem if conversion successful, None if failed
+            DatabaseItem if conversion successful, None if failed
         """
         try:
-            # Use the Jellyfin API's conversion method
-            return await self.jellyfin.convert_to_media_item(item_data)
+            # Use the optimized DatabaseItem conversion for syncs
+            return await self.jellyfin.convert_to_database_item(item_data)
         except Exception as e:
             # Log the error with item details for debugging
             item_id = item_data.get('Id', 'unknown')
@@ -1258,10 +1259,13 @@ class WebhookService:
                         )
                         
                         try:
-                            # Convert API data to MediaItem objects in parallel for speed
-                            media_items = []
+                            # Convert API data to DatabaseItem objects in parallel for speed
+                            db_items = []
                             conversion_errors = 0
                             failed_items = []
+                            
+                            # Time the conversion process
+                            conversion_start_time = time.time()
                             
                             # Create conversion tasks for parallel processing
                             conversion_tasks = []
@@ -1273,6 +1277,8 @@ class WebhookService:
                             # Wait for all conversions to complete
                             results = await asyncio.gather(*[task for task, _ in conversion_tasks], return_exceptions=True)
                             
+                            conversion_time = time.time() - conversion_start_time
+                            
                             # Process results
                             for (task, item_data), result in zip(conversion_tasks, results):
                                 if isinstance(result, Exception):
@@ -1282,7 +1288,7 @@ class WebhookService:
                                     conversion_errors += 1
                                     sync_state['total_individual_errors'] += 1
                                 elif result is not None:
-                                    media_items.append(result)
+                                    db_items.append(result)
                             
                             # Log conversion errors if any
                             if failed_items:
@@ -1297,17 +1303,27 @@ class WebhookService:
                                 if len(failed_items) > 3:
                                     self.logger.debug(f"  ... and {len(failed_items) - 3} more")
                             
+                            # Log conversion performance
+                            if db_items:
+                                conv_time_ms = conversion_time * 1000
+                                conv_per_item_ms = conv_time_ms / len(db_items) if db_items else 0
+                                self.logger.info(
+                                    f"DatabaseItem conversion for {len(db_items)} items: "
+                                    f"Total: {conv_time_ms:.1f}ms, "
+                                    f"Avg: {conv_per_item_ms:.2f}ms/item"
+                                )
+                            
                             # Pre-generate content hashes to measure performance
                             # This triggers the lazy hash calculation before database save
                             # Note: We don't parallelize this because:
                             # 1. Our hash data is <2KB (below GIL release threshold of 2047 bytes)
                             # 2. Blake2b is already very fast for small data
                             # 3. Database I/O is the actual bottleneck
-                            if media_items:
+                            if db_items:
                                 hash_start_time = time.time()
                                 hash_generation_times = []
                                 
-                                for item in media_items:
+                                for item in db_items:
                                     try:
                                         item_hash_start = time.time()
                                         # Access the property to trigger hash generation
@@ -1327,7 +1343,7 @@ class WebhookService:
                                     hashes_per_second = len(hash_generation_times) / total_hash_time if total_hash_time > 0 else 0
                                     
                                     self.logger.info(
-                                        f"Hash generation stats for {len(media_items)} items: "
+                                        f"Hash generation stats for {len(db_items)} items: "
                                         f"Total: {total_hash_time_ms:.1f}ms, "
                                         f"Avg: {avg_hash_time_ms:.2f}ms/item, "
                                         f"Max: {max_hash_time_ms:.2f}ms, "
@@ -1335,13 +1351,13 @@ class WebhookService:
                                     )
                             
                             # Save batch to database with timing
-                            if media_items:
+                            if db_items:
                                 db_save_start = time.time()
-                                batch_results = await self.db.save_items_batch(media_items)
+                                batch_results = await self.db.save_items_batch(db_items)
                                 db_save_time = time.time() - db_save_start
                                 
                                 # Check if entire batch failed
-                                if batch_results['failed'] == len(media_items) and batch_results['successful'] == 0:
+                                if batch_results['failed'] == len(db_items) and batch_results['successful'] == 0:
                                     sync_state['batch_errors'] += 1
                                     sync_state['total_individual_errors'] += batch_results['failed']
                                     consecutive_batch_errors += 1
@@ -1374,18 +1390,20 @@ class WebhookService:
                                     # Log batch save completion with breakdown
                                     self.logger.info(
                                         f"Batch {batch_num} saved to database: "
-                                        f"{batch_results['successful']}/{len(media_items)} items "
+                                        f"{batch_results['successful']}/{len(db_items)} items "
                                         f"(Total: {batch_time:.2f}s, DB: {db_save_time:.2f}s)"
                                     )
                                     
-                                    # Log performance breakdown if hash timing is available
-                                    if 'total_hash_time' in locals():
+                                    # Log performance breakdown if timing data is available
+                                    if 'total_hash_time' in locals() and 'conversion_time' in locals():
                                         hash_percent = (total_hash_time / batch_time) * 100 if batch_time > 0 else 0
                                         db_percent = (db_save_time / batch_time) * 100 if batch_time > 0 else 0
-                                        other_percent = 100 - hash_percent - db_percent
+                                        conversion_percent = (conversion_time / batch_time) * 100 if batch_time > 0 else 0
+                                        other_percent = 100 - hash_percent - db_percent - conversion_percent
                                         
-                                        self.logger.debug(
+                                        self.logger.info(
                                             f"Batch {batch_num} performance breakdown: "
+                                            f"Conversion: {conversion_percent:.1f}%, "
                                             f"Hashing: {hash_percent:.1f}%, "
                                             f"DB Save: {db_percent:.1f}%, "
                                             f"Other: {other_percent:.1f}%"

@@ -316,6 +316,11 @@ class MediaItem:
     subtitle_default: Optional[bool] = None
     subtitle_forced: Optional[bool] = None
     subtitle_external: Optional[bool] = None
+    
+    # Aggregate subtitle information for change detection
+    subtitle_count: Optional[int] = None  # Total number of subtitle tracks
+    subtitle_languages: List[str] = field(default_factory=list)  # List of available subtitle languages
+    subtitle_formats: List[str] = field(default_factory=list)  # List of subtitle formats (srt, ass, pgs, etc.)
 
     # ==================== EXTERNAL REFERENCES ====================
     # External provider IDs for linking to movie/TV databases
@@ -454,6 +459,11 @@ class MediaItem:
             "audio_channels": self.audio_channels,
             "audio_bitrate": self.audio_bitrate,
             "audio_samplerate": self.audio_samplerate,
+            
+            # Subtitle information for change detection
+            "subtitle_count": self.subtitle_count,
+            "subtitle_languages": sorted(self.subtitle_languages) if self.subtitle_languages else [],
+            "subtitle_formats": sorted(self.subtitle_formats) if self.subtitle_formats else [],
 
             # File size can indicate a different encode of the same quality
             "file_size": self.file_size,

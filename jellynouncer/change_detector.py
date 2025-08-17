@@ -21,10 +21,11 @@ License: MIT
 """
 
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union
 
 from .config_models import NotificationsConfig
 from .media_models import MediaItem
+from .database_models import DatabaseItem
 from .utils import get_logger
 
 
@@ -165,7 +166,7 @@ class ChangeDetector:
         - 'audio_channels': Audio channel count changes (2 → 6)
         - 'hdr_status': HDR format changes (SDR → HDR10)
         - 'file_size': File size changes (for complete replacements)
-        - 'provider_ids': External database ID updates
+        - 'subtitles': Subtitle track and language changes
 
         Args:
             config (NotificationsConfig): Configuration for notification behavior
@@ -182,7 +183,7 @@ class ChangeDetector:
                     'audio_channels': True, # Surround sound upgrades
                     'hdr_status': True,     # HDR upgrades for compatible displays
                     'file_size': False,     # Don't notify for size-only changes
-                    'provider_ids': False   # Don't notify for metadata updates
+                    'subtitles': True       # Notify for subtitle changes
                 }
             )
 
@@ -197,7 +198,7 @@ class ChangeDetector:
         enabled_changes = [change_type for change_type, enabled in self.watch_changes.items() if enabled]
         self.logger.info(f"Change detector initialized - Monitoring: {', '.join(enabled_changes)}")
 
-    def detect_changes(self, old_item: MediaItem, new_item: MediaItem) -> List[Dict[str, Any]]:
+    def detect_changes(self, old_item: Union[MediaItem, DatabaseItem], new_item: Union[MediaItem, DatabaseItem]) -> List[Dict[str, Any]]:
         """
         Detect meaningful changes between two versions of the same media item.
 
@@ -212,7 +213,7 @@ class ChangeDetector:
         3. Analyze audio codec and channel changes for sound upgrades
         4. Detect HDR status changes for display improvements
         5. Check file size changes for complete replacements
-        6. Monitor external provider ID updates for metadata improvements
+        6. Monitor subtitle track and language changes
 
         **Change Object Structure:**
         Each detected change is returned as a dictionary containing:
@@ -336,22 +337,50 @@ class ChangeDetector:
                         'description': f"File size changed significantly ({size_diff_pct:.1f}% difference)"
                     })
 
-            # Provider ID changes (metadata improvements)
-            if self.watch_changes.get('provider_ids', False):
-                for provider, old_val, new_val in [
-                    ('imdb', old_item.imdb_id, new_item.imdb_id),
-                    ('tmdb', old_item.tmdb_id, new_item.tmdb_id),
-                    ('tvdb', old_item.tvdb_id, new_item.tvdb_id)
-                ]:
-                    # Only report if the value actually changed and isn't just None → None
-                    if old_val != new_val and (old_val or new_val):
-                        changes.append({
-                            'type': 'provider_ids',
-                            'field': f'{provider}_id',
-                            'old_value': old_val,
-                            'new_value': new_val,
-                            'description': f"{provider.upper()} ID {'added' if not old_val else 'changed'}"
-                        })
+            # Subtitle changes (track count and language changes)
+            if self.watch_changes.get('subtitles', True):
+                # Check subtitle count changes
+                old_sub_count = getattr(old_item, 'subtitle_count', 0) or 0
+                new_sub_count = getattr(new_item, 'subtitle_count', 0) or 0
+                
+                if old_sub_count != new_sub_count:
+                    changes.append({
+                        'type': 'subtitles',
+                        'field': 'subtitle_count',
+                        'old_value': old_sub_count,
+                        'new_value': new_sub_count,
+                        'description': f"Subtitle tracks changed from {old_sub_count} to {new_sub_count}"
+                    })
+                
+                # Check subtitle languages changes
+                old_sub_langs = getattr(old_item, 'subtitle_languages', []) or []
+                new_sub_langs = getattr(new_item, 'subtitle_languages', []) or []
+                
+                # Convert to sets for comparison
+                old_langs_set = set(old_sub_langs) if old_sub_langs else set()
+                new_langs_set = set(new_sub_langs) if new_sub_langs else set()
+                
+                added_langs = new_langs_set - old_langs_set
+                removed_langs = old_langs_set - new_langs_set
+                
+                if added_langs or removed_langs:
+                    if added_langs and not removed_langs:
+                        desc = f"Added subtitle languages: {', '.join(sorted(added_langs))}"
+                    elif removed_langs and not added_langs:
+                        desc = f"Removed subtitle languages: {', '.join(sorted(removed_langs))}"
+                    else:
+                        desc = f"Subtitle languages changed (added: {', '.join(sorted(added_langs))}, removed: {', '.join(sorted(removed_langs))})"
+                    
+                    changes.append({
+                        'type': 'subtitles',
+                        'field': 'subtitle_languages',
+                        'old_value': sorted(old_langs_set),
+                        'new_value': sorted(new_langs_set),
+                        'description': desc
+                    })
+
+            # Note: Provider ID changes are NOT tracked since they're not stored in the database
+            # Provider IDs are fetched fresh from webhooks/API when needed for notifications
 
             # Log detection results for debugging and monitoring
             if changes:
@@ -475,8 +504,8 @@ class ChangeDetector:
                 'audio_codec': [],
                 'audio_channels': [],
                 'hdr_status': [],
-                'file_size': [],
-                'provider_ids': []
+                'subtitles': [],
+                'file_size': []
             }
 
             # Categorize changes
@@ -486,8 +515,7 @@ class ChangeDetector:
                     change_categories[change_type].append(change)
 
             # Build summary with prioritized order (most important first)
-            priority_order = ['resolution', 'hdr_status', 'codec', 'audio_codec', 'audio_channels', 'file_size',
-                              'provider_ids']
+            priority_order = ['resolution', 'hdr_status', 'codec', 'audio_codec', 'audio_channels', 'subtitles', 'file_size']
 
             for category in priority_order:
                 category_changes = change_categories[category]
@@ -516,15 +544,19 @@ class ChangeDetector:
                         new_ch = f"{change['new_value']}ch"
                         summary_parts.append(f"Audio enhancement ({old_ch} → {new_ch})")
 
+                elif category == 'subtitles':
+                    for change in category_changes:
+                        if change['field'] == 'subtitle_count':
+                            summary_parts.append(f"Subtitle tracks ({change['old_value']} → {change['new_value']})")
+                        elif change['field'] == 'subtitle_languages':
+                            # Use the pre-formatted description for language changes
+                            if 'Added' in change['description']:
+                                summary_parts.append(change['description'])
+                            else:
+                                summary_parts.append("Subtitle languages changed")
+
                 elif category == 'file_size':
                     summary_parts.append("File replacement")
-
-                elif category == 'provider_ids':
-                    id_changes = len(category_changes)
-                    if id_changes == 1:
-                        summary_parts.append("Metadata update")
-                    else:
-                        summary_parts.append(f"Metadata updates ({id_changes} IDs)")
 
             # Join summary parts with appropriate separators
             if len(summary_parts) <= 2:
