@@ -2,18 +2,66 @@
 
 <div align="center">
   <img src="images/Jellynouncer_Full.png" alt="Jellynouncer Logo" width="50%">
+  
+  <p align="center">
+    <strong>🔔 Intelligent Discord Notifications for Jellyfin Media Server</strong>
+  </p>
+  
+  <p align="center">
+    Advanced webhook service with quality upgrade detection, multi-channel routing, and rich customization
+  </p>
 </div>
 
 <div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
+[![React 19](https://img.shields.io/badge/react-19.0-61dafb.svg)](https://react.dev/)
 [![Docker](https://img.shields.io/badge/docker-ready-brightgreen.svg)](https://hub.docker.com/r/markusmcnugen/jellynouncer)
 [![GitHub Issues](https://img.shields.io/github/issues/MarkusMcNugen/Jellynouncer)](https://github.com/MarkusMcNugen/Jellynouncer/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/MarkusMcNugen/Jellynouncer?style=social)](https://github.com/MarkusMcNugen/Jellynouncer/stargazers)
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/MarkusMcNugen/Jellynouncer/releases)
 
 </div>
+
+---
+
+## 📑 Table of Contents
+
+- [Overview](#-overview)
+- [What's New in v2.0](#-whats-new-in-v20)
+- [Key Features](#-key-features)
+  - [Web Interface](#-web-interface)
+  - [Smart Change Detection](#-smart-change-detection)
+  - [Multi-Channel Discord Routing](#-multi-channel-discord-routing)
+  - [Advanced Template System](#-advanced-template-system)
+  - [External Metadata Integration](#-external-metadata-integration)
+  - [Production-Ready Features](#-production-ready-features)
+  - [DevOps Friendly](#-devops-friendly)
+- [Quick Start](#-quick-start)
+  - [Prerequisites](#prerequisites)
+  - [Docker Compose Setup](#docker-compose-recommended)
+  - [Docker Run](#docker-run)
+- [Web Interface Guide](#-web-interface)
+  - [Dashboard / Overview](#-dashboard--overview)
+  - [Configuration](#%EF%B8%8F-configuration)
+  - [Template Editor](#-template-editor)
+  - [Log Viewer](#-log-viewer)
+  - [Security](#-security)
+- [Configuration](#%EF%B8%8F-configuration-1)
+  - [Getting API Keys](#getting-api-keys)
+  - [Advanced Configuration](#advanced-configuration)
+- [Architecture](#-how-it-works)
+- [API Reference](#-api-endpoints)
+- [Templates](#-templates)
+- [Manual Installation](#-manual-installation)
+- [Troubleshooting](#%EF%B8%8F-troubleshooting)
+- [Documentation](#-documentation)
+- [Contributing](#-contributing)
+- [License](#-license)
+- [Support](#-support)
+
+---
 
 ## 📖 Overview
 
@@ -26,9 +74,30 @@ The service acts as a smart filter between Jellyfin's webhook events and Discord
 > 
 > This software is currently in beta development. While core functionality is stable, you may encounter bugs or edge cases. Please report any issues you find to help improve the service.
 
+## 🆕 What's New in v2.0
+
+> [!NOTE]
+> Version 2.0 introduces a comprehensive web interface for managing and monitoring Jellynouncer without editing configuration files directly.
+
+### Major Updates
+
+| Feature | Description |
+|---------|------------|
+| **📊 Web Interface** | Full-featured management UI on port 1985 |
+| **⚛️ React 19** | Latest React with improved performance |
+| **📦 Vite 6** | Modern build tooling for faster development |
+| **🔒 Security** | Optional JWT authentication and SSL/TLS support |
+| **📝 Template Editor** | Monaco editor with Jinja2 syntax highlighting |
+| **📜 Real-time Logs** | Live log viewing with filtering and search |
+| **🎨 Modern UI** | Tailwind CSS with dark mode support |
+
 ## ✨ Key Features
 
-### Web Interface Features
+### 🌐 Web Interface
+
+<details open>
+<summary><b>Modern Management Dashboard</b></summary>
+
 - **📊 Real-time Dashboard** - Monitor service health, statistics, and recent notifications
 - **⚙️ Configuration Manager** - Modify all settings through an intuitive UI
 - **📝 Template Editor** - Edit Jinja2 templates with syntax highlighting and live preview
@@ -36,7 +105,13 @@ The service acts as a smart filter between Jellyfin's webhook events and Discord
 - **🔐 Optional Authentication** - Secure your web interface with JWT-based authentication
 - **🔒 SSL/TLS Support** - Enable HTTPS with your own certificates
 
+</details>
+
 ### 🧠 Smart Change Detection
+
+<details>
+<summary><b>Intelligent Media Analysis</b></summary>
+
 - **Intelligent Analysis**: Distinguishes between new content and quality upgrades
 - **Technical Detection**: Identifies resolution improvements, codec upgrades (H.264 → H.265), audio enhancements (Stereo → 7.1), and HDR additions
 - **Content Hashing**: Uses fingerprinting to prevent duplicate notifications while catching meaningful changes
@@ -44,43 +119,76 @@ The service acts as a smart filter between Jellyfin's webhook events and Discord
 - **Rename Filtering**: Automatically detects and filters out file renames (same content, different path)
 - **Upgrade Detection**: Intelligently handles file upgrades by filtering deletion notifications when followed by additions
 
+</details>
+
 ### 🚀 Multi-Channel Discord Routing
+
+<details>
+<summary><b>Advanced Notification Management</b></summary>
+
 - **Content-Type Routing**: Automatically routes movies, TV shows, and music to different Discord channels
 - **Flexible Webhooks**: Support for unlimited custom webhooks with granular control
 - **Smart Fallback**: Ensures no notifications are lost with configurable fallback webhooks
 - **Grouping Options**: Batch notifications by event type or content type
+- **Rate Limiting**: Respects Discord's API limits with intelligent queueing
+
+</details>
 
 ### 🎨 Advanced Template System
+
+<details>
+<summary><b>Customizable Discord Embeds</b></summary>
+
 - **Jinja2 Templates**: Fully customizable Discord embed messages
 - **Rich Media Information**: Display posters, technical specs, ratings, cast, and plot summaries
 - **Multiple Templates**: Different templates for new items, upgrades, and grouped notifications
 - **Dynamic Content**: Templates can access all media metadata and technical information
 - **Web Editor**: Edit templates directly in the web interface with syntax highlighting
 
+</details>
+
 ### 📊 External Metadata Integration
+
+<details>
+<summary><b>Enhanced Media Information</b></summary>
+
 - **Rating Services**: Integrates with OMDb, TMDb, and TVDB for ratings and additional metadata
 - **Poster Management**: Automatic thumbnail generation and caching for Discord embeds
 - **Fallback Handling**: Gracefully handles API failures without breaking notifications
+- **Metadata Caching**: Reduces API calls with intelligent caching
+
+</details>
 
 ### ⚡ Production-Ready Features
+
+<details>
+<summary><b>Enterprise-Grade Reliability</b></summary>
+
 - **Database Persistence**: SQLite with WAL mode for concurrent access and change tracking
 - **Intelligent Queue System**: Never lose notifications with automatic queueing during rate limits
   - Handles up to 1000 queued notifications for large library updates
   - Automatic retry with exponential backoff (3 attempts)
   - Real-time queue statistics via web interface or `/stats` endpoint
   - Graceful processing during Discord rate limits (30/minute)
-- **Rate Limiting**: Respects Discord API limits with configurable rate limiting
-- **Retry Logic**: Exponential backoff for network resilience
 - **Background Sync**: Periodic library synchronization to catch missed webhooks
 - **Health Monitoring**: Built-in health checks and diagnostic endpoints
 - **Structured Logging**: Comprehensive logging with rotation and multiple output levels
 
+</details>
+
 ### 🔧 DevOps Friendly
+
+<details>
+<summary><b>Easy Deployment & Management</b></summary>
+
 - **Docker-First Design**: Optimized container with multi-stage builds
 - **Environment Overrides**: All settings configurable via environment variables
 - **Configuration Validation**: Automatic validation with detailed error reporting
 - **Graceful Shutdown**: Proper cleanup and queue processing on shutdown
 - **Web Management**: Full control through web interface on port 1985
+- **Health Checks**: Docker-compatible health endpoints
+
+</details>
 
 ## 🚀 Quick Start
 
@@ -208,19 +316,14 @@ docker run -d \
 
 The dashboard provides real-time insights into your Jellynouncer instance:
 
-- **Service Health**: Live status of all components (Jellyfin, Discord, Database, APIs)
-- **Statistics Cards**: 
-  - Total notifications sent
-  - Queue size and processing rate
-  - Database item count
-  - Uptime and performance metrics
-- **Recent Notifications**: Live feed of the last 50 notifications with details
-- **Queue Status**: Current queue size with rate limit information
-- **Background Tasks**: Status of sync, cleanup, and maintenance tasks
-- **Charts**: 
-  - Notifications over time (hourly/daily)
-  - Content type distribution
-  - Success/failure rates
+| Component | Description |
+|-----------|-------------|
+| **Service Health** | Live status of all components (Jellyfin, Discord, Database, APIs) |
+| **Statistics Cards** | Total notifications, queue size, database items, uptime metrics |
+| **Recent Notifications** | Live feed of the last 50 notifications with details |
+| **Queue Status** | Current queue size with rate limit information |
+| **Background Tasks** | Status of sync, cleanup, and maintenance tasks |
+| **Charts** | Notifications over time, content distribution, success rates |
 
 ### ⚙️ Configuration
 
@@ -306,19 +409,15 @@ The template editor provides a powerful environment for customizing Discord noti
 
 The log viewer provides comprehensive logging insights:
 
-- **Real-time Updates**: Logs update automatically as new entries are created
-- **Severity Filtering**: Filter by DEBUG, INFO, WARNING, ERROR, CRITICAL
-- **Component Filtering**: Filter by specific components (webhook, discord, database, etc.)
-- **Search**: Full-text search across all log entries
-- **Color Coding**: 
-  - 🔵 DEBUG (gray)
-  - ℹ️ INFO (blue)
-  - ⚠️ WARNING (yellow)
-  - ❌ ERROR (red)
-  - 🔴 CRITICAL (bold red)
-- **Time Range**: Filter logs by time range (last hour, day, week)
-- **Export**: Download logs for offline analysis
-- **Auto-scroll**: Automatically scroll to new entries
+| Feature | Description |
+|---------|-------------|
+| **Real-time Updates** | Logs update automatically as new entries are created |
+| **Severity Filtering** | Filter by DEBUG, INFO, WARNING, ERROR, CRITICAL |
+| **Component Filtering** | Filter by specific components |
+| **Search** | Full-text search across all log entries |
+| **Color Coding** | Visual severity indicators |
+| **Time Range** | Filter logs by time range |
+| **Export** | Download logs for offline analysis |
 
 ### 🔐 Security
 
@@ -660,10 +759,12 @@ Jellynouncer uses Jinja2 templates for complete control over Discord embed forma
 
 ### Template Types
 
-- **Individual**: `new_item.j2`, `upgraded_item.j2`, `deleted_item.j2`
-- **Grouped by Event**: `new_items_by_event.j2`, `upgraded_items_by_event.j2`
-- **Grouped by Type**: `new_items_by_type.j2`, `upgraded_items_by_type.j2`
-- **Fully Grouped**: `new_items_grouped.j2`, `upgraded_items_grouped.j2`
+| Type | Description | Files |
+|------|-------------|-------|
+| **Individual** | Single item notifications | `new_item.j2`, `upgraded_item.j2`, `deleted_item.j2` |
+| **Grouped by Event** | Group by notification type | `new_items_by_event.j2`, `upgraded_items_by_event.j2` |
+| **Grouped by Type** | Group by content type | `new_items_by_type.j2`, `upgraded_items_by_type.j2` |
+| **Fully Grouped** | Combined grouping | `new_items_grouped.j2`, `upgraded_items_grouped.j2` |
 
 **📚 [Complete Template Guide →](templates/Readme.md)**
 
@@ -825,10 +926,12 @@ When `LOG_LEVEL=DEBUG`, the service will log:
 
 ### Log Locations
 
-- **Application**: `logs/jellynouncer.log`
-- **Debug**: `logs/jellynouncer-debug.log` (when DEBUG enabled)
-- **Container**: `docker logs jellynouncer`
-- **Web Interface**: `http://your-server:1985` → Logs tab
+| Location | Description |
+|----------|-------------|
+| `logs/jellynouncer.log` | Main application log |
+| `logs/jellynouncer-debug.log` | Debug log (when DEBUG enabled) |
+| `docker logs jellynouncer` | Container logs |
+| `http://your-server:1985` → Logs tab | Web interface log viewer |
 
 ## 📚 Documentation
 
@@ -857,8 +960,17 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 - PEP 8 compliance (Black formatter, 88 char limit)
 - Google-style docstrings
 - Comprehensive error handling
-- React 18 with TypeScript for web interface
+- React 19 with TypeScript for web interface
 - Tailwind CSS for styling
+
+### Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Backend** | Python 3.13, FastAPI, SQLite, Pydantic v2 |
+| **Frontend** | React 19, Vite 6, Tailwind CSS |
+| **Tools** | Docker, ESLint 9, Prettier |
+| **Testing** | Pytest, React Testing Library |
 
 ## 📄 License
 
@@ -880,6 +992,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Made with ☕ by Mark Newton**
-
-*If you find this project useful, please consider giving it a ⭐ on GitHub!*
+<div align="center">
+  <p>
+    <strong>Made with ☕ by Mark Newton</strong>
+  </p>
+  <p>
+    <i>If you find this project useful, please consider giving it a ⭐ on GitHub!</i>
+  </p>
+</div>

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import api from '../services/api'
+import { apiClient as api } from '../utils/apiClient'
 
 const useAuthStore = create(
   persist(
