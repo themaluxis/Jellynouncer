@@ -719,7 +719,7 @@ class SyncConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     startup_sync: bool = Field(default=True)
-    sync_batch_size: int = Field(default=100, ge=10, le=1000)
+    sync_batch_size: int = Field(default=10000, ge=10, le=10000)
     api_request_delay: float = Field(default=0.1, ge=0.0, le=5.0)
 
 

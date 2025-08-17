@@ -132,7 +132,7 @@
   },
   "sync": {
     "startup_sync": true,
-    "sync_batch_size": 1000,
-    "api_request_delay": 0.1
+    "sync_batch_size": 10000,
+    "api_request_delay": 0.05
   }
 }

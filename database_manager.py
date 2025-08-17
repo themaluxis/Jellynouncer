@@ -212,7 +212,7 @@ class DatabaseManager:
                 await db.execute("PRAGMA synchronous=NORMAL")
                 await db.execute("PRAGMA temp_store=memory")
                 await db.execute("PRAGMA mmap_size=268435456")
-                await db.execute("PRAGMA cache_size=-32000")
+                await db.execute("PRAGMA cache_size=-128000")  # Increased to 128MB for better performance
                 await db.execute("PRAGMA busy_timeout=30000")
 
                 # Create the complete media_items table with ALL MediaItem fields
@@ -682,7 +682,7 @@ class DatabaseManager:
                 await db.execute("BEGIN TRANSACTION")
 
                 # Process items in chunks to avoid SQL parameter limits
-                chunk_size = 500  # SQLite limit on number of parameters
+                chunk_size = 5000  # Increased for better performance with large batches
                 
                 for chunk_start in range(0, len(items), chunk_size):
                     chunk = items[chunk_start:chunk_start + chunk_size]
