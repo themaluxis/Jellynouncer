@@ -411,6 +411,24 @@ class TVDB:
 
                     if response.status == 200:
                         response_data = await response.json()
+                        
+                        # Debug logging to understand response structure
+                        self.logger.debug(f"TVDb raw response type: {type(response_data)}")
+                        if isinstance(response_data, dict):
+                            self.logger.debug(f"TVDb response keys: {list(response_data.keys())[:10]}")  # First 10 keys
+                            # Log data structure if present
+                            if 'data' in response_data:
+                                data_item = response_data['data']
+                                if isinstance(data_item, dict):
+                                    self.logger.debug(f"  - data keys: {list(data_item.keys())[:10]}")
+                                    self.logger.debug(f"  - id: {data_item.get('id', 'NOT FOUND')}")
+                                    self.logger.debug(f"  - name: {data_item.get('name', 'NOT FOUND')}")
+                                    self.logger.debug(f"  - score: {data_item.get('score', 'NOT FOUND')}")
+                                    self.logger.debug(f"  - averageRuntime: {data_item.get('averageRuntime', 'NOT FOUND')}")
+                                elif isinstance(data_item, list) and len(data_item) > 0:
+                                    self.logger.debug(f"  - data is array with {len(data_item)} items")
+                                    if isinstance(data_item[0], dict):
+                                        self.logger.debug(f"  - first item keys: {list(data_item[0].keys())[:10]}")
 
                         if method.upper() == "GET":
                             self._store_in_cache(cache_key, response_data)

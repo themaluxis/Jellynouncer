@@ -259,13 +259,27 @@ class OMDbAPI:
 
             # The omdb library should return a dict
             if response:
+                # Debug logging to understand response structure
+                self.logger.debug(f"OMDb raw response type: {type(response)}")
+                self.logger.debug(f"OMDb raw response keys: {response.keys() if isinstance(response, dict) else 'Not a dict'}")
+                
+                # Log specific fields to understand naming convention
+                if isinstance(response, dict):
+                    # Check both camelCase and snake_case versions
+                    self.logger.debug(f"  - imdbRating (camel): {response.get('imdbRating', 'NOT FOUND')}")
+                    self.logger.debug(f"  - imdb_rating (snake): {response.get('imdb_rating', 'NOT FOUND')}")
+                    self.logger.debug(f"  - Response field: {response.get('Response', response.get('response', 'NOT FOUND'))}")
+                
                 # Check for successful response
                 # The library returns dict with 'response' field set to 'True' for success
                 if isinstance(response, dict):
-                    if response.get("response", "").lower() == "true":
+                    # Check both Response and response (case variations)
+                    response_success = response.get("Response", response.get("response", "")).lower() == "true"
+                    if response_success:
                         return response
-                    elif response.get("error"):
-                        self.logger.warning(f"OMDb API error: {response.get('error')}")
+                    elif response.get("Error") or response.get("error"):
+                        error_msg = response.get("Error") or response.get("error")
+                        self.logger.warning(f"OMDb API error: {error_msg}")
                         return None
                 else:
                     self.logger.error(f"Unexpected response type from omdb library: {type(response)}")
@@ -311,7 +325,8 @@ class OMDbAPI:
         try:
             # Parse ratings list safely
             ratings = []
-            ratings_data = response.get("ratings", [])
+            # Check for both naming conventions
+            ratings_data = response.get("ratings") or response.get("Ratings", [])
 
             # Ensure ratings_data is a list
             if isinstance(ratings_data, list):
@@ -324,7 +339,7 @@ class OMDbAPI:
                             value=getattr(rating_data, 'value', 'N/A')
                         ))
                     elif isinstance(rating_data, dict):
-                        # It's a dictionary - OMDb API uses capitalized keys
+                        # It's a dictionary - check both naming conventions
                         ratings.append(OMDbRating(
                             source=rating_data.get("Source") or rating_data.get("source", "Unknown"),
                             value=rating_data.get("Value") or rating_data.get("value", "N/A")
@@ -333,37 +348,45 @@ class OMDbAPI:
                         # Log unexpected type
                         self.logger.warning(f"Unexpected rating data type: {type(rating_data)}")
 
-            # The omdb library already converts field names to underscore_case
-            # So we should use the underscore versions
+            # The omdb library may use either camelCase or snake_case
+            # We need to check both to ensure we get the data
+            def get_field(field_snake, field_camel=None):
+                """Helper to get field with both naming conventions."""
+                if field_camel is None:
+                    # Convert snake_case to camelCase
+                    parts = field_snake.split('_')
+                    field_camel = parts[0] + ''.join(word.capitalize() for word in parts[1:])
+                return response.get(field_snake) or response.get(field_camel)
+            
             metadata = OMDbMetadata(
-                imdb_id=response.get("imdb_id"),
-                type=response.get("type"),
-                title=response.get("title"),
-                year=response.get("year"),
-                rated=response.get("rated"),
-                released=response.get("released"),
-                runtime=response.get("runtime"),
-                genre=response.get("genre"),
-                director=response.get("director"),
-                writer=response.get("writer"),
-                actors=response.get("actors"),
-                plot=response.get("plot"),
-                language=response.get("language"),
-                country=response.get("country"),
-                awards=response.get("awards"),
-                poster=response.get("poster"),
-                metascore=response.get("metascore"),
-                imdb_rating=response.get("imdb_rating"),
-                imdb_votes=response.get("imdb_votes"),
+                imdb_id=get_field("imdb_id", "imdbID"),
+                type=get_field("type", "Type"),
+                title=get_field("title", "Title"),
+                year=get_field("year", "Year"),
+                rated=get_field("rated", "Rated"),
+                released=get_field("released", "Released"),
+                runtime=get_field("runtime", "Runtime"),
+                genre=get_field("genre", "Genre"),
+                director=get_field("director", "Director"),
+                writer=get_field("writer", "Writer"),
+                actors=get_field("actors", "Actors"),
+                plot=get_field("plot", "Plot"),
+                language=get_field("language", "Language"),
+                country=get_field("country", "Country"),
+                awards=get_field("awards", "Awards"),
+                poster=get_field("poster", "Poster"),
+                metascore=get_field("metascore", "Metascore"),
+                imdb_rating=get_field("imdb_rating", "imdbRating"),
+                imdb_votes=get_field("imdb_votes", "imdbVotes"),
                 ratings=ratings,
-                dvd=response.get("dvd"),
-                box_office=response.get("box_office"),
-                production=response.get("production"),
-                website=response.get("website"),
-                total_seasons=response.get("total_seasons"),
-                season=response.get("season"),
-                episode=response.get("episode"),
-                series_id=response.get("series_id"),
+                dvd=get_field("dvd", "DVD"),
+                box_office=get_field("box_office", "BoxOffice"),
+                production=get_field("production", "Production"),
+                website=get_field("website", "Website"),
+                total_seasons=get_field("total_seasons", "totalSeasons"),
+                season=get_field("season", "Season"),
+                episode=get_field("episode", "Episode"),
+                series_id=get_field("series_id", "seriesID"),
                 response=True,
                 error=None
             )

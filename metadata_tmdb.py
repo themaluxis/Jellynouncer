@@ -274,6 +274,23 @@ class TMDbAPI:
         try:
             # First attempt
             response = client_method(*args, **kwargs)
+            
+            # Debug logging to understand response structure
+            self.logger.debug(f"TMDb raw response type: {type(response)}")
+            if hasattr(response, '__dict__'):
+                self.logger.debug(f"TMDb response attributes: {list(response.__dict__.keys())[:10]}")  # First 10 keys
+                # Log specific fields we care about
+                self.logger.debug(f"  - id: {getattr(response, 'id', 'NOT FOUND')}")
+                self.logger.debug(f"  - title/name: {getattr(response, 'title', getattr(response, 'name', 'NOT FOUND'))}")
+                self.logger.debug(f"  - vote_average: {getattr(response, 'vote_average', 'NOT FOUND')}")
+                self.logger.debug(f"  - vote_count: {getattr(response, 'vote_count', 'NOT FOUND')}")
+            elif isinstance(response, dict):
+                self.logger.debug(f"TMDb response keys: {list(response.keys())[:10]}")  # First 10 keys
+                self.logger.debug(f"  - id: {response.get('id', 'NOT FOUND')}")
+                self.logger.debug(f"  - title/name: {response.get('title', response.get('name', 'NOT FOUND'))}")
+                self.logger.debug(f"  - vote_average: {response.get('vote_average', 'NOT FOUND')}")
+                self.logger.debug(f"  - vote_count: {response.get('vote_count', 'NOT FOUND')}")
+            
             return response
 
         except TMDbException as e:
