@@ -583,7 +583,7 @@ python main.py
 6. **Configure Jellyfin Webhook Plugin:**
    - Go to Jellyfin Dashboard → Plugins → Webhook
    - Add new webhook with URL: `http://your-server:8080/webhook`
-   - Enable "Item Added" event
+   - Enable "Item Added" event or optionally "Item Deleted" event. Filtering options are enabled by default.
    - Check "Send All Properties"
    - Save configuration
 
