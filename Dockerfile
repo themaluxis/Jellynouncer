@@ -11,8 +11,8 @@ WORKDIR /build
 # Copy package files for dependency caching
 COPY web/package*.json ./
 
-# Install dependencies (npm ci is faster and more reliable for production)
-RUN npm ci
+# Install dependencies
+RUN npm install; npm npm audit fix --force; npm fund
 
 # Copy frontend source code
 COPY web/ ./
