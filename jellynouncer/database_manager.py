@@ -212,8 +212,11 @@ class DatabaseManager:
                 await db.execute("PRAGMA synchronous=NORMAL")
                 await db.execute("PRAGMA temp_store=memory")
                 await db.execute("PRAGMA mmap_size=268435456")
-                await db.execute("PRAGMA cache_size=-128000")  # Increased to 128MB for better performance
+                await db.execute("PRAGMA cache_size=-256000")  # Increased to 256MB for better performance
                 await db.execute("PRAGMA busy_timeout=30000")
+                await db.execute("PRAGMA page_size=8192")  # Larger pages for better performance
+                await db.execute("PRAGMA journal_size_limit=67108864")  # 64MB journal limit
+                await db.execute("PRAGMA wal_autocheckpoint=10000")  # Less frequent checkpoints
 
                 # Create the complete media_items table with ALL MediaItem fields
                 # This ensures complete webhook field synchronization and prevents data loss
@@ -678,8 +681,8 @@ class DatabaseManager:
             async with aiosqlite.connect(self.db_path) as db:
                 self._connection_count += 1
 
-                # Begin transaction for all items
-                await db.execute("BEGIN TRANSACTION")
+                # Begin transaction for all items with immediate lock
+                await db.execute("BEGIN IMMEDIATE")
 
                 # Process items in chunks to avoid SQL parameter limits
                 chunk_size = 2000  # Balanced size for reliability and performance

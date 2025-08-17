@@ -1289,6 +1289,28 @@ class WebhookService:
                                 if len(failed_items) > 3:
                                     self.logger.debug(f"  ... and {len(failed_items) - 3} more")
                             
+                            # Pre-generate content hashes in parallel for better performance during sync
+                            # This avoids sequential hash generation during database batch save
+                            # Only do this for sync operations (not needed for single webhook items)
+                            if media_items and len(media_items) > 10:  # Only parallelize for larger batches
+                                hash_start_time = time.time()
+                                
+                                # Create tasks to generate hashes in parallel
+                                async def generate_hash(item):
+                                    """Pre-generate content hash for an item."""
+                                    try:
+                                        # Access the property to trigger hash generation
+                                        _ = item.content_hash
+                                    except Exception as e:
+                                        self.logger.debug(f"Hash generation failed for {item.name}: {e}")
+                                
+                                # Generate all hashes in parallel
+                                hash_tasks = [generate_hash(item) for item in media_items]
+                                await asyncio.gather(*hash_tasks, return_exceptions=True)
+                                
+                                hash_time = time.time() - hash_start_time
+                                self.logger.debug(f"Pre-generated {len(media_items)} content hashes in {hash_time:.2f}s")
+                            
                             # Save batch to database
                             if media_items:
                                 batch_results = await self.db.save_items_batch(media_items)
