@@ -7,7 +7,7 @@
 <div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/docker-ready-brightgreen.svg)](https://hub.docker.com/r/markusmcnugen/jellynouncer)
 [![GitHub Issues](https://img.shields.io/github/issues/MarkusMcNugen/Jellynouncer)](https://github.com/MarkusMcNugen/Jellynouncer/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/MarkusMcNugen/Jellynouncer?style=social)](https://github.com/MarkusMcNugen/Jellynouncer/stargazers)
@@ -524,7 +524,7 @@ Jellynouncer uses Jinja2 templates for complete control over Discord embed forma
 - **Grouped by Type**: `new_items_by_type.j2`, `upgraded_items_by_type.j2`
 - **Fully Grouped**: `new_items_grouped.j2`, `upgraded_items_grouped.j2`
 
-### Available Variables
+### Sample of Available Variables
 
 ```jinja2
 {{ item.name }}              # Media title
@@ -540,6 +540,7 @@ Jellynouncer uses Jinja2 templates for complete control over Discord embed forma
 {{ item.cast }}              # Cast members
 ```
 
+See the full template guide for all available variables
 **📚 [Complete Template Guide →](templates/Readme.md)**
 
 ## 🔧 Manual Installation
@@ -681,7 +682,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ### Code Style
 
-- Python 3.11+ with type hints
+- Python 3.13+ with type hints
 - PEP 8 compliance (Black formatter, 88 char limit)
 - Google-style docstrings
 - Comprehensive error handling
