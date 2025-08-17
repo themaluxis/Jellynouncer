@@ -439,13 +439,9 @@ class MetadataService:
             tvdb_data = None
             if item.item_type == "Series":
                 tvdb_data = await self.tvdb_client.get_series_metadata(item.tvdb_id)
-            elif item.item_type == "Episode" and item.series_id:
-                # For episodes, we need the series TVDB ID, not the episode ID
-                tvdb_data = await self.tvdb_client.get_episode_metadata(
-                    series_tvdb_id=item.tvdb_id,
-                    season_number=item.season_number,
-                    episode_number=item.episode_number
-                )
+            elif item.item_type == "Episode" and item.tvdb_id:
+                # For episodes, use the episode's TVDB ID directly
+                tvdb_data = await self.tvdb_client.get_episode_metadata(item.tvdb_id)
             
             if tvdb_data:
                 # Cache the fetched data

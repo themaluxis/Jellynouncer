@@ -618,6 +618,10 @@ class DatabaseManager:
                         else:
                             item_dict[field] = None
 
+                    # Remove content_hash from dict as it's a computed property in MediaItem
+                    if 'content_hash' in item_dict:
+                        del item_dict['content_hash']
+                    
                     self.logger.debug(f"Retrieved item: {item_dict['name']}")
                     return MediaItem(**item_dict)
                 else:
@@ -832,6 +836,10 @@ class DatabaseManager:
                         else:
                             item_dict[field] = None
 
+                    # Remove content_hash from dict as it's a computed property in MediaItem
+                    if 'content_hash' in item_dict:
+                        del item_dict['content_hash']
+                    
                     items.append(MediaItem(**item_dict))
 
                 self._connection_count -= 1

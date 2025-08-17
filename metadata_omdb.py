@@ -437,7 +437,7 @@ class OMDbAPI:
                     title=item.series_name,
                     season=item.season_number,
                     episode=item.episode_number,
-                    type="episode"
+                    media_type="episode"
                 )
 
             elif item.item_type == "Season" and item.series_name and item.season_number:
@@ -449,7 +449,7 @@ class OMDbAPI:
                 response = self._make_request(
                     title=item.series_name,
                     season=item.season_number,
-                    type="series"
+                    media_type="series"
                 )
 
             elif item.item_type == "Series" and item.name:
@@ -457,18 +457,18 @@ class OMDbAPI:
                 self.logger.debug(f"Fetching OMDb series data: {item.name}")
                 response = self._make_request(
                     title=item.name,
-                    type="series",
+                    media_type="series",
                     year=item.year if item.year else None
                 )
 
             elif item.name:
                 # Fallback to title search
                 self.logger.debug(f"Fetching OMDb data by title: {item.name}")
-                media_type = "movie" if item.item_type == "Movie" else None
+                omdb_media_type = "movie" if item.item_type == "Movie" else None
                 response = self._make_request(
                     title=item.name,
                     year=item.year if item.year else None,
-                    type=media_type
+                    media_type=omdb_media_type
                 )
 
             if response:
@@ -507,7 +507,7 @@ class OMDbAPI:
         if imdb_id:
             response = self._make_request(imdbid=imdb_id)
         elif title:
-            response = self._make_request(title=title, year=year, type="movie")
+            response = self._make_request(title=title, year=year, media_type="movie")
         else:
             self.logger.error("Either imdb_id or title must be provided")
             return None
@@ -534,7 +534,7 @@ class OMDbAPI:
         if imdb_id:
             response = self._make_request(imdbid=imdb_id)
         elif title:
-            response = self._make_request(title=title, year=year, type="series")
+            response = self._make_request(title=title, year=year, media_type="series")
         else:
             self.logger.error("Either imdb_id or title must be provided")
             return None
@@ -562,7 +562,7 @@ class OMDbAPI:
             title=series_title,
             season=season,
             episode=episode,
-            type="episode"
+            media_type="episode"
         )
 
         return self._parse_response(response) if response else None
