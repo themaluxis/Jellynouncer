@@ -5,12 +5,8 @@
 .idea/inspectionProfiles/profiles_settings.xml
 .idea/misc.xml
 CLAUDE.md
-/.claude
 .claude/settings.local.json
 /__pycache__
-/__pycache__
 /.claude
-/__pycache__
-/__pycache__
 *.pyc
 .claude/settings.local.json
