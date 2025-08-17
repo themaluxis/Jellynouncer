@@ -149,7 +149,6 @@ readonly CONFIG_DIR="${APP_ROOT}/config"
 readonly TEMPLATES_DIR="${APP_ROOT}/templates"
 readonly DATA_DIR="${APP_ROOT}/data"
 readonly LOGS_DIR="${APP_ROOT}/logs"
-readonly SCRIPTS_DIR="${APP_ROOT}/scripts"
 readonly DEFAULTS_DIR="${APP_ROOT}/defaults"
 
 # File paths
@@ -447,7 +446,6 @@ create_required_directories() {
         ["${TEMPLATES_DIR}"]="Templates directory"
         ["${DATA_DIR}"]="Data directory"
         ["${LOGS_DIR}"]="Application logs directory"
-        ["${SCRIPTS_DIR}"]="Scripts directory"
     )
 
     local created_count=0
@@ -641,7 +639,6 @@ process_default_files() {
     # Define file processing tasks
     local -A file_tasks=(
         ["${DEFAULTS_DIR}/templates:${TEMPLATES_DIR}:Template"]="Template files"
-        ["${DEFAULTS_DIR}/scripts:${SCRIPTS_DIR}:Script"]="Script files"
     )
 
     local success_count=0
@@ -689,7 +686,6 @@ manage_permissions() {
         "${TEMPLATES_DIR}"
         "${DATA_DIR}"
         "${LOGS_DIR}"
-        "${SCRIPTS_DIR}"
     )
 
     # Set ownership if PUID and PGID are provided
@@ -725,23 +721,6 @@ manage_permissions() {
             fi
         fi
     done
-
-    # Make scripts executable using find with improved performance
-    if [[ -d "${SCRIPTS_DIR}" ]]; then
-        log_debug "Making scripts executable in ${SCRIPTS_DIR}" "${component}"
-
-        # Use Bash 5.2's improved find command handling
-        local script_count=0
-        while IFS= read -r -d '' script_file; do
-            if safe_chmod "${script_file}" "+x" "${component}"; then
-                ((script_count++))
-            fi
-        done < <(find "${SCRIPTS_DIR}" -type f \( -name "*.sh" -o -name "*.py" \) -print0 2>/dev/null || true)
-
-        if (( script_count > 0 )); then
-            log_success "Made ${script_count} script files executable" "${component}"
-        fi
-    fi
 
     # Report overall permission management results
     log_info "Permission management complete: ${permission_success}/${permission_total} directories processed" "${component}"
