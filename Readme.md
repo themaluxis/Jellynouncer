@@ -233,7 +233,7 @@ Create `config/config.json` for advanced settings:
 
 #### Deletion Notifications & Filtering
 
-Jellynouncer now supports **ItemDeleted** webhooks from Jellyfin, with intelligent filtering to prevent spam:
+Jellynouncer supports **ItemDeleted** webhooks from Jellyfin, with intelligent filtering to prevent spam:
 
 ##### **Filter Renames** (`filter_renames`)
 When enabled (default: `true`), Jellynouncer intelligently detects file renames and filters out unnecessary notifications:
@@ -411,20 +411,31 @@ graph TD
 ```
 Jellyfin Event → Webhook Plugin → POST /webhook → FastAPI Validation → WebhookPayload Model
 ```
-- Jellyfin detects library changes and triggers webhook
+- Jellyfin detects library changes (ItemAdded/ItemDeleted) and triggers webhook
 - FastAPI validates incoming payload structure
 - Pydantic models ensure type safety and data integrity
+- Event type determines processing path (addition/deletion/update)
 
-#### 2. **Media Processing Pipeline**
+#### 2. **Deletion Filtering Pipeline**
 ```
-WebhookService → Extract Media Info → Database Lookup → Change Detection → Classification
+ItemDeleted → Deletion Queue (30s) → Upgrade Detection → True Delete vs Upgrade Filter
 ```
-- Extract comprehensive media information from webhook payload
+- ItemDeleted events enter deletion queue if `filter_deletes=true`
+- 30-second delay allows detection of upgrade patterns
+- Matches deletions with subsequent additions to identify upgrades
+- True deletions proceed to notification after timeout
+
+#### 3. **Media Processing Pipeline**
+```
+ItemAdded → Deletion Check → Rename Detection → Database Lookup → Change Detection
+```
+- Check deletion queue for matching items (upgrade/rename scenarios)
+- Compare file paths and properties for rename detection if `filter_renames=true`
 - Query SQLite database for existing item history
 - Analyze differences using content hashing algorithm
-- Classify as new item or quality upgrade
+- Classify as new item, quality upgrade, or filtered event
 
-#### 3. **Metadata Enhancement**
+#### 4. **Metadata Enhancement**
 ```
 JellyfinAPI → External Services (OMDb/TMDb/TVDB) → Metadata Aggregation → Cache Storage
 ```
@@ -433,16 +444,25 @@ JellyfinAPI → External Services (OMDb/TMDb/TVDB) → Metadata Aggregation → 
 - Aggregate all metadata into unified MediaItem object
 - Cache results to reduce API calls
 
-#### 4. **Notification Generation**
+#### 5. **Template Processing**
 ```
-Template Selection → Jinja2 Rendering → Discord Embed Creation → Webhook Routing
+Template Selection → Jinja2 Environment → Bytecode Cache → Discord Embed Creation
 ```
-- Select appropriate template based on item type and change type
-- Render template with media metadata and technical information
+- Select appropriate template (new_item.j2, upgraded_item.j2, deleted_item.j2)
+- Render template with Jinja2 environment (8x faster with caching)
+- Use bytecode cache for compiled templates
 - Generate Discord-compatible JSON embed structure
-- Route to appropriate webhook based on content type
 
-#### 5. **Delivery & Reliability**
+#### 6. **Notification Routing**
+```
+Content Type Detection → Webhook Selection → Channel Routing → Rate Limiting
+```
+- Detect content type (Movie, TV, Music)
+- Select configured webhook for content type
+- Fall back to default webhook if specific not configured
+- Route to appropriate Discord channel
+
+#### 7. **Delivery & Reliability**
 ```
 Rate Limiter → Discord API → Retry Logic → Success/Failure Handling → Queue Management
 ```
@@ -453,10 +473,11 @@ Rate Limiter → Discord API → Retry Logic → Success/Failure Handling → Qu
 
 ### Background Services
 
-1. **Library Synchronization**: Periodically syncs with Jellyfin to ensure database consistency
-2. **Queue Processing**: Manages notification batching and grouped notifications
-3. **Health Monitoring**: Tracks service health and external API availability
-4. **Database Maintenance**: Performs WAL checkpoints and optimization
+1. **Library Synchronization**: Periodically syncs with Jellyfin using producer/consumer pattern
+2. **Deletion Cleanup**: Processes pending deletions after 30-second timeout for upgrade detection
+3. **Queue Processing**: Manages notification batching and grouped notifications
+4. **Health Monitoring**: Tracks service health and external API availability
+5. **Database Maintenance**: Performs VACUUM operations and WAL checkpoints
 
 ## 📡 API Endpoints
 
@@ -498,7 +519,7 @@ Jellynouncer uses Jinja2 templates for complete control over Discord embed forma
 
 ### Template Types
 
-- **Individual**: `new_item.j2`, `upgraded_item.j2`
+- **Individual**: `new_item.j2`, `upgraded_item.j2`, `deleted_item.j2`
 - **Grouped by Event**: `new_items_by_event.j2`, `upgraded_items_by_event.j2`
 - **Grouped by Type**: `new_items_by_type.j2`, `upgraded_items_by_type.j2`
 - **Fully Grouped**: `new_items_grouped.j2`, `upgraded_items_grouped.j2`
