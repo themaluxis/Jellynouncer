@@ -96,6 +96,7 @@
     "directory": "/app/templates",
     "new_item_template": "new_item.j2",
     "upgraded_item_template": "upgraded_item.j2",
+    "deleted_item_template": "deleted_item.j2",
     "new_items_by_event_template": "new_items_by_event.j2",
     "upgraded_items_by_event_template": "upgraded_items_by_event.j2",
     "new_items_by_type_template": "new_items_by_type.j2",
@@ -120,7 +121,9 @@
       "audio_upgrade": 9662683,
       "hdr_upgrade": 16716947,
       "provider_update": 2003199
-    }
+    },
+    "filter_renames": true,
+    "filter_deletes": true
   },
   "server": {
     "host": "0.0.0.0",

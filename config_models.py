@@ -455,6 +455,7 @@ class TemplatesConfig(BaseModel):
     **Template Types Explained:**
         - new_item: For completely new media items
         - upgraded_item: For existing items that got upgraded (better quality, etc.)
+        - deleted_item: For items removed from the library
         - grouped templates: For batching multiple notifications together
         - by_event/by_type: Different grouping strategies
 
@@ -476,6 +477,7 @@ class TemplatesConfig(BaseModel):
     directory: str = Field(default="/app/templates")
     new_item_template: str = Field(default="new_item.j2")
     upgraded_item_template: str = Field(default="upgraded_item.j2")
+    deleted_item_template: str = Field(default="deleted_item.j2")
     new_items_by_event_template: str = Field(default="new_items_by_event.j2")
     upgraded_items_by_event_template: str = Field(default="upgraded_items_by_event.j2")
     new_items_by_type_template: str = Field(default="new_items_by_type.j2")
