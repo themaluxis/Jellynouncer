@@ -23,227 +23,99 @@
   "embeds": [
     {
       {#
-        Dynamic Title with Upgrade Type
-        --------------------------------
-        Shows specific upgrade type when only one change occurred
+        Dynamic Title Based on Item Type (Translated to French)
       #}
-      "title": {{ ("⬆️" ~ 
-        ("📺 " ~ (item.name | default('Unknown Episode') | truncate(180, True, '...')) if item.item_type == 'Episode' else
-         "📺 " ~ (item.name | default('Unknown Series') | truncate(180, True, '...')) if item.item_type == 'Series' else
-         "🎬 " ~ (item.name | default('Unknown Movie') | truncate(180, True, '...')) if item.item_type == 'Movie' else
-         "📺 " ~ (item.series_name | default('Unknown Series')) ~ " - Season " ~ (item.season_number | default('?') | string) if item.item_type == 'Season' else
-         "🎵 " ~ (item.name | default('Unknown Song') | truncate(180, True, '...')) if item.item_type == 'Audio' else
-         "💿 " ~ (item.name | default('Unknown Album') | truncate(180, True, '...')) if item.item_type == 'MusicAlbum' else
-         "🎤 " ~ (item.name | default('Unknown Artist') | truncate(180, True, '...')) if item.item_type == 'MusicArtist' else
-         "📷 " ~ (item.name | default('Photo') | truncate(180, True, '...')) if item.item_type == 'Photo' else
-         "📁 " ~ (item.name | default('Unknown ' ~ item.item_type) | truncate(180, True, '...'))
-        ) ~ " " ~ (changes[0].type|title ~ " " if changes|length == 1 else "") ~ "Upgraded") | tojson }},
+      "title": {{ ("⬆️" ~
+        (" mise à jour : " ~ (item.series_name | default('Série Inconnue')) ~ " - " ~ (item.name | default('Épisode Inconnu'))) if item.item_type == 'Episode' else
+        (" mise à jour : " ~ (item.name | default('Série Inconnue'))) if item.item_type == 'Series' else
+        (" mise à jour : " ~ (item.name | default('Film Inconnu'))) if item.item_type == 'Movie' else
+        (" mise à jour : " ~ (item.series_name | default('Série Inconnue')) ~ " - Saison " ~ (item.season_number | string | default('?'))) if item.item_type == 'Season' else
+        (" mise à jour : " ~ (item.name | default('Contenu Inconnu')))
+      ) | tojson }},
 
       {#
         Rich Description with Metadata Priority
-        ----------------------------------------
-        Same metadata source priority as new_item template
       #}
-      "description": {{ (
-        ("**" ~ (item.series_name | default('Unknown Series')) ~ "**\n" ~
-         "S" ~ ("%02d" % (item.season_number | default(0))) ~ "E" ~ ("%02d" % (item.episode_number | default(0))) ~ "\n" ~
-         (item.name | default('Unknown Episode')) ~
-         ("\n\n" ~ ((item.tvdb.overview[:200] + '...') if item.tvdb.overview | length > 200 else item.tvdb.overview) if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0
-          else "\n\n" ~ ((item.overview[:200] + '...') if item.overview | length > 200 else item.overview) if item.overview and item.overview | length > 0
-          else "")
-        ) if item.item_type == 'Episode' else
-        ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
-         (" (" ~ item.year ~ ")" if item.year else "") ~
-         ("\n\n" ~ ((item.tvdb.overview[:200] + '...') if item.tvdb.overview | length > 200 else item.tvdb.overview) if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0
-          else "\n\n" ~ ((item.overview[:200] + '...') if item.overview | length > 200 else item.overview) if item.overview and item.overview | length > 0
-          else "")
-        ) if item.item_type in ['Series', 'Season'] else
-        ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
-         (" (" ~ item.year ~ ")" if item.year else "") ~
-         ("\n\n" ~ ((item.tmdb.overview[:200] + '...') if item.tmdb.overview | length > 200 else item.tmdb.overview) if item.tmdb and item.tmdb.overview and item.tmdb.overview | length > 0
-          else "\n\n" ~ ((item.omdb.plot[:200] + '...') if item.omdb.plot | length > 200 else item.omdb.plot) if item.omdb and item.omdb.plot and item.omdb.plot != 'N/A'
-          else "\n\n" ~ ((item.overview[:200] + '...') if item.overview | length > 200 else item.overview) if item.overview and item.overview | length > 0
-          else "")
-        ) if item.item_type == 'Movie' else
-        ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
-         ("\n\n" ~ ((item.overview[:200] + '...') if item.overview | length > 200 else item.overview) if item.overview and item.overview | length > 0 else "")
-        )
-      ) | tojson }},
+      {% set desc = item.overview or (item.get('tmdb') and item.get('tmdb').get('overview')) or (item.get('omdb') and item.get('omdb').get('plot')) or '' %}
+      "description": {{ ("**" ~ (item.name | default('Titre Inconnu')) ~ "**" ~ (" (" ~ item.year ~ ")" if item.year else "") ~ "\n\n" ~ desc[:400] ~ ('...' if desc | length > 400 else '')) | tojson }},
 
       "color": {{ color }},
 
-      "fields": [
-        {%- set fields_added = namespace(count=0) -%}
+      {#
+        Build a list of fields dynamically to avoid comma issues.
+      #}
+      {% set fields = [] %}
 
-        {#
-          Upgrade Changes Display
-          ------------------------
-          Shows what was upgraded with before → after format
-        #}
-        {% if changes and changes | length > 0 %}
-          {% for change in changes[:3] %}
-            {% if fields_added.count > 0 %},{% endif %}
-            {% set fields_added.count = fields_added.count + 1 %}
-          {
-            "name": "{% if change.type == 'resolution' -%}
-              📐 Resolution Upgrade
-            {%- elif change.type == 'codec' -%}
-              🎞️ Video Codec Upgrade
-            {%- elif change.type == 'audio_codec' -%}
-              🔊 Audio Codec Upgrade
-            {%- elif change.type == 'audio_channels' -%}
-              🔊 Channel Upgrade
-            {%- elif change.type == 'hdr_status' -%}
-              🌈 HDR Upgrade
-            {%- elif change.type == 'file_size' -%}
-              💾 File Replaced
-            {%- else -%}
-              🔄 {{ change.type | title }}
-            {%- endif %}",
-            "value": {{ ((change.old_value or 'Unknown') ~ " → **" ~ (change.new_value or 'Unknown') ~ "**") | tojson }},
-            "inline": true
-          }
-          {% endfor %}
-          {% if changes | length > 3 and fields_added.count < 24 %}
-            {% if fields_added.count > 0 %},{% endif %}
-            {% set fields_added.count = fields_added.count + 1 %}
-          {
-            "name": "➕ Additional Changes",
-            "value": {{ ("+" ~ ((changes | length - 3) | string) ~ " more upgrades") | tojson }},
-            "inline": true
-          }
-          {% endif %}
-        {% endif %}
-
-        {#
-          Current Technical Specifications
-          ---------------------------------
-          Shows the new/current specs after upgrade
-        #}
-        {% if item.video_height and item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist'] and fields_added.count < 24 %}
-          {% if fields_added.count > 0 %},{% endif %}
-          {% set fields_added.count = fields_added.count + 1 %}
-        {
-          "name": "📐 Current Quality",
-          "value": {{ ((item.video_height | string) ~ "p" ~
-            (" " ~ item.video_range if item.video_range and item.video_range != 'SDR' else "")
-          ) | tojson }},
-          "inline": true
-        }
-        {% endif %}
-
-        {% if item.video_codec and item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist'] and fields_added.count < 24 %}
-          {% if fields_added.count > 0 %},{% endif %}
-          {% set fields_added.count = fields_added.count + 1 %}
-        {
-          "name": "🎞️ Video",
-          "value": {{ ((item.video_codec | upper) ~
-            (" " ~ item.video_profile if item.video_profile else "")
-          ) | tojson }},
-          "inline": true
-        }
-        {% endif %}
-
-        {% if item.audio_codec and fields_added.count < 24 %}
-          {% if fields_added.count > 0 %},{% endif %}
-          {% set fields_added.count = fields_added.count + 1 %}
-        {
-          "name": "🔊 Audio",
-          "value": {{ ((item.audio_codec | upper) ~
-            (" Stereo" if item.audio_channels == 2
-             else " 5.1" if item.audio_channels == 6
-             else " 7.1" if item.audio_channels == 8
-             else " " ~ (item.audio_channels | string) ~ "ch" if item.audio_channels
-             else "")
-          ) | tojson }},
-          "inline": true
-        }
-        {% endif %}
-
-        {% if item.file_size and fields_added.count < 24 %}
-          {% if fields_added.count > 0 %},{% endif %}
-          {% set fields_added.count = fields_added.count + 1 %}
-        {
-          "name": "💾 New Size",
-          "value": {{ (("%.1f" % (item.file_size / 1073741824)) ~ " GB") | tojson }},
-          "inline": true
-        }
-        {% endif %}
-
-        {#
-          Inline Ratings Display
-          ----------------------
-          All ratings on one line separated by bullets
-        #}
-        {% set has_ratings = false %}
-        {% if (item.omdb and (item.omdb.imdb_rating or item.omdb.metascore or
-               item.omdb.ratings_dict.rotten_tomatoes)) or
-               (item.tmdb and item.tmdb.rating_display) or
-               (item.tvdb and item.tvdb.rating) %}
-          {% set has_ratings = true %}
-        {% endif %}
-
-        {% if has_ratings and fields_added.count < 24 %}
-          {% if fields_added.count > 0 %},{% endif %}
-          {% set fields_added.count = fields_added.count + 1 %}
-        {
-          "name": "⭐ Ratings",
-          "value": {{ (
-            {%- set rating_parts = [] -%}
-            {%- if item.omdb and item.omdb.imdb_rating and item.omdb.imdb_rating != 'N/A' -%}
-              {%- set _ = rating_parts.append('**IMDb:** ' ~ item.omdb.imdb_rating) -%}
-            {%- endif -%}
-            {%- if item.omdb and item.omdb.ratings_dict.rotten_tomatoes -%}
-              {%- set _ = rating_parts.append('**RT:** ' ~ item.omdb.ratings_dict.rotten_tomatoes.value) -%}
-            {%- endif -%}
-            {%- if item.omdb and item.omdb.metascore and item.omdb.metascore != 'N/A' -%}
-              {%- set _ = rating_parts.append('**MC:** ' ~ item.omdb.metascore) -%}
-            {%- endif -%}
-            {%- if item.tmdb and item.tmdb.rating_display -%}
-              {%- set _ = rating_parts.append('**TMDb:** ' ~ item.tmdb.rating_display) -%}
-            {%- elif item.omdb and item.omdb.ratings_dict.tmdb -%}
-              {%- set _ = rating_parts.append('**TMDb:** ' ~ item.omdb.ratings_dict.tmdb.value) -%}
-            {%- endif -%}
-            {%- if item.tvdb and item.tvdb.rating -%}
-              {%- set _ = rating_parts.append('**TVDb:** ' ~ item.tvdb.rating) -%}
-            {%- endif -%}
-            rating_parts | join(' • ')
-          ) | tojson }},
+      {# Upgrade Changes Display #}
+      {% if changes %}
+        {% set change_descs = changes | map(attribute='description') | list %}
+        {% set _ = fields.append({
+          "name": "Changements (" ~ changes | length ~ ")",
+          "value": (change_descs | join('\n')),
           "inline": false
-        }
-        {% endif %}
-      ],
+        }) %}
+      {% endif %}
 
-      {# Image selection with priority #}
-      {% if item.item_type == 'Episode' and item.series_id %}
+      {# New Technical Specifications #}
+      {% if item.video_height %}
+        {% set _ = fields.append({
+          "name": "Nouvelle Qualité",
+          "value": "`" ~ item.video_height ~ "p" ~ (" " ~ item.video_range if item.video_range and item.video_range != 'SDR' else "") ~ "`",
+          "inline": true
+        }) %}
+      {% endif %}
+
+      {% if item.video_codec %}
+        {% set _ = fields.append({
+          "name": "Nouveau Vidéo",
+          "value": "`" ~ (item.video_codec | upper) ~ "`",
+          "inline": true
+        }) %}
+      {% endif %}
+
+      {% if item.audio_codec %}
+        {% set _ = fields.append({
+          "name": "Nouveau Audio",
+          "value": "`" ~ (item.audio_codec | upper) ~ (" " ~ item.audio_channels ~ "ch" if item.audio_channels else "") ~ "`",
+          "inline": true
+        }) %}
+      {% endif %}
+
+      {# Ratings and Links #}
+      {% set rating_parts = [] %}
+      {% if item.imdb_id %}
+          {% set _ = rating_parts.append('[IMDb](https://www.imdb.com/title/' ~ item.imdb_id ~ ')') %}
+      {% endif %}
+      {% if item.tmdb_id and item.item_type in ['Movie', 'Series'] %}
+          {% set _ = rating_parts.append('[TMDb](https://www.themoviedb.org/' ~ ('movie' if item.item_type == 'Movie' else 'tv') ~ '/' ~ item.tmdb_id ~ ')') %}
+      {% endif %}
+      {% if item.ratings and item.ratings.imdb %}
+          {% set _ = rating_parts.append('**IMDb:** ' ~ item.ratings.imdb.value) %}
+      {% endif %}
+      {% if item.ratings and item.ratings.tmdb %}
+          {% set _ = rating_parts.append('**TMDb:** ' ~ item.ratings.tmdb.value) %}
+      {% endif %}
+
+      {% if rating_parts %}
+        {% set _ = fields.append({
+          "name": "Notes et Liens",
+          "value": (rating_parts | join(' • ')),
+          "inline": false
+        }) %}
+      {% endif %}
+
+      "fields": {{ fields | tojson }},
+
+      {# Image #}
+      {% if thumbnail_url %}
       "thumbnail": {
         "url": {{ thumbnail_url | tojson }}
-      },
-      {% elif item.item_id %}
-      "thumbnail": {
-        "url": {{ thumbnail_url | tojson }}
-      },
-      {% elif item.omdb and item.omdb.poster and item.omdb.poster != 'N/A' %}
-      "thumbnail": {
-        "url": {{ item.omdb.poster | tojson }}
-      },
-      {% elif item.tvdb and item.tvdb.poster_url %}
-      "thumbnail": {
-        "url": {{ item.tvdb.poster_url | tojson }}
-      },
-      {% elif item.tmdb and item.tmdb.backdrop_url %}
-      "image": {
-        "url": {{ item.tmdb.backdrop_url | tojson }}
       },
       {% endif %}
 
+      {# Footer #}
       "footer": {
-        "text": {{ ((item.library_name or 'Jellyfin') ~
-          (" • " ~ item.server_name if item.server_name else "") ~
-          (" • IMDb via OMDb" if item.omdb else "") ~
-          (" • TheTVDB" if item.tvdb else "") ~
-          (" • TMDb" if item.tmdb else "")
-        ) | tojson }},
+        "text": {{ ((item.library_name or 'Jellyfin') ~ (' • ' ~ item.server_name if item.server_name else '')) | tojson }},
         "icon_url": {{ (jellyfin_url ~ "/web/favicon.png") | tojson }}
       },
 
