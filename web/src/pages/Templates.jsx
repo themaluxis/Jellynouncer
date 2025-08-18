@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { apiService } from '../services/api'
 import Jinja2Editor from '../components/Jinja2Editor'
-import { Icon, IconDuotone, IconLight } from '../components/FontAwesomeProIcon'
+import { Icon, IconDuotone, IconLight } from '../components/FontAwesomeIcon'
 import toast from 'react-hot-toast'
 
 const Templates = () => {

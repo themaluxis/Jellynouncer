@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { Icon } from './FontAwesomeIcon';
 import { apiClient, webhookClient } from '../utils/apiClient';
 
 const ConnectionStatus = () => {
@@ -74,7 +74,7 @@ const ConnectionStatus = () => {
     <div className="flex items-center space-x-4 text-sm">
       <div className="flex items-center space-x-2">
         <span className="text-gray-500 dark:text-gray-400">Web API:</span>
-        <FontAwesomeIcon
+        <Icon
           icon={getStatusIcon(webApiStatus)}
           className={`${getStatusColor(webApiStatus)} ${
             webApiStatus === 'checking' ? 'animate-spin' : ''
@@ -85,7 +85,7 @@ const ConnectionStatus = () => {
       
       <div className="flex items-center space-x-2">
         <span className="text-gray-500 dark:text-gray-400">Webhooks:</span>
-        <FontAwesomeIcon
+        <Icon
           icon={getStatusIcon(webhookStatus)}
           className={`${getStatusColor(webhookStatus)} ${
             webhookStatus === 'checking' ? 'animate-spin' : ''

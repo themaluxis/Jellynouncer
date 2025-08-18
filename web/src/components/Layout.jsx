@@ -3,7 +3,7 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import ConnectionStatus from './ConnectionStatus';
 import DarkModeToggle from './DarkModeToggle';
-import { Icon, IconDuotone, IconLight } from './FontAwesomeProIcon';
+import { Icon, IconDuotone, IconLight } from './FontAwesomeIcon';
 
 const Layout = () => {
   const location = useLocation();

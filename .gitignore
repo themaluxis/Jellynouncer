@@ -22,3 +22,8 @@ web/IMPLEMENTATION_GUIDE.md
 package-lock.json
 /web/dist/assets
 nul
+
+# Environment files
+.env
+.env.local
+.env.production

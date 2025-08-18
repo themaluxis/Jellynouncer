@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { Icon } from './FontAwesomeIcon';
 
 const DarkModeToggle = () => {
   const [theme, setTheme] = useState(() => {
@@ -97,7 +97,7 @@ const DarkModeToggle = () => {
       title={`Theme: ${theme} (click to toggle)`}
       aria-label="Toggle dark mode"
     >
-      <FontAwesomeIcon 
+      <Icon 
         icon={getThemeIcon()} 
         className="w-5 h-5"
       />

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Icon, IconDuotone, IconLight } from './FontAwesomeProIcon';
+import { Icon, IconDuotone, IconLight } from './FontAwesomeIcon';
 
 const JellyfinStats = ({ stats }) => {
   if (!stats) {
