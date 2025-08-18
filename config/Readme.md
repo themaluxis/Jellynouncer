@@ -805,10 +805,6 @@ curl http://localhost:1984/stats
    {
      "database": {
        "vacuum_interval_hours": 24
-     },
-     "sync": {
-       "startup_sync": true,
-       "sync_batch_size": 100
      }
    }
    ```

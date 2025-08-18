@@ -896,7 +896,6 @@ class AppConfig(BaseModel):
         templates (TemplatesConfig): Jinja2 template settings (optional, has defaults)
         notifications (NotificationsConfig): Notification behavior settings (optional)
         server (ServerConfig): Web server configuration (optional, has defaults)
-        sync (SyncConfig): Library synchronization settings (optional, has defaults)
         metadata_services (MetadataServicesConfig): External metadata services config (optional)
 
     Example:
@@ -921,7 +920,7 @@ class AppConfig(BaseModel):
         )
         ```
     """
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='ignore')  # Ignore extra fields like deprecated 'sync' config
 
     # Required configurations
     jellyfin: JellyfinConfig
