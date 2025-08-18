@@ -1,19 +1,19 @@
 {#
-  New Items Grouped Template for Jellynouncer
-  ============================================
+  Modèle d'éléments groupés nouveaux pour Jellynouncer
+  ====================================================
 
-  Comprehensive grouped notification organizing items by type.
-  Shows all new items in categorized sections with metadata.
+  Notification groupée complète organisant les éléments par type.
+  Affiche tous les nouveaux éléments dans des sections catégorisées avec métadonnées.
 
-  Supports: Movies, TV, Music, Other
-  Discord limits: Single embed with multiple category fields
+  Prend en charge : Films, TV, Musique, Autres
+  Limites Discord : Un seul embed avec plusieurs champs de catégorie
 #}
 {
   "embeds": [
     {
-      "title": {{ ("🆕 " ~ (total_items | string) ~ " New Items Added to Jellyfin") | tojson }},
+      "title": {{ ("🆕 " ~ (total_items | string) ~ " Nouveaux éléments ajoutés à Jellyfin") | tojson }},
 
-      "description": "A summary of all newly added content organized by type:",
+      "description": "Un résumé de tout le nouveau contenu organisé par type :",
 
       "color": 65280,
 
@@ -21,13 +21,13 @@
         {% set field_count = namespace(value=0) %}
 
         {#
-          Movies Category
+          Catégorie Films
           ---------------
         #}
         {% if 'movies' in categories and categories.movies.new|length > 0 %}
           {% set field_count.value = field_count.value + 1 %}
         {
-          "name": "🎬 Movies ({{ categories.movies.new|length }})",
+          "name": "🎬 Films ({{ categories.movies.new|length }})",
           "value": {{ (
             {%- for item_data in categories.movies.new[:5] -%}
               "**" ~ item_data.item.name ~ "**" ~
@@ -43,21 +43,21 @@
               ("\n⭐ " ~ (rating_parts | join(' • ')) if rating_parts|length > 0 else "") ~
               ("\n" if not loop.last else "")
             {%- endfor -%}
-            {%- if categories.movies.new|length > 5 %}\n...and {{ categories.movies.new|length - 5 }} more{% endif %}
+            {%- if categories.movies.new|length > 5 %}\n...et {{ categories.movies.new|length - 5 }} de plus{% endif %}
           ) | tojson }},
           "inline": false
         }
         {% endif %}
 
         {#
-          TV Category
-          -----------
+          Catégorie TV
+          ------------
         #}
         {% if 'tv' in categories and categories.tv.new|length > 0 %}
           {% if field_count.value > 0 %},{% endif %}
           {% set field_count.value = field_count.value + 1 %}
         {
-          "name": "📺 TV Content ({{ categories.tv.new|length }})",
+          "name": "📺 Contenu TV ({{ categories.tv.new|length }})",
           "value": {{ (
             {%- for item_data in categories.tv.new[:5] -%}
               {%- if item_data.item.item_type == 'Episode' -%}
@@ -69,21 +69,21 @@
               (\"\\n⭐ TVDb: \" ~ item_data.item.tvdb.rating if item_data.item.tvdb and item_data.item.tvdb.rating else \"\") ~
               (\"\\n\" if not loop.last else \"\")
             {%- endfor -%}
-            {%- if categories.tv.new|length > 5 %}\\n...and {{ categories.tv.new|length - 5 }} more{% endif %}
+            {%- if categories.tv.new|length > 5 %}\\n...et {{ categories.tv.new|length - 5 }} de plus{% endif %}
           ) | tojson }},
           "inline": false
         }
         {% endif %}
 
         {#
-          Music Category
-          --------------
+          Catégorie Musique
+          -----------------
         #}
         {% if 'music' in categories and categories.music.new|length > 0 %}
           {% if field_count.value > 0 %},{% endif %}
           {% set field_count.value = field_count.value + 1 %}
         {
-          "name": "🎵 Music ({{ categories.music.new|length }})",
+          "name": "🎵 Musique ({{ categories.music.new|length }})",
           "value": {{ (
             {%- for item_data in categories.music.new[:6] -%}
               {%- if item_data.item.item_type == 'Audio' -%}
@@ -97,44 +97,44 @@
               {%- endif %} ~
               (\"\\n\" if not loop.last else \"\")
             {%- endfor -%}
-            {%- if categories.music.new|length > 6 %}\\n...and {{ categories.music.new|length - 6 }} more{% endif %}
+            {%- if categories.music.new|length > 6 %}\\n...et {{ categories.music.new|length - 6 }} de plus{% endif %}
           ) | tojson }},
           "inline": false
         }
         {% endif %}
 
         {#
-          Other Category
-          --------------
+          Catégorie Autres
+          ----------------
         #}
         {% if 'other' in categories and categories.other.new|length > 0 %}
           {% if field_count.value > 0 %},{% endif %}
           {% set field_count.value = field_count.value + 1 %}
         {
-          "name": "📁 Other ({{ categories.other.new|length }})",
+          "name": "📁 Autres ({{ categories.other.new|length }})",
           "value": {{ (
             {%- for item_data in categories.other.new[:6] -%}
               "**" ~ item_data.item.name ~ "** (" ~ item_data.item.item_type ~ ")" ~
               ("\n" if not loop.last else "")
             {%- endfor -%}
-            {%- if categories.other.new|length > 6 %}\n...and {{ categories.other.new|length - 6 }} more{% endif %}
+            {%- if categories.other.new|length > 6 %}\n...et {{ categories.other.new|length - 6 }} de plus{% endif %}
           ) | tojson }},
           "inline": false
         }
         {% endif %}
 
         {#
-          Summary Statistics
-          ------------------
+          Statistiques résumé
+          -------------------
         #}
         {% if field_count.value > 0 %},{% endif %}
         {
-          "name": "📊 Summary",
-          "value": {{ ("**Total Items:** " ~ total_items ~
-            ("\n🎬 Movies: " ~ categories.movies.new|length if 'movies' in categories else "") ~
-            ("\n📺 TV: " ~ categories.tv.new|length if 'tv' in categories else "") ~
-            ("\n🎵 Music: " ~ categories.music.new|length if 'music' in categories else "") ~
-            ("\n📁 Other: " ~ categories.other.new|length if 'other' in categories else "")
+          "name": "📊 Résumé",
+          "value": {{ ("**Total des éléments :** " ~ total_items ~
+            ("\n🎬 Films : " ~ categories.movies.new|length if 'movies' in categories else "") ~
+            ("\n📺 TV : " ~ categories.tv.new|length if 'tv' in categories else "") ~
+            ("\n🎵 Musique : " ~ categories.music.new|length if 'music' in categories else "") ~
+            ("\n📁 Autres : " ~ categories.other.new|length if 'other' in categories else "")
           ) | tojson }},
           "inline": false
         }

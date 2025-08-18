@@ -1,91 +1,91 @@
 {#
-  New Item Jinja2 Discord Webhook Template for Jellynouncer
-  ==========================================================
+  Modèle Jinja2 Discord Webhook pour nouveaux éléments - Jellynouncer
+  ====================================================================
 
-  This template generates Discord embed messages for newly added media items.
-  It intelligently uses metadata from multiple sources with proper fallbacks.
+  Ce modèle génère des messages Discord intégrés pour les nouveaux éléments multimédias.
+  Il utilise intelligemment les métadonnées de sources multiples avec des solutions de repli.
 
-  Metadata Source Priority:
-  ------------------------
-  - TV Shows/Episodes: TVDb → Jellyfin base properties
-  - Movies: TMDb → OMDb → Jellyfin base properties
-  - Music: Jellyfin base properties only
+  Priorité des sources de métadonnées :
+  ------------------------------------
+  - Séries TV/Épisodes : TVDb → propriétés de base Jellyfin
+  - Films : TMDb → OMDb → propriétés de base Jellyfin
+  - Musique : propriétés de base Jellyfin uniquement
 
-  Discord Limits Respected:
-  ------------------------
-  - Max 256 chars for title
-  - Max 4096 chars for description
-  - Max 25 fields (we use ~10-15)
-  - Max 1024 chars per field value
-  - Max 6000 chars total per embed
+  Limites Discord respectées :
+  ----------------------------
+  - Max 256 caractères pour le titre
+  - Max 4096 caractères pour la description
+  - Max 25 champs (nous utilisons ~10-15)
+  - Max 1024 caractères par valeur de champ
+  - Max 6000 caractères total par embed
 #}
 {
   "embeds": [
     {
       {#
-        Dynamic Title Based on Item Type
-        ---------------------------------
-        Shows appropriate emoji and type label for each media category
+        Titre dynamique basé sur le type d'élément
+        -------------------------------------------
+        Affiche l'emoji et le libellé appropriés pour chaque catégorie de média
       #}
       "title": {% if item.item_type == 'Episode' -%}
-        {{ ("🆕📺 " ~ ((item.series_name | default('Unknown Series')) ~ " " ~ "S" ~ ("%02d" % (item.season_number | default(0))) ~ "E" ~ ("%02d" % (item.episode_number | default(0))) | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕📺 " ~ ((item.series_name | default('Série inconnue')) ~ " " ~ "S" ~ ("%02d" % (item.season_number | default(0))) ~ "E" ~ ("%02d" % (item.episode_number | default(0))) | truncate(200, True, '...'))) | tojson }}
       {%- elif item.item_type == 'Series' -%}
-        {{ ("🆕📺 " ~ (item.name | default('Unknown Series') | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕📺 " ~ (item.name | default('Série inconnue') | truncate(200, True, '...'))) | tojson }}
       {%- elif item.item_type == 'Movie' -%}
-        {{ ("🆕🎬 " ~ (item.name | default('Unknown Movie') | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕🎬 " ~ (item.name | default('Film inconnu') | truncate(200, True, '...'))) | tojson }}
       {%- elif item.item_type == 'Season' -%}
-        {{ ("🆕📺 " ~ (item.series_name | default('Unknown Series')) ~ " - Season " ~ (item.season_number | default('?'))) | tojson }}
+        {{ ("🆕📺 " ~ (item.series_name | default('Série inconnue')) ~ " - Saison " ~ (item.season_number | default('?'))) | tojson }}
       {%- elif item.item_type == 'Audio' -%}
-        {{ ("🆕🎵 " ~ (item.name | default('Unknown Song') | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕🎵 " ~ (item.name | default('Chanson inconnue') | truncate(200, True, '...'))) | tojson }}
       {%- elif item.item_type == 'MusicAlbum' -%}
-        {{ ("🆕💿 " ~ (item.name | default('Unknown Album') | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕💿 " ~ (item.name | default('Album inconnu') | truncate(200, True, '...'))) | tojson }}
       {%- elif item.item_type == 'MusicArtist' -%}
-        {{ ("🆕🎤 " ~ (item.name | default('Unknown Artist') | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕🎤 " ~ (item.name | default('Artiste inconnu') | truncate(200, True, '...'))) | tojson }}
       {%- elif item.item_type == 'Photo' -%}
-        {{ ("🆕📷 " ~ (item.name | default('New Photo') | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕📷 " ~ (item.name | default('Nouvelle photo') | truncate(200, True, '...'))) | tojson }}
       {%- else -%}
-        {{ ("🆕📁 " ~ (item.name | default('Unknown ' ~ item.item_type) | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕📁 " ~ (item.name | default('Inconnu ' ~ item.item_type) | truncate(200, True, '...'))) | tojson }}
       {%- endif %},
 
       {#
-        Rich Description with Metadata Priority
-        ----------------------------------------
-        TV: TVDb overview → Jellyfin overview
-        Movies: TMDb overview → OMDb plot → Jellyfin overview
-        Music: Artist/album info from Jellyfin
+        Description riche avec priorité des métadonnées
+        ------------------------------------------------
+        TV : Résumé TVDb → Résumé Jellyfin
+        Films : Résumé TMDb → Intrigue OMDb → Résumé Jellyfin
+        Musique : Infos artiste/album de Jellyfin
       #}
       "description": {% if item.item_type == 'Episode' -%}
-        {{ ("**" ~ (item.name | default('Unknown Episode')) ~ "**" ~
-        ("\n\n" ~ "📝 Overview" ~ "\n" ~ ((item.tvdb.overview[:400] ~ '...') if item.tvdb.overview | length > 400 else item.tvdb.overview) if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0 else
+        {{ ("**" ~ (item.name | default('Épisode inconnu')) ~ "**" ~
+        ("\n\n" ~ "📝 Résumé" ~ "\n" ~ ((item.tvdb.overview[:400] ~ '...') if item.tvdb.overview | length > 400 else item.tvdb.overview) if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0 else
          "\n\n" ~ ((item.overview[:400] ~ '...') if item.overview | length > 400 else item.overview) if item.overview and item.overview | length > 0 else
          "")) | tojson }}
       {%- elif item.item_type in ['Series', 'Season'] -%}
-        {{ ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
+        {{ ("**" ~ (item.name | default('Titre inconnu')) ~ "**" ~
         (" (" ~ item.year ~ ")" if item.year else "") ~
         ("\n\n" ~ ((item.tvdb.overview[:400] ~ '...') if item.tvdb.overview | length > 400 else item.tvdb.overview) if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0 else
          "\n\n" ~ ((item.overview[:400] ~ '...') if item.overview | length > 400 else item.overview) if item.overview and item.overview | length > 0 else
          "")) | tojson }}
       {%- elif item.item_type == 'Movie' -%}
-        {{ ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
+        {{ ("**" ~ (item.name | default('Titre inconnu')) ~ "**" ~
         (" (" ~ item.year ~ ")" if item.year else "") ~
         ("\n\n" ~ ((item.tmdb.overview[:400] ~ '...') if item.tmdb.overview | length > 400 else item.tmdb.overview) if item.tmdb and item.tmdb.overview and item.tmdb.overview | length > 0 else
          "\n\n" ~ ((item.omdb.plot[:400] ~ '...') if item.omdb.plot | length > 400 else item.omdb.plot) if item.omdb and item.omdb.plot and item.omdb.plot != 'N/A' else
          "\n\n" ~ ((item.overview[:400] ~ '...') if item.overview | length > 400 else item.overview) if item.overview and item.overview | length > 0 else
          "")) | tojson }}
       {%- elif item.item_type == 'Audio' -%}
-        {{ ("**" ~ (item.name | default('Unknown Song')) ~ "**" ~
-        (" by " ~ (item.artists | join(', ')) if item.artists is defined and item.artists and item.artists | length > 0 else
-         " by " ~ item.album_artist if item.album_artist is defined and item.album_artist else
+        {{ ("**" ~ (item.name | default('Chanson inconnue')) ~ "**" ~
+        (" par " ~ (item.artists | join(', ')) if item.artists is defined and item.artists and item.artists | length > 0 else
+         " par " ~ item.album_artist if item.album_artist is defined and item.album_artist else
          "") ~
-        (" from **" ~ item.album ~ "**" if item.album is defined and item.album else
+        (" de **" ~ item.album ~ "**" if item.album is defined and item.album else
          "")) | tojson }}
       {%- elif item.item_type == 'MusicAlbum' -%}
-        {{ ("**" ~ (item.name | default('Unknown Album')) ~ "**" ~
-        (" by " ~ item.album_artist if item.album_artist is defined and item.album_artist else
-         " by " ~ (item.artists | join(', ')) if item.artists is defined and item.artists and item.artists | length > 0 else
+        {{ ("**" ~ (item.name | default('Album inconnu')) ~ "**" ~
+        (" par " ~ item.album_artist if item.album_artist is defined and item.album_artist else
+         " par " ~ (item.artists | join(', ')) if item.artists is defined and item.artists and item.artists | length > 0 else
          "")) | tojson }}
       {%- else -%}
-        {{ ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
+        {{ ("**" ~ (item.name | default('Titre inconnu')) ~ "**" ~
         ("\n\n" ~ ((item.overview[:400] ~ '...') if item.overview | length > 400 else item.overview) if item.overview and item.overview | length > 0 else
          "")) | tojson }}
       {%- endif %},
@@ -93,24 +93,24 @@
       "color": {{ color }},
 
       {#
-        Smart Field System with Metadata
-        ---------------------------------
-        Track field count to stay under Discord's 25-field limit
-        Show only essential fields for standard template
+        Système de champs intelligent avec métadonnées
+        -----------------------------------------------
+        Suit le nombre de champs pour rester sous la limite de 25 champs de Discord
+        Affiche uniquement les champs essentiels pour le modèle standard
       #}
       "fields": [
         {%- set fields_added = namespace(count=0) -%}
 
         {#
-          Technical Specifications Row
-          -----------------------------
-          Video quality, codec, and audio information
+          Ligne des spécifications techniques
+          ------------------------------------
+          Qualité vidéo, codec et informations audio
         #}
         {% if item.video_height and item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist'] -%}
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "📐 Quality",
+          "name": "📐 Qualité :",
           "value": {{ (item.video_height ~ "p" ~
             (" " ~ item.video_range if item.video_range and item.video_range != 'SDR' else "")) | tojson }},
           "inline": true
@@ -121,7 +121,7 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🎞️ Video",
+          "name": "🎞️ Vidéo :",
           "value": {{ ((item.video_codec | upper) ~
             (" " ~ item.video_profile if item.video_profile else "")) | tojson }},
           "inline": true
@@ -132,9 +132,9 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🔊 Audio",
+          "name": "🔊 Audio :",
           "value": {{ ((item.audio_codec | upper) ~
-            (" Stereo" if item.audio_channels == 2 else
+            (" Stéréo" if item.audio_channels == 2 else
              " 5.1" if item.audio_channels == 6 else
              " 7.1" if item.audio_channels == 8 else
              " " ~ item.audio_channels ~ "ch" if item.audio_channels else "")) | tojson }},
@@ -143,15 +143,15 @@
         {%- endif %}
 
         {#
-          Content Information Row
-          ------------------------
-          Runtime, genres, and file size with metadata fallbacks
+          Ligne d'informations de contenu
+          --------------------------------
+          Durée, genres et taille de fichier avec solutions de repli métadonnées
         #}
         {% if item.runtime_ticks or (item.omdb and item.omdb.runtime_minutes) -%}
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "⏱️ Runtime",
+          "name": "⏱️ Durée :",
           "value": {% if item.runtime_ticks -%}
               {%- set minutes = (item.runtime_ticks / 600000000) | int -%}
               {%- set hours = (minutes / 60) | int -%}
@@ -169,10 +169,10 @@
         {%- endif %}
 
         {#
-          Genre Information with Source Priority
-          ---------------------------------------
-          TV: TVDb genres → Jellyfin genres
-          Movies: TMDb genres → OMDb genres → Jellyfin genres
+          Informations de genre avec priorité de source
+          ----------------------------------------------
+          TV : Genres TVDb → Genres Jellyfin
+          Films : Genres TMDb → Genres OMDb → Genres Jellyfin
         #}
         {% set display_genres = null %}
         {% if item.item_type in ['Series', 'Season', 'Episode'] %}
@@ -197,7 +197,7 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🎭 Genres",
+          "name": "🎭 Genres :",
           "value": {{ ((display_genres[:3] | join(', ')) ~
             (" +" ~ (display_genres | length - 3) if display_genres | length > 3 else "")) | tojson }},
           "inline": true
@@ -208,17 +208,17 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "💾 Size",
+          "name": "💾 Taille :",
           "value": {{ (("%.1f" % (item.file_size / 1073741824)) ~ " GB") | tojson }},
           "inline": true
         }
         {%- endif %}
 
         {#
-          Comprehensive Ratings Field - Inline Display
-          ---------------------------------------------
-          Shows all available ratings from all sources in a single line
-          Format: IMDb: 8.5 • RT: 94% • MC: 84 • TMDb: 8.3 • TVDb: 9.2
+          Champ de notes complet - Affichage en ligne
+          --------------------------------------------
+          Affiche toutes les notes disponibles de toutes les sources sur une seule ligne
+          Format : IMDb: 8.5 • RT: 94% • MC: 84 • TMDb: 8.3 • TVDb: 9.2
         #}
         {% set has_ratings = false %}
         {% if (item.omdb and (item.omdb.imdb_rating or item.omdb.metascore or
@@ -232,7 +232,7 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "⭐ Ratings",
+          "name": "⭐ Notes :",
           "value": {%- set rating_parts = [] -%}
             {%- if item.omdb and item.omdb.imdb_rating and item.omdb.imdb_rating != 'N/A' -%}
               {%- if item.imdb_id -%}
@@ -278,9 +278,9 @@
       ]
 
       {#
-        Image Selection with Priority
-        ------------------------------
-        Priority: Jellyfin → OMDb poster → TVDb artwork → TMDb backdrop
+        Sélection d'image avec priorité
+        --------------------------------
+        Priorité : Jellyfin → Affiche OMDb → Artwork TVDb → Toile de fond TMDb
       #}
       {% if item.item_type == 'Episode' and item.series_id %}
       ,"thumbnail": {
@@ -305,9 +305,9 @@
       {% endif %}
 
       {#
-        Footer with Metadata Attribution
-        ---------------------------------
-        Shows data sources and server info
+        Pied de page avec attribution des métadonnées
+        ----------------------------------------------
+        Affiche les sources de données et les infos serveur
       #}
       ,"footer": {
         "text": {{ ((item.library_name or 'Jellyfin') ~

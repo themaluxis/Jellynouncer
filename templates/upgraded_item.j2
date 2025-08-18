@@ -1,71 +1,71 @@
 {#
-  Upgraded Item Jinja2 Discord Webhook Template for Jellynouncer
-  ===============================================================
+  Modèle Jinja2 Discord Webhook d'Élément Mis à Jour pour Jellynouncer
+  ======================================================================
 
-  This template generates Discord embed messages for upgraded media items.
-  Shows what changed and includes enriched metadata from multiple sources.
+  Ce modèle génère des messages embed Discord pour les éléments médias mis à jour.
+  Affiche ce qui a changé et inclut des métadonnées enrichies de plusieurs sources.
 
-  Metadata Source Priority:
-  ------------------------
-  - TV Shows/Episodes: TVDb → Jellyfin base properties
-  - Movies: TMDb → OMDb → Jellyfin base properties
+  Priorité des Sources de Métadonnées :
+  ------------------------------------
+  - Séries TV/Épisodes : TVDb → Propriétés de base Jellyfin
+  - Films : TMDb → OMDb → Propriétés de base Jellyfin
 
-  Change Types Supported:
-  ----------------------
-  - resolution: Video resolution upgrade
-  - codec: Video codec change
-  - audio_codec: Audio codec upgrade
-  - audio_channels: Channel configuration upgrade
-  - hdr_status: HDR upgrade
-  - file_size: File replacement
+  Types de Changements Supportés :
+  --------------------------------
+  - resolution : Mise à jour de la résolution vidéo
+  - codec : Changement de codec vidéo
+  - audio_codec : Mise à jour du codec audio
+  - audio_channels : Mise à jour de la configuration des canaux
+  - hdr_status : Mise à jour HDR
+  - file_size : Remplacement de fichier
 #}
 {
   "embeds": [
     {
       {#
-        Dynamic Title with Upgrade Type
-        --------------------------------
-        Shows specific upgrade type when only one change occurred
+        Titre Dynamique avec Type de Mise à Jour
+        -------------------------------------------
+        Affiche le type de mise à jour spécifique quand un seul changement s'est produit
       #}
       "title": {{ ("⬆️" ~ 
-        ("📺 " ~ (item.name | default('Unknown Episode') | truncate(180, True, '...')) if item.item_type == 'Episode' else
-         "📺 " ~ (item.name | default('Unknown Series') | truncate(180, True, '...')) if item.item_type == 'Series' else
-         "🎬 " ~ (item.name | default('Unknown Movie') | truncate(180, True, '...')) if item.item_type == 'Movie' else
-         "📺 " ~ (item.series_name | default('Unknown Series')) ~ " - Season " ~ (item.season_number | default('?') | string) if item.item_type == 'Season' else
-         "🎵 " ~ (item.name | default('Unknown Song') | truncate(180, True, '...')) if item.item_type == 'Audio' else
-         "💿 " ~ (item.name | default('Unknown Album') | truncate(180, True, '...')) if item.item_type == 'MusicAlbum' else
-         "🎤 " ~ (item.name | default('Unknown Artist') | truncate(180, True, '...')) if item.item_type == 'MusicArtist' else
+        ("📺 " ~ (item.name | default('Épisode Inconnu') | truncate(180, True, '...')) if item.item_type == 'Episode' else
+         "📺 " ~ (item.name | default('Série Inconnue') | truncate(180, True, '...')) if item.item_type == 'Series' else
+         "🎬 " ~ (item.name | default('Film Inconnu') | truncate(180, True, '...')) if item.item_type == 'Movie' else
+         "📺 " ~ (item.series_name | default('Série Inconnue')) ~ " - Saison " ~ (item.season_number | default('?') | string) if item.item_type == 'Season' else
+         "🎵 " ~ (item.name | default('Chanson Inconnue') | truncate(180, True, '...')) if item.item_type == 'Audio' else
+         "💿 " ~ (item.name | default('Album Inconnu') | truncate(180, True, '...')) if item.item_type == 'MusicAlbum' else
+         "🎤 " ~ (item.name | default('Artiste Inconnu') | truncate(180, True, '...')) if item.item_type == 'MusicArtist' else
          "📷 " ~ (item.name | default('Photo') | truncate(180, True, '...')) if item.item_type == 'Photo' else
-         "📁 " ~ (item.name | default('Unknown ' ~ item.item_type) | truncate(180, True, '...'))
-        ) ~ " " ~ (changes[0].type|title ~ " " if changes|length == 1 else "") ~ "Upgraded") | tojson }},
+         "📁 " ~ (item.name | default(item.item_type ~ ' Inconnu') | truncate(180, True, '...'))
+        ) ~ " " ~ (changes[0].type|title ~ " " if changes|length == 1 else "") ~ "Mis à Jour") | tojson }},
 
       {#
-        Rich Description with Metadata Priority
-        ----------------------------------------
-        Same metadata source priority as new_item template
+        Description Riche avec Priorité des Métadonnées
+        ---------------------------------------------------
+        Même priorité de source de métadonnées que le modèle new_item
       #}
       "description": {{ (
-        ("**" ~ (item.series_name | default('Unknown Series')) ~ "**\n" ~
+        ("**" ~ (item.series_name | default('Série Inconnue')) ~ "**\n" ~
          "S" ~ ("%02d" % (item.season_number | default(0))) ~ "E" ~ ("%02d" % (item.episode_number | default(0))) ~ "\n" ~
-         (item.name | default('Unknown Episode')) ~
+         (item.name | default('Épisode Inconnu')) ~
          ("\n\n" ~ ((item.tvdb.overview[:200] + '...') if item.tvdb.overview | length > 200 else item.tvdb.overview) if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0
           else "\n\n" ~ ((item.overview[:200] + '...') if item.overview | length > 200 else item.overview) if item.overview and item.overview | length > 0
           else "")
         ) if item.item_type == 'Episode' else
-        ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
+        ("**" ~ (item.name | default('Titre Inconnu')) ~ "**" ~
          (" (" ~ item.year ~ ")" if item.year else "") ~
          ("\n\n" ~ ((item.tvdb.overview[:200] + '...') if item.tvdb.overview | length > 200 else item.tvdb.overview) if item.tvdb and item.tvdb.overview and item.tvdb.overview | length > 0
           else "\n\n" ~ ((item.overview[:200] + '...') if item.overview | length > 200 else item.overview) if item.overview and item.overview | length > 0
           else "")
         ) if item.item_type in ['Series', 'Season'] else
-        ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
+        ("**" ~ (item.name | default('Titre Inconnu')) ~ "**" ~
          (" (" ~ item.year ~ ")" if item.year else "") ~
          ("\n\n" ~ ((item.tmdb.overview[:200] + '...') if item.tmdb.overview | length > 200 else item.tmdb.overview) if item.tmdb and item.tmdb.overview and item.tmdb.overview | length > 0
           else "\n\n" ~ ((item.omdb.plot[:200] + '...') if item.omdb.plot | length > 200 else item.omdb.plot) if item.omdb and item.omdb.plot and item.omdb.plot != 'N/A'
           else "\n\n" ~ ((item.overview[:200] + '...') if item.overview | length > 200 else item.overview) if item.overview and item.overview | length > 0
           else "")
         ) if item.item_type == 'Movie' else
-        ("**" ~ (item.name | default('Unknown Title')) ~ "**" ~
+        ("**" ~ (item.name | default('Titre Inconnu')) ~ "**" ~
          ("\n\n" ~ ((item.overview[:200] + '...') if item.overview | length > 200 else item.overview) if item.overview and item.overview | length > 0 else "")
         )
       ) | tojson }},
@@ -76,9 +76,9 @@
         {%- set fields_added = namespace(count=0) -%}
 
         {#
-          Upgrade Changes Display
-          ------------------------
-          Shows what was upgraded with before → after format
+          Affichage des Changements de Mise à Jour
+          -------------------------------------------
+          Montre ce qui a été mis à jour avec le format avant → après
         #}
         {% if changes and changes | length > 0 %}
           {% for change in changes[:3] %}
@@ -86,21 +86,21 @@
             {% set fields_added.count = fields_added.count + 1 %}
           {
             "name": "{% if change.type == 'resolution' -%}
-              📐 Resolution Upgrade
+              📐 Mise à Jour Résolution
             {%- elif change.type == 'codec' -%}
-              🎞️ Video Codec Upgrade
+              🎞️ Mise à Jour Codec Vidéo
             {%- elif change.type == 'audio_codec' -%}
-              🔊 Audio Codec Upgrade
+              🔊 Mise à Jour Codec Audio
             {%- elif change.type == 'audio_channels' -%}
-              🔊 Channel Upgrade
+              🔊 Mise à Jour Canaux
             {%- elif change.type == 'hdr_status' -%}
-              🌈 HDR Upgrade
+              🌈 Mise à Jour HDR
             {%- elif change.type == 'file_size' -%}
-              💾 File Replaced
+              💾 Fichier Remplacé
             {%- else -%}
               🔄 {{ change.type | title }}
             {%- endif %}",
-            "value": {{ ((change.old_value or 'Unknown') ~ " → **" ~ (change.new_value or 'Unknown') ~ "**") | tojson }},
+            "value": {{ ((change.old_value or 'Inconnu') ~ " → **" ~ (change.new_value or 'Inconnu') ~ "**") | tojson }},
             "inline": true
           }
           {% endfor %}
@@ -108,23 +108,23 @@
             {% if fields_added.count > 0 %},{% endif %}
             {% set fields_added.count = fields_added.count + 1 %}
           {
-            "name": "➕ Additional Changes",
-            "value": {{ ("+" ~ ((changes | length - 3) | string) ~ " more upgrades") | tojson }},
+            "name": "➕ Changements Supplémentaires",
+            "value": {{ ("+" ~ ((changes | length - 3) | string) ~ " mises à jour supplémentaires") | tojson }},
             "inline": true
           }
           {% endif %}
         {% endif %}
 
         {#
-          Current Technical Specifications
-          ---------------------------------
-          Shows the new/current specs after upgrade
+          Spécifications Techniques Actuelles
+          ------------------------------------
+          Affiche les nouvelles spécifications actuelles après mise à jour
         #}
         {% if item.video_height and item.item_type not in ['Audio', 'MusicAlbum', 'MusicArtist'] and fields_added.count < 24 %}
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "📐 Current Quality",
+          "name": "📐 Qualité Actuelle",
           "value": {{ ((item.video_height | string) ~ "p" ~
             (" " ~ item.video_range if item.video_range and item.video_range != 'SDR' else "")
           ) | tojson }},
@@ -136,7 +136,7 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🎞️ Video",
+          "name": "🎞️ Vidéo",
           "value": {{ ((item.video_codec | upper) ~
             (" " ~ item.video_profile if item.video_profile else "")
           ) | tojson }},
@@ -164,16 +164,16 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "💾 New Size",
+          "name": "💾 Nouvelle Taille",
           "value": {{ (("%.1f" % (item.file_size / 1073741824)) ~ " GB") | tojson }},
           "inline": true
         }
         {% endif %}
 
         {#
-          Inline Ratings Display
-          ----------------------
-          All ratings on one line separated by bullets
+          Affichage des Notes en Ligne
+          -----------------------------
+          Toutes les notes sur une ligne séparées par des puces
         #}
         {% set has_ratings = false %}
         {% if (item.omdb and (item.omdb.imdb_rating or item.omdb.metascore or
@@ -187,7 +187,7 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "⭐ Ratings",
+          "name": "⭐ Notes",
           "value": {{ (
             {%- set rating_parts = [] -%}
             {%- if item.omdb and item.omdb.imdb_rating and item.omdb.imdb_rating != 'N/A' -%}
@@ -214,7 +214,7 @@
         {% endif %}
       ],
 
-      {# Image selection with priority #}
+      {# Sélection d'image avec priorité #}
       {% if item.item_type == 'Episode' and item.series_id %}
       "thumbnail": {
         "url": {{ thumbnail_url | tojson }}

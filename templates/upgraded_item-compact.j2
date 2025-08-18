@@ -1,32 +1,32 @@
 {#
-  Upgraded Item Compact Template for Jellynouncer
-  ================================================
+  Modèle Compact d'Élément Mis à Jour pour Jellynouncer
+  ==========================================================
 
-  Minimal upgrade notification showing only essential changes.
-  Perfect for users who want brief upgrade notifications.
+  Notification de mise à jour minimale affichant uniquement les changements essentiels.
+  Parfait pour les utilisateurs qui souhaitent des notifications de mise à jour brèves.
 
-  Shows: Title, primary change, new quality
-  Omits: Detailed metadata, multiple ratings, full change list
+  Affiche : Titre, changement principal, nouvelle qualité
+  Omet : Métadonnées détaillées, notes multiples, liste complète des changements
 #}
 {
   "embeds": [
     {
       "title": {{ ("⬆️" ~ 
-        ("📺 " ~ (item.name | default('Unknown Episode') | truncate(200, True, '...')) if item.item_type == 'Episode' else
-         "📺 " ~ (item.name | default('Unknown Series') | truncate(200, True, '...')) if item.item_type == 'Series' else
-         "🎬 " ~ (item.name | default('Unknown Movie') | truncate(200, True, '...')) if item.item_type == 'Movie' else
-         "📺 " ~ (item.series_name | default('Unknown Series')) ~ " - Season " ~ (item.season_number | default('?') | string) if item.item_type == 'Season' else
-         "🎵 " ~ (item.name | default('Unknown Song') | truncate(200, True, '...')) if item.item_type == 'Audio' else
-         "💿 " ~ (item.name | default('Unknown Album') | truncate(200, True, '...')) if item.item_type == 'MusicAlbum' else
-         "🎤 " ~ (item.name | default('Unknown Artist') | truncate(200, True, '...')) if item.item_type == 'MusicArtist' else
+        ("📺 " ~ (item.name | default('Épisode Inconnu') | truncate(200, True, '...')) if item.item_type == 'Episode' else
+         "📺 " ~ (item.name | default('Série Inconnue') | truncate(200, True, '...')) if item.item_type == 'Series' else
+         "🎬 " ~ (item.name | default('Film Inconnu') | truncate(200, True, '...')) if item.item_type == 'Movie' else
+         "📺 " ~ (item.series_name | default('Série Inconnue')) ~ " - Saison " ~ (item.season_number | default('?') | string) if item.item_type == 'Season' else
+         "🎵 " ~ (item.name | default('Chanson Inconnue') | truncate(200, True, '...')) if item.item_type == 'Audio' else
+         "💿 " ~ (item.name | default('Album Inconnu') | truncate(200, True, '...')) if item.item_type == 'MusicAlbum' else
+         "🎤 " ~ (item.name | default('Artiste Inconnu') | truncate(200, True, '...')) if item.item_type == 'MusicArtist' else
          "📷 " ~ (item.name | default('Photo') | truncate(200, True, '...')) if item.item_type == 'Photo' else
-         "📁 " ~ (item.name | default('Unknown ' ~ item.item_type) | truncate(200, True, '...'))
-        ) ~ " Upgraded") | tojson }},
+         "📁 " ~ (item.name | default(item.item_type ~ ' Inconnu') | truncate(200, True, '...'))
+        ) ~ " Mis à Jour") | tojson }},
 
       {#
-        Simplified Description
-        ----------------------
-        Just the title and main upgrade info
+        Description Simplifiée
+        -----------------------
+        Juste le titre et les informations principales de mise à jour
       #}
       "description": {{ (
         ("**" ~ item.series_name ~ "** - " ~ item.name) if item.item_type == 'Episode'
@@ -39,15 +39,15 @@
         {% set fields_added = namespace(count=0) %}
 
         {#
-          Show only the primary upgrade
+          Afficher uniquement la mise à jour principale
         #}
         {% if changes and changes | length > 0 %}
           {% set primary_change = changes[0] %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🔄 Upgraded",
-          "value": {{ ((primary_change.old_value or 'Unknown') ~ " → **" ~ (primary_change.new_value or 'Unknown') ~ "**" ~
-            (" (+" ~ ((changes | length - 1) | string) ~ " more)" if changes | length > 1 else "")
+          "name": "🔄 Mis à Jour",
+          "value": {{ ((primary_change.old_value or 'Inconnu') ~ " → **" ~ (primary_change.new_value or 'Inconnu') ~ "**" ~
+            (" (+" ~ ((changes | length - 1) | string) ~ " de plus)" if changes | length > 1 else "")
           ) | tojson }},
           "inline": true
         }
@@ -56,7 +56,7 @@
         {% if item.video_height %}
           {% if fields_added.count > 0 %},{% endif %}
         {
-          "name": "📐 New Quality",
+          "name": "📐 Nouvelle Qualité",
           "value": {{ ((item.video_height | string) ~ "p" ~
             (" " ~ item.video_range if item.video_range and item.video_range != 'SDR' else "")
           ) | tojson }},

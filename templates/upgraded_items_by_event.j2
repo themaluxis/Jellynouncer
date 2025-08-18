@@ -1,18 +1,18 @@
 {#
-  Upgraded Items By Event Template for Jellynouncer
-  ==================================================
+  Modèle d'Éléments Mis à Jour par Événement pour Jellynouncer
+  ===================================================================
 
-  Groups multiple upgraded items into a single notification.
-  Shows upgrade changes for each item with metadata.
+  Regroupe plusieurs éléments mis à jour en une seule notification.
+  Affiche les changements de mise à jour pour chaque élément avec métadonnées.
 
-  Optimized for: Multiple upgrades at once
+  Optimisé pour : Plusieurs mises à jour simultanées
 #}
 {
   "embeds": [
     {
-      "title": {{ ("⬆️ " ~ (total_items | string) ~ " Items Upgraded") | tojson }},
+      "title": {{ ("⬆️ " ~ (total_items | string) ~ " Éléments Mis à Jour") | tojson }},
 
-      "description": "The following items have been upgraded in Jellyfin:",
+      "description": "Les éléments suivants ont été mis à jour dans Jellyfin :",
 
       "color": {{ color }},
 
@@ -20,9 +20,9 @@
         {% set field_count = namespace(value=0) %}
 
         {#
-          Process each upgraded item
-          ---------------------------
-          Show item name and primary change
+          Traiter chaque élément mis à jour
+          --------------------------------------
+          Afficher le nom de l'élément et le changement principal
         #}
         {% for item_data in upgraded_items[:20] %}
           {% if field_count.value > 0 %},{% endif %}
@@ -37,20 +37,20 @@
             {%- endif -%}
 
             {%- if item_data.changes and item_data.changes|length > 0 -%}
-              \n🔄 **Upgrades:**
+              \n🔄 **Mises à jour :**
               {%- for change in item_data.changes[:2] %}
-                \n• {{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**
+                \n• {{ change.old_value or 'Inconnu' }} → **{{ change.new_value or 'Inconnu' }}**
               {%- endfor -%}
-              {%- if item_data.changes|length > 2 %} (+{{ item_data.changes|length - 2 }} more){% endif -%}
+              {%- if item_data.changes|length > 2 %} (+{{ item_data.changes|length - 2 }} de plus){% endif -%}
             {%- endif -%}
 
             {%- if item_data.item.video_height -%}
-              \n📐 Now: {{ item_data.item.video_height }}p
+              \n📐 Maintenant : {{ item_data.item.video_height }}p
               {%- if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif -%}
             {%- endif -%}
 
             {#
-              Add primary rating if available
+              Ajouter la note principale si disponible
             #}
             {%- if item_data.item.omdb and item_data.item.omdb.imdb_rating and item_data.item.omdb.imdb_rating != 'N/A' -%}
               \n⭐ IMDb: {{ item_data.item.omdb.imdb_rating }}
@@ -67,8 +67,8 @@
         {% if upgraded_items|length > 20 %}
           {% if field_count.value > 0 %},{% endif %}
         {
-          "name": "➕ Additional Upgrades",
-          "value": "And {{ upgraded_items|length - 20 }} more items upgraded...",
+          "name": "➕ Mises à Jour Supplémentaires",
+          "value": "Et {{ upgraded_items|length - 20 }} éléments mis à jour de plus...",
           "inline": false
         }
         {% endif %}

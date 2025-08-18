@@ -1,28 +1,28 @@
 {#
-  New Items By Type Template for Jellynouncer
-  ============================================
+  Modèle de Nouveaux Éléments par Type pour Jellynouncer
+  ==========================================================
 
-  Groups new items by media type (movies, TV, music, other).
-  Shows category-specific information with metadata enrichment.
+  Regroupe les nouveaux éléments par type de média (films, TV, musique, autre).
+  Affiche des informations spécifiques à la catégorie avec enrichissement des métadonnées.
 
-  Categories: movies, tv, music, other
-  Discord limits: Respects 25-field limit per embed
+  Catégories : films, tv, musique, autre
+  Limites Discord : Respecte la limite de 25 champs par embed
 #}
 {
   "embeds": [
     {% if category == 'movies' %}
     {
-      "title": {{ ("🎬 New Movies Added (" ~ (total_items | string) ~ ")") | tojson }},
-      "description": "The following movies have been added to Jellyfin:",
+      "title": {{ ("🎬 Nouveaux Films Ajoutés (" ~ (total_items | string) ~ ")") | tojson }},
+      "description": "Les films suivants ont été ajoutés à Jellyfin :",
       "color": 65280,
 
       "fields": [
         {% set field_count = namespace(value=0) %}
 
         {#
-          Process movies with full metadata
-          ----------------------------------
-          Include ratings, year, quality info
+          Traiter les films avec métadonnées complètes
+          --------------------------------------------------
+          Inclure notes, année, informations de qualité
         #}
         {% for item_data in new_items[:8] %}
           {% if field_count.value > 0 %},{% endif %}
@@ -34,8 +34,8 @@
 
           "value": {{ (
             {#
-              Movie overview with metadata priority
-              --------------------------------------
+              Aperçu du film avec priorité des métadonnées
+              -----------------------------------------------------
               TMDb → OMDb → Jellyfin
             #}
             (\"*\" ~ ((item_data.item.tmdb.overview[:150] + '...') if item_data.item.tmdb.overview|length > 150 else item_data.item.tmdb.overview) ~ \"*\\n\" if item_data.item.tmdb and item_data.item.tmdb.overview
@@ -54,9 +54,9 @@
              if item_data.item.audio_codec else \"\") ~
 
             {#
-              Inline ratings display for movies
-              ----------------------------------
-              Show all available ratings on one line
+              Affichage des notes en ligne pour les films
+              -------------------------------------------
+              Afficher toutes les notes disponibles sur une ligne
             #}
             {%- set rating_parts = [] -%}
             {%- if item_data.item.omdb and item_data.item.omdb.imdb_rating and item_data.item.omdb.imdb_rating != 'N/A' -%}
@@ -71,8 +71,8 @@
             (\"\\n⭐ \" ~ (rating_parts | join(' • ')) if rating_parts|length > 0 else \"\") ~
 
             {#
-              Genre display with metadata priority
-              -------------------------------------
+              Affichage des genres avec priorité des métadonnées
+              ---------------------------------------------------------
               TMDb → OMDb → Jellyfin
             #}
             {%- set display_genres = null -%}
@@ -93,8 +93,8 @@
         {% if new_items|length > 8 %}
           {% if field_count.value > 0 %},{% endif %}
         {
-          "name": "➕ Additional Movies",
-          "value": {{ ("And " ~ ((new_items|length - 8) | string) ~ " more movies added...") | tojson }},
+          "name": "➕ Films Supplémentaires",
+          "value": {{ ("Et " ~ ((new_items|length - 8) | string) ~ " films ajoutés de plus...") | tojson }},
           "inline": false
         }
         {% endif %}
@@ -103,26 +103,26 @@
 
     {% elif category == 'tv' %}
     {
-      "title": {{ ("📺 New TV Content Added (" ~ (total_items | string) ~ ")") | tojson }},
-      "description": "The following TV shows/episodes have been added to Jellyfin:",
+      "title": {{ ("📺 Nouveau Contenu TV Ajouté (" ~ (total_items | string) ~ ")") | tojson }},
+      "description": "Les séries TV/épisodes suivants ont été ajoutés à Jellyfin :",
       "color": 65280,
 
       "fields": [
         {% set field_count = namespace(value=0) %}
 
         {#
-          Process TV content with TVDb priority
-          --------------------------------------
-          TVDb → Jellyfin base properties
+          Traiter le contenu TV avec priorité TVDb
+          -------------------------------------------
+          TVDb → Propriétés de base Jellyfin
         #}
         {% for item_data in new_items[:8] %}
           {% if field_count.value > 0 %},{% endif %}
           {% set field_count.value = field_count.value + 1 %}
         {
           "name": "{% if item_data.item.item_type == 'Episode' -%}
-              📺 Episode: {{ item_data.item.series_name }} - {{ item_data.item.name }}
+              📺 Épisode : {{ item_data.item.series_name }} - {{ item_data.item.name }}
             {%- elif item_data.item.item_type == 'Series' -%}
-              📺 Series: {{ item_data.item.name }}
+              📺 Série : {{ item_data.item.name }}
             {%- else -%}
               📺 {{ item_data.item.item_type }}: {{ item_data.item.name }}
             {%- endif %}",
@@ -133,8 +133,8 @@
             {%- endif -%}
 
             {#
-              TV overview with TVDb priority
-              -------------------------------
+              Aperçu TV avec priorité TVDb
+              --------------------------------
             #}
             {%- if item_data.item.tvdb and item_data.item.tvdb.overview -%}
               \n*{{ (item_data.item.tvdb.overview[:150] + '...') if item_data.item.tvdb.overview|length > 150 else item_data.item.tvdb.overview }}*
@@ -152,8 +152,8 @@
             {%- endif -%}
 
             {#
-              TV ratings with inline display
-              -------------------------------
+              Notes TV avec affichage en ligne
+              ----------------------------------
             #}
             {%- set rating_parts = [] -%}
             {%- if item_data.item.tvdb and item_data.item.tvdb.rating -%}
@@ -167,8 +167,8 @@
             {%- endif -%}
 
             {#
-              TV genres with TVDb priority
-              -----------------------------
+              Genres TV avec priorité TVDb
+              --------------------------------
             #}
             {%- if item_data.item.tvdb and item_data.item.tvdb.genres -%}
               \n🎭 {{ item_data.item.tvdb.genres[:3] | join(', ') }}
@@ -177,7 +177,7 @@
             {%- endif -%}
 
             {%- if item_data.item.tvdb and item_data.item.tvdb.status -%}
-              \n📺 Status: {{ item_data.item.tvdb.status }}
+              \n📺 Statut : {{ item_data.item.tvdb.status }}
             {%- endif %}",
 
           "inline": false
@@ -187,8 +187,8 @@
         {% if new_items|length > 8 %}
           {% if field_count.value > 0 %},{% endif %}
         {
-          "name": "➕ Additional TV Content",
-          "value": {{ ("And " ~ ((new_items|length - 8) | string) ~ " more TV items added...") | tojson }},
+          "name": "➕ Contenu TV Supplémentaire",
+          "value": {{ ("Et " ~ ((new_items|length - 8) | string) ~ " éléments TV ajoutés de plus...") | tojson }},
           "inline": false
         }
         {% endif %}
@@ -197,17 +197,17 @@
 
     {% elif category == 'music' %}
     {
-      "title": {{ ("🎵 New Music Added (" ~ (total_items | string) ~ ")") | tojson }},
-      "description": "The following music has been added to Jellyfin:",
+      "title": {{ ("🎵 Nouvelle Musique Ajoutée (" ~ (total_items | string) ~ ")") | tojson }},
+      "description": "La musique suivante a été ajoutée à Jellyfin :",
       "color": 65280,
 
       "fields": [
         {% set field_count = namespace(value=0) %}
 
         {#
-          Process music content
-          ---------------------
-          Music uses Jellyfin properties only (no external metadata)
+          Traiter le contenu musical
+          ----------------------------
+          La musique utilise uniquement les propriétés Jellyfin (pas de métadonnées externes)
         #}
         {% for item_data in new_items[:10] %}
           {% if field_count.value > 0 %},{% endif %}
@@ -225,11 +225,11 @@
 
           "value": "
             {%- if item_data.item.item_type == 'Audio' -%}
-              {%- if item_data.item.album %}Album: {{ item_data.item.album }}\n{% endif -%}
-              {%- if item_data.item.artists %}Artist: {{ item_data.item.artists | join(', ') }}\n{% endif -%}
+              {%- if item_data.item.album %}Album : {{ item_data.item.album }}\n{% endif -%}
+              {%- if item_data.item.artists %}Artiste : {{ item_data.item.artists | join(', ') }}\n{% endif -%}
             {%- elif item_data.item.item_type == 'MusicAlbum' -%}
-              {%- if item_data.item.album_artist %}Artist: {{ item_data.item.album_artist }}\n{% endif -%}
-              {%- if item_data.item.year %}Year: {{ item_data.item.year }}\n{% endif -%}
+              {%- if item_data.item.album_artist %}Artiste : {{ item_data.item.album_artist }}\n{% endif -%}
+              {%- if item_data.item.year %}Année : {{ item_data.item.year }}\n{% endif -%}
             {%- endif -%}
 
             {%- if item_data.item.audio_codec -%}
@@ -254,8 +254,8 @@
         {% if new_items|length > 10 %}
           {% if field_count.value > 0 %},{% endif %}
         {
-          "name": "➕ Additional Music",
-          "value": {{ ("And " ~ ((new_items|length - 10) | string) ~ " more music items added...") | tojson }},
+          "name": "➕ Musique Supplémentaire",
+          "value": {{ ("Et " ~ ((new_items|length - 10) | string) ~ " éléments musicaux ajoutés de plus...") | tojson }},
           "inline": false
         }
         {% endif %}
@@ -264,12 +264,12 @@
 
     {% else %}
     {#
-      Other category (photos, books, etc.)
-      -------------------------------------
+      Autre catégorie (photos, livres, etc.)
+      -----------------------------------------
     #}
     {
-      "title": {{ ("📁 New Items Added (" ~ (total_items | string) ~ ")") | tojson }},
-      "description": "The following items have been added to Jellyfin:",
+      "title": {{ ("📁 Nouveaux Éléments Ajoutés (" ~ (total_items | string) ~ ")") | tojson }},
+      "description": "Les éléments suivants ont été ajoutés à Jellyfin :",
       "color": 65280,
 
       "fields": [
@@ -286,7 +286,7 @@
             {%- if item_data.item.overview -%}
               {{ (item_data.item.overview[:100] + '...') if item_data.item.overview|length > 100 else item_data.item.overview }}
             {%- else -%}
-              {{ item_data.item.item_type }} added
+              {{ item_data.item.item_type }} ajouté
             {%- endif -%}
 
             {%- if item_data.item.width and item_data.item.height -%}
@@ -304,8 +304,8 @@
         {% if new_items|length > 15 %}
           {% if field_count.value > 0 %},{% endif %}
         {
-          "name": "➕ Additional Items",
-          "value": {{ ("And " ~ ((new_items|length - 15) | string) ~ " more items added...") | tojson }},
+          "name": "➕ Éléments Supplémentaires",
+          "value": {{ ("Et " ~ ((new_items|length - 15) | string) ~ " éléments ajoutés de plus...") | tojson }},
           "inline": false
         }
         {% endif %}

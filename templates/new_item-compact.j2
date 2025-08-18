@@ -1,40 +1,40 @@
 {#
-  New Item Compact Template for Jellynouncer
-  ===========================================
+  Modèle Compact de Nouvel Élément pour Jellynouncer
+  ==================================================
 
-  Minimal notification with only essential information.
-  Designed for users who prefer brief notifications.
+  Notification minimale avec seulement les informations essentielles.
+  Conçu pour les utilisateurs qui préfèrent des notifications brèves.
 
-  Shows: Title, basic quality info, and primary rating only
-  Omits: Detailed metadata, multiple ratings, genres
+  Affiche : Titre, informations de qualité de base, et note principale uniquement
+  Omet : Métadonnées détaillées, notes multiples, genres
 #}
 {
   "embeds": [
     {
       "title": {% if item.item_type == 'Episode' -%}
-        {{ ("🆕📺 " ~ (item.name | default('Unknown Episode') | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕📺 " ~ (item.name | default('Épisode inconnu') | truncate(200, True, '…'))) | tojson }}
       {%- elif item.item_type == 'Series' -%}
-        {{ ("🆕📺 " ~ (item.name | default('Unknown Series') | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕📺 " ~ (item.name | default('Série inconnue') | truncate(200, True, '…'))) | tojson }}
       {%- elif item.item_type == 'Movie' -%}
-        {{ ("🆕🎬 " ~ (item.name | default('Unknown Movie') | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕🎬 " ~ (item.name | default('Film inconnu') | truncate(200, True, '…'))) | tojson }}
       {%- elif item.item_type == 'Season' -%}
-        {{ ("🆕📺 " ~ (item.series_name | default('Unknown Series')) ~ " - Season " ~ (item.season_number | default('?'))) | tojson }}
+        {{ ("🆕📺 " ~ (item.series_name | default('Série inconnue')) ~ " - Saison " ~ (item.season_number | default('?'))) | tojson }}
       {%- elif item.item_type == 'Audio' -%}
-        {{ ("🆕🎵 " ~ (item.name | default('Unknown Song') | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕🎵 " ~ (item.name | default('Chanson inconnue') | truncate(200, True, '…'))) | tojson }}
       {%- elif item.item_type == 'MusicAlbum' -%}
-        {{ ("🆕💿 " ~ (item.name | default('Unknown Album') | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕💿 " ~ (item.name | default('Album inconnu') | truncate(200, True, '…'))) | tojson }}
       {%- elif item.item_type == 'MusicArtist' -%}
-        {{ ("🆕🎤 " ~ (item.name | default('Unknown Artist') | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕🎤 " ~ (item.name | default('Artiste inconnu') | truncate(200, True, '…'))) | tojson }}
       {%- elif item.item_type == 'Photo' -%}
-        {{ ("🆕📷 " ~ (item.name | default('New Photo') | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕📷 " ~ (item.name | default('Nouvelle photo') | truncate(200, True, '…'))) | tojson }}
       {%- else -%}
-        {{ ("🆕📁 " ~ (item.name | default('Unknown ' ~ item.item_type) | truncate(200, True, '...'))) | tojson }}
+        {{ ("🆕📁 " ~ (item.name | default(item.item_type ~ ' inconnu') | truncate(200, True, '…'))) | tojson }}
       {%- endif %},
 
       {#
-        Simplified Description
-        ----------------------
-        Just the title and basic identifying info
+        Description Simplifiée
+        -----------------------
+        Juste le titre et les informations d'identification de base
       #}
       "description": {% if item.item_type == 'Episode' -%}
         {{ ("**" ~ item.series_name ~ "** - " ~ item.name) | tojson }}
@@ -46,9 +46,9 @@
       "color": {{ color }},
 
       {#
-        Minimal Fields
-        --------------
-        Only show quality and primary rating
+        Champs Minimaux
+        ---------------
+        Afficher uniquement la qualité et la note principale
       #}
       "fields": [
         {% set fields_added = namespace(count=0) %}
@@ -56,7 +56,7 @@
         {% if item.video_height %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "📐 Quality",
+          "name": "📐 Qualité :",
           "value": {{ (item.video_height ~ "p" ~
             (" " ~ item.video_range if item.video_range and item.video_range != 'SDR' else "")) | tojson }},
           "inline": true
@@ -64,13 +64,13 @@
         {% endif %}
 
         {#
-          Show only IMDb rating for movies/TV, no rating for music
+          Afficher uniquement la note IMDb pour les films/TV, aucune note pour la musique
         #}
         {% if item.omdb and item.omdb.imdb_rating and item.omdb.imdb_rating != 'N/A' %}
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "⭐ Rating",
+          "name": "⭐ Note :",
           "value": {{ ("IMDb: " ~ item.omdb.imdb_rating ~ "/10") | tojson }},
           "inline": true
         }
@@ -78,7 +78,7 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "⭐ Rating", 
+          "name": "⭐ Note :", 
           "value": {{ ("TVDb: " ~ item.tvdb.rating ~ "/10") | tojson }},
           "inline": true
         }
