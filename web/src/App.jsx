@@ -6,17 +6,35 @@ import Overview from './pages/Overview'
 import Config from './pages/Config'
 import Templates from './pages/Templates'
 import Logs from './pages/Logs'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 function App() {
-  const { isAuthenticated, checkAuth } = useAuthStore()
+  const { isAuthenticated, authRequired, checkAuth } = useAuthStore()
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     // Check if user is authenticated on app load
-    checkAuth()
+    const initAuth = async () => {
+      try {
+        await checkAuth()
+      } finally {
+        setLoading(false)
+      }
+    }
+    initAuth()
   }, [checkAuth])
 
-  if (!isAuthenticated) {
+  // Show loading spinner while checking auth
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-900">
+        <div className="text-white">Loading...</div>
+      </div>
+    )
+  }
+
+  // Only show login if auth is required and user is not authenticated
+  if (authRequired && !isAuthenticated) {
     return <Login />
   }
 

@@ -828,10 +828,21 @@ async def log_requests(request: Request, call_next):
     
     return response
 
-# Configure CORS
+# Configure CORS - Allow all origins by default for local/Docker deployments
+# This avoids authentication issues when accessing from different IPs
+# In production, you can restrict origins via environment variable
+allowed_origins = ["*"]  # Allow all origins by default
+
+# Allow restricting origins via environment variable if needed
+custom_origins = os.environ.get("JELLYNOUNCER_ALLOWED_ORIGINS", "")
+if custom_origins and custom_origins != "*":
+    # If specific origins are set, use them instead
+    allowed_origins = [origin.strip() for origin in custom_origins.split(",")]
+    logger.info(f"CORS restricted to origins: {allowed_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:1985"],  # Update for production
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

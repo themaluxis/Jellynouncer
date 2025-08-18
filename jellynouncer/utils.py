@@ -674,7 +674,23 @@ def get_logger(name: str = "jellynouncer") -> logging.Logger:
         from its parent logger in the hierarchy, so the main logger should
         be configured first with setup_logging().
     """
-    return logging.getLogger(name)
+    logger = logging.getLogger(name)
+    
+    # If this is a jellynouncer logger and the root logger has colored handlers,
+    # ensure this logger uses them too
+    if name.startswith("jellynouncer"):
+        root_logger = logging.getLogger("jellynouncer")
+        
+        # If root has handlers but this logger doesn't, share the handlers
+        if root_logger.handlers and not logger.handlers:
+            # Share the same handlers to ensure consistent formatting
+            for handler in root_logger.handlers:
+                logger.addHandler(handler)
+            logger.setLevel(root_logger.level)
+            # Prevent propagation to avoid duplicate logs
+            logger.propagate = False
+    
+    return logger
 
 
 def format_bytes(bytes_value: int) -> str:

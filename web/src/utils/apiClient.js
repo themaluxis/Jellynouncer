@@ -1,8 +1,19 @@
 import axios from 'axios';
 
 // Create axios instance with default config
+// Use current host if no explicit URL is set (works for both localhost and IP access)
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  // Use the same host as the frontend but on port 1985
+  const protocol = window.location.protocol;
+  const hostname = window.location.hostname;
+  return `${protocol}//${hostname}:1985`;
+};
+
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:1985',
+  baseURL: getApiBaseUrl(),
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
@@ -70,8 +81,18 @@ apiClient.interceptors.response.use(
 );
 
 // Webhook service API client (port 1984)
+const getWebhookBaseUrl = () => {
+  if (import.meta.env.VITE_WEBHOOK_URL) {
+    return import.meta.env.VITE_WEBHOOK_URL;
+  }
+  // Use the same host as the frontend but on port 1984
+  const protocol = window.location.protocol;
+  const hostname = window.location.hostname;
+  return `${protocol}//${hostname}:1984`;
+};
+
 const webhookClient = axios.create({
-  baseURL: import.meta.env.VITE_WEBHOOK_URL || 'http://localhost:1984',
+  baseURL: getWebhookBaseUrl(),
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
