@@ -74,23 +74,6 @@ The service acts as a smart filter between Jellyfin's webhook events and Discord
 > 
 > This software is currently in beta development. While core functionality is stable, you may encounter bugs or edge cases. Please report any issues you find to help improve the service.
 
-## 🆕 What's New in v2.0
-
-> [!NOTE]
-> Version 2.0 introduces a comprehensive web interface for managing and monitoring Jellynouncer without editing configuration files directly.
-
-### Major Updates
-
-| Feature | Description |
-|---------|------------|
-| **📊 Web Interface** | Full-featured management UI on port 1985 |
-| **⚛️ React 19** | Latest React with improved performance |
-| **📦 Vite 6** | Modern build tooling for faster development |
-| **🔒 Security** | Optional JWT authentication and SSL/TLS support |
-| **📝 Template Editor** | Monaco editor with Jinja2 syntax highlighting |
-| **📜 Real-time Logs** | Live log viewing with filtering and search |
-| **🎨 Modern UI** | Tailwind CSS with dark mode support |
-
 ## ✨ Key Features
 
 ### 🌐 Web Interface
@@ -166,7 +149,7 @@ The service acts as a smart filter between Jellyfin's webhook events and Discord
 
 - **Database Persistence**: SQLite with WAL mode for concurrent access and change tracking
 - **Intelligent Queue System**: Never lose notifications with automatic queueing during rate limits
-  - Handles up to 1000 queued notifications for large library updates
+  - Handles up to 500 queued notifications for large library updates
   - Automatic retry with exponential backoff (3 attempts)
   - Real-time queue statistics via web interface or `/stats` endpoint
   - Graceful processing during Discord rate limits (30/minute)
@@ -196,7 +179,7 @@ The service acts as a smart filter between Jellyfin's webhook events and Discord
 
 - **Jellyfin Server** 10.8+ with [Webhook Plugin](https://github.com/jellyfin/jellyfin-plugin-webhook) installed
 - **Discord Server** with webhook creation permissions
-- **Docker** (recommended) or Python 3.11+ for manual installation
+- **Docker** (recommended) or Python 3.13+ for manual installation
 
 ### Docker Compose (Recommended)
 
