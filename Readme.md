@@ -74,12 +74,7 @@ The service acts as a smart filter between Jellyfin's webhook events and Discord
 > 
 > This software is currently in beta development. While core functionality is stable, you may encounter bugs or edge cases. Please report any issues you find to help improve the service.
 
-## 🆕 What's New in v2.0
-
-> [!NOTE]
-> Version 2.0 introduces a comprehensive web interface for managing and monitoring Jellynouncer without editing configuration files directly.
-
-### Major Updates
+### WebUI Features
 
 | Feature | Description |
 |---------|------------|
@@ -196,7 +191,7 @@ The service acts as a smart filter between Jellyfin's webhook events and Discord
 
 - **Jellyfin Server** 10.8+ with [Webhook Plugin](https://github.com/jellyfin/jellyfin-plugin-webhook) installed
 - **Discord Server** with webhook creation permissions
-- **Docker** (recommended) or Python 3.11+ for manual installation
+- **Docker** (recommended) or Python 3.13+ for manual installation
 
 ### Docker Compose (Recommended)
 
