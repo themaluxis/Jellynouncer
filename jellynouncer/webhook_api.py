@@ -102,9 +102,11 @@ from jellynouncer.network_utils import log_jellynouncer_startup
 webhook_service: Optional[WebhookService] = None
 
 
-@asynccontextmanager
-async def lifespan(app_instance: FastAPI):
+@asynccontextmanager  
+async def _lifespan_impl(app_instance: FastAPI):
     """
+    Internal lifespan implementation.
+    
     Async context manager for FastAPI application lifespan management.
 
     This function handles the complete lifecycle of the Jellynouncer application,
@@ -251,6 +253,22 @@ async def lifespan(app_instance: FastAPI):
             print(f"Error during shutdown: {e}")
             import traceback
             traceback.print_exc()
+
+
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):
+    """
+    Robust lifespan wrapper that handles CancelledError gracefully.
+    
+    This wrapper prevents CancelledError from propagating up to Uvicorn
+    and causing the application to exit with an error code.
+    """
+    try:
+        async with _lifespan_impl(app_instance):
+            yield
+    except asyncio.CancelledError:
+        # Suppress CancelledError to prevent Uvicorn from treating it as an error
+        pass
 
 
 # Create FastAPI application with lifespan management
