@@ -631,6 +631,15 @@ class ServerConfig(BaseModel):
     host: str = Field(default="0.0.0.0")
     port: int = Field(default=1984, ge=1024, le=65535)  # Avoid system ports (<1024)
     log_level: str = Field(default="INFO")
+    run_mode: str = Field(default="all", description="Which services to run: all, webhook, or web")
+    data_dir: str = Field(default="/app/data", description="Directory for application data")
+    log_dir: str = Field(default="/app/logs", description="Directory for log files")
+    environment: str = Field(default="production", description="Environment mode: production or development")
+    development_mode: bool = Field(default=False, description="Enable development features like auto-reload")
+    show_docker_interfaces: bool = Field(default=False, description="Show Docker network interfaces in startup messages")
+    allowed_hosts: List[str] = Field(default_factory=list, description="Allowed hosts for security (empty = allow all)")
+    force_color_output: bool = Field(default=False, description="Force colored console output even without TTY")
+    disable_color_output: bool = Field(default=False, description="Disable all colored console output")
 
     # noinspection PyDecorator
     @field_validator('log_level')
@@ -674,7 +683,62 @@ class ServerConfig(BaseModel):
         if v not in valid_levels:
             raise ValueError(f"Invalid log level. Must be one of: {valid_levels}")
         return v
+    
+    # noinspection PyDecorator
+    @field_validator('run_mode')
+    @classmethod
+    def validate_run_mode(cls, v: str) -> str:
+        """Validate run mode is one of the allowed values."""
+        valid_modes = ['all', 'both', 'webhook', 'web']
+        v_lower = v.lower()
+        if v_lower not in valid_modes:
+            raise ValueError(f"Invalid run mode: {v}. Must be one of {valid_modes}")
+        return v_lower
+    
+    # noinspection PyDecorator
+    @field_validator('environment')
+    @classmethod
+    def validate_environment(cls, v: str) -> str:
+        """Validate environment is either production or development."""
+        valid_envs = ['production', 'development']
+        v_lower = v.lower()
+        if v_lower not in valid_envs:
+            raise ValueError(f"Invalid environment: {v}. Must be one of {valid_envs}")
+        return v_lower
 
+
+
+# ==================== WEB INTERFACE CONFIGURATION ====================
+
+class WebInterfaceConfig(BaseModel):
+    """
+    Web interface configuration for the management UI.
+    
+    Controls the web-based management interface that allows configuration
+    and monitoring of the Jellynouncer service.
+    
+    Attributes:
+        enabled (bool): Whether the web interface is enabled
+        port (int): Port for the web interface (default: 1985)
+        host (str): Host to bind the web interface to
+        jwt_secret (Optional[str]): Secret key for JWT tokens (auto-generated if None)
+        auth_enabled (bool): Whether authentication is required
+        ssl_enabled (bool): Whether SSL/HTTPS is enabled
+        ssl_cert_path (Optional[str]): Path to SSL certificate file
+        ssl_key_path (Optional[str]): Path to SSL private key file
+        ssl_port (int): Port for HTTPS connections (default: 9000)
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(default=True, description="Enable web management interface")
+    port: int = Field(default=1985, ge=1024, le=65535, description="HTTP port for web interface")
+    host: str = Field(default="0.0.0.0", description="Host to bind web interface to")
+    jwt_secret: Optional[str] = Field(default=None, description="Secret for JWT tokens (auto-generated if None)")
+    auth_enabled: bool = Field(default=False, description="Require authentication for web interface")
+    ssl_enabled: bool = Field(default=False, description="Enable HTTPS for web interface")
+    ssl_cert_path: Optional[str] = Field(default=None, description="Path to SSL certificate file")
+    ssl_key_path: Optional[str] = Field(default=None, description="Path to SSL private key file")
+    ssl_port: int = Field(default=9000, ge=1024, le=65535, description="HTTPS port for web interface")
 
 
 # ==================== SSL/TLS CONFIGURATION ====================

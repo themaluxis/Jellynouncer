@@ -151,7 +151,11 @@ class ServiceLauncher:
             signal.signal(signal.SIGTERM, self.signal_handler)
             
             # Check if we should run only one service (for development)
-            run_mode = os.environ.get("JELLYNOUNCER_RUN_MODE", "all").lower()
+            # Get run mode from config or environment override
+            from jellynouncer.config_models import ConfigurationManager
+            config_manager = ConfigurationManager()
+            config = config_manager.load_config()
+            run_mode = os.environ.get("JELLYNOUNCER_RUN_MODE", config.server.run_mode).lower()
             
             if run_mode in ["all", "both"]:
                 # Start both services

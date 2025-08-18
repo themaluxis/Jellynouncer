@@ -128,6 +128,26 @@
   "server": {
     "host": "0.0.0.0",
     "port": 1984,
-    "log_level": "INFO"
+    "log_level": "INFO",
+    "run_mode": "all",
+    "data_dir": "/app/data",
+    "log_dir": "/app/logs",
+    "environment": "production",
+    "development_mode": false,
+    "show_docker_interfaces": false,
+    "allowed_hosts": [],
+    "force_color_output": false,
+    "disable_color_output": false
+  },
+  "web_interface": {
+    "enabled": true,
+    "port": 1985,
+    "host": "0.0.0.0",
+    "jwt_secret": null,
+    "auth_enabled": false,
+    "ssl_enabled": false,
+    "ssl_cert_path": null,
+    "ssl_key_path": null,
+    "ssl_port": 9000
   }
 }

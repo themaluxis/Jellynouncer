@@ -569,6 +569,9 @@ class SyncProgressDisplay:
                 bar_chars.append(self.chars['progress_empty'])
         
         bar = ''.join(bar_chars)
+        # Add reset code at the end if colors were used
+        if filled > 0 and self.color_support != 'none':
+            bar += '\033[0m'  # Reset all attributes
         
         # Format with percentage and numbers
         percent_str = f"{percent:.1f}%"

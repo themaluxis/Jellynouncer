@@ -160,7 +160,7 @@ async def lifespan(app_instance: FastAPI):
             app_log_level = app_config.server.log_level
         except Exception as config_error:
             # If config loading fails, fall back to environment variable or default
-            app_log_level = os.getenv("LOG_LEVEL", "INFO")
+            app_log_level = os.getenv("LOG_LEVEL", app_config.server.log_level if app_config else "INFO")
             # Use print since logging isn't set up yet
             print(f"Warning: Could not load config for log level, using {app_log_level}: {config_error}")
 
@@ -168,7 +168,7 @@ async def lifespan(app_instance: FastAPI):
         # The setup_logging function creates both console and file handlers
         logger = setup_logging(
             log_level=app_log_level,
-            log_dir=os.getenv("LOG_DIR", "/app/logs")
+            log_dir=os.getenv("LOG_DIR", app_config.server.log_dir if app_config else "/app/logs")
         )
         logger.info("Starting Jellynouncer service initialization...")
         # Log which source provided the log level for debugging
