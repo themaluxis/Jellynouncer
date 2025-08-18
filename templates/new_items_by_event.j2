@@ -1,19 +1,19 @@
 {#
-  Modèle de Nouveaux Éléments par Événement pour Jellynouncer
-  ================================================================
+  New Items By Event Template for Jellynouncer
+  =============================================
 
-  Regroupe plusieurs nouveaux éléments en une seule notification.
-  Affiche les informations de base pour chaque élément avec amélioration des métadonnées.
+  Groups multiple new items into a single notification.
+  Shows basic info for each item with metadata enhancement.
 
-  Optimisé pour : Plusieurs éléments ajoutés en une fois
-  Limites Discord : Respecte le nombre de champs et les limites de caractères
+  Optimized for: Multiple items added at once
+  Discord limits: Respects field count and character limits
 #}
 {
   "embeds": [
     {
-      "title": {{ ("🆕 " ~ (total_items | string) ~ " nouveaux éléments ajoutés") | tojson }},
+      "title": {{ ("🆕 " ~ (total_items | string) ~ " New Items Added") | tojson }},
 
-      "description": "Les éléments suivants ont été ajoutés à Jellyfin :",
+      "description": "The following items have been added to Jellyfin:",
 
       "color": 65280,
 
@@ -21,9 +21,9 @@
         {% set field_count = namespace(value=0) %}
 
         {#
-          Traiter chaque élément avec métadonnées
-          -----------------------------------------------
-          Limiter à 20 éléments pour rester dans les limites de champs
+          Process each item with metadata
+          --------------------------------
+          Limit to 20 items to stay within field limits
         #}
         {% for item_data in new_items[:20] %}
           {% if field_count.value > 0 %},{% endif %}
@@ -44,9 +44,9 @@
             (\" • 🔊 \" ~ (item_data.item.audio_codec | upper) if item_data.item.audio_codec else \"\") ~
 
             {#
-              Ajouter la note principale si disponible
-              -----------------------------------------
-              Priorité : IMDb → TMDb → TVDb
+              Add primary rating if available
+              --------------------------------
+              Priority: IMDb → TMDb → TVDb
             #}
             (\"\\n⭐ IMDb: \" ~ item_data.item.omdb.imdb_rating if item_data.item.omdb and item_data.item.omdb.imdb_rating and item_data.item.omdb.imdb_rating != 'N/A'
              else \"\\n⭐ TMDb: \" ~ item_data.item.tmdb.rating_display ~ "/10" if item_data.item.tmdb and item_data.item.tmdb.rating_display
@@ -61,8 +61,8 @@
         {% if new_items|length > 20 %}
           {% if field_count.value > 0 %},{% endif %}
         {
-          "name": "➕ Éléments supplémentaires :",
-          "value": {{ ("Et " ~ ((new_items|length - 20) | string) ~ " éléments de plus...") | tojson }},
+          "name": "➕ Additional Items",
+          "value": {{ ("And " ~ ((new_items|length - 20) | string) ~ " more items...") | tojson }},
           "inline": false
         }
         {% endif %}

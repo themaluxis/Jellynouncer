@@ -1,42 +1,42 @@
 {#
-  Modèle Complet d'Élément Mis à Jour pour Jellynouncer
-  ===========================================================
+  Upgraded Item Full Template for Jellynouncer
+  =============================================
 
-  Notification de mise à jour complète avec toutes les métadonnées.
-  Affiche l'historique complet des changements et les informations média complètes.
+  Comprehensive upgrade notification with all metadata.
+  Shows complete change history and full media information.
 
-  Utilise les 25 champs pour afficher un maximum de détails sur la mise à jour.
+  Uses all 25 fields to show maximum detail about the upgrade.
 #}
 {
   "embeds": [
     {
       "title": {{ ("⬆️" ~ 
-        ("📺 " ~ (item.name | default('Épisode Inconnu') | truncate(180, True, '...')) if item.item_type == 'Episode' else
-         "📺 " ~ (item.name | default('Série Inconnue') | truncate(180, True, '...')) if item.item_type == 'Series' else
-         "🎬 " ~ (item.name | default('Film Inconnu') | truncate(180, True, '...')) if item.item_type == 'Movie' else
-         "📺 " ~ (item.series_name | default('Série Inconnue')) ~ " - Saison " ~ (item.season_number | default('?') | string) if item.item_type == 'Season' else
-         "🎵 " ~ (item.name | default('Chanson Inconnue') | truncate(180, True, '...')) if item.item_type == 'Audio' else
-         "💿 " ~ (item.name | default('Album Inconnu') | truncate(180, True, '...')) if item.item_type == 'MusicAlbum' else
-         "🎤 " ~ (item.name | default('Artiste Inconnu') | truncate(180, True, '...')) if item.item_type == 'MusicArtist' else
+        ("📺 " ~ (item.name | default('Unknown Episode') | truncate(180, True, '...')) if item.item_type == 'Episode' else
+         "📺 " ~ (item.name | default('Unknown Series') | truncate(180, True, '...')) if item.item_type == 'Series' else
+         "🎬 " ~ (item.name | default('Unknown Movie') | truncate(180, True, '...')) if item.item_type == 'Movie' else
+         "📺 " ~ (item.series_name | default('Unknown Series')) ~ " - Season " ~ (item.season_number | default('?') | string) if item.item_type == 'Season' else
+         "🎵 " ~ (item.name | default('Unknown Song') | truncate(180, True, '...')) if item.item_type == 'Audio' else
+         "💿 " ~ (item.name | default('Unknown Album') | truncate(180, True, '...')) if item.item_type == 'MusicAlbum' else
+         "🎤 " ~ (item.name | default('Unknown Artist') | truncate(180, True, '...')) if item.item_type == 'MusicArtist' else
          "📷 " ~ (item.name | default('Photo') | truncate(180, True, '...')) if item.item_type == 'Photo' else
-         "📁 " ~ (item.name | default(item.item_type ~ ' Inconnu') | truncate(180, True, '...'))
-        ) ~ " " ~ (changes[0].type|title ~ " " if changes|length == 1 else "") ~ "Mis à Jour") | tojson }},
+         "📁 " ~ (item.name | default('Unknown ' ~ item.item_type) | truncate(180, True, '...'))
+        ) ~ " " ~ (changes[0].type|title ~ " " if changes|length == 1 else "") ~ "Upgraded") | tojson }},
 
       {#
-        Description Complète avec Intrigue Complète
-        -----------------------------------------------
-        Utilise la longueur maximale de description pour un aperçu complet
+        Full Description with Complete Plot
+        ------------------------------------
+        Uses maximum description length for full overview
       #}
       "description": {{ (
-        (\"**\" ~ (item.series_name | default('Série Inconnue')) ~ \"**\\n\" ~
+        (\"**\" ~ (item.series_name | default('Unknown Series')) ~ \"**\\n\" ~
          \"S\" ~ (\"%02d\" % (item.season_number | default(0))) ~ \"E\" ~ (\"%02d\" % (item.episode_number | default(0))) ~ \"\\n\" ~
-         (item.name | default('Épisode Inconnu')) ~
-         (\"\\n*Diffusion originale : \" ~ item.air_time ~ \"*\" if item.air_time else \"\") ~
+         (item.name | default('Unknown Episode')) ~
+         (\"\\n*Originally aired: \" ~ item.air_time ~ \"*\" if item.air_time else \"\") ~
          (\"\\n\\n\" ~ ((item.tvdb.overview[:600] + '...') if item.tvdb.overview | length > 600 else item.tvdb.overview) if item.tvdb and item.tvdb.overview
           else \"\\n\\n\" ~ ((item.overview[:600] + '...') if item.overview | length > 600 else item.overview) if item.overview
           else \"\")
         ) if item.item_type == 'Episode' else
-        (\"**\" ~ (item.name | default('Titre Inconnu')) ~ \"**\" ~
+        (\"**\" ~ (item.name | default('Unknown Title')) ~ \"**\" ~
          (\" (\" ~ item.year ~ \")\" if item.year else \"\") ~
          (\"\\n*\\\"\" ~ item.tmdb.tagline ~ \"\\\"*\" if item.tmdb and item.tmdb.tagline else \"\") ~
          (\"\\n\\n\" ~ ((item.tmdb.overview[:600] + '...') if item.tmdb.overview | length > 600 else item.tmdb.overview) if item.tmdb and item.tmdb.overview
@@ -44,7 +44,7 @@
           else \"\\n\\n\" ~ ((item.overview[:600] + '...') if item.overview | length > 600 else item.overview) if item.overview
           else \"\")
         ) if item.item_type == 'Movie' else
-        (\"**\" ~ (item.name | default('Titre Inconnu')) ~ \"**\" ~
+        (\"**\" ~ (item.name | default('Unknown Title')) ~ \"**\" ~
          (\"\\n\\n\" ~ ((item.overview[:600] + '...') if item.overview | length > 600 else item.overview) if item.overview else \"\")
         )
       ) | tojson }},
@@ -55,9 +55,9 @@
         {% set fields_added = namespace(count=0) %}
 
         {#
-          Tous les Changements de Mise à Jour - Jusqu'à 5 champs
-          ----------------------------------------------------------
-          Afficher chaque changement qui s'est produit
+          All Upgrade Changes - Up to 5 fields
+          -------------------------------------
+          Show every change that occurred
         #}
         {% if changes and changes | length > 0 %}
           {% for change in changes[:5] %}
@@ -65,21 +65,21 @@
             {% set fields_added.count = fields_added.count + 1 %}
           {
             "name": "{% if change.type == 'resolution' -%}
-              📐 Mise à Jour Résolution
+              📐 Resolution Upgrade
             {%- elif change.type == 'codec' -%}
-              🎞️ Mise à Jour Codec Vidéo
+              🎞️ Video Codec Upgrade
             {%- elif change.type == 'audio_codec' -%}
-              🔊 Mise à Jour Codec Audio
+              🔊 Audio Codec Upgrade
             {%- elif change.type == 'audio_channels' -%}
-              🔊 Mise à Jour Canaux
+              🔊 Channel Upgrade
             {%- elif change.type == 'hdr_status' -%}
-              🌈 Mise à Jour HDR
+              🌈 HDR Upgrade
             {%- elif change.type == 'file_size' -%}
-              💾 Fichier Remplacé
+              💾 File Replaced
             {%- else -%}
               🔄 {{ change.type | title }}
             {%- endif %}",
-            "value": {{ ((change.old_value or 'Inconnu') ~ " → **" ~ (change.new_value or 'Inconnu') ~ "**" ~
+            "value": {{ ((change.old_value or 'Unknown') ~ " → **" ~ (change.new_value or 'Unknown') ~ "**" ~
               ("\n" ~ change.description if change.description else "")
             ) | tojson }},
             "inline": true
@@ -87,12 +87,12 @@
           {% endfor %}
         {% endif %}
 
-        {# Spécifications techniques détaillées - identiques à new_item-full.j2 #}
+        {# Detailed technical specs - same as new_item-full.j2 #}
         {% if item.video_height and fields_added.count < 25 %}
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "📐 Qualité Actuelle",
+          "name": "📐 Current Quality",
           "value": {{ ((item.video_height | string) ~ "p" ~
             (" " ~ item.video_range if item.video_range and item.video_range != 'SDR' else "")
           ) | tojson }},
@@ -104,7 +104,7 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🎞️ Détails Vidéo",
+          "name": "🎞️ Video Details",
           "value": {{ ((item.video_codec | upper) ~
             (" " ~ item.video_profile if item.video_profile else "") ~
             (" @ " ~ ((item.video_bitrate / 1000000) | round(1) | string) ~ " Mbps" if item.video_bitrate else "")
@@ -117,7 +117,7 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🔊 Détails Audio",
+          "name": "🔊 Audio Details",
           "value": {{ ((item.audio_codec | upper) ~
             (" Stereo" if item.audio_channels == 2
              else " 5.1" if item.audio_channels == 6
@@ -130,7 +130,7 @@
         }
         {% endif %}
 
-        {# Notes complètes en ligne #}
+        {# Comprehensive inline ratings #}
         {% set has_ratings = false %}
         {% if (item.omdb and (item.omdb.imdb_rating or item.omdb.metascore or
                item.omdb.ratings_dict.rotten_tomatoes)) or
@@ -143,7 +143,7 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "⭐ Toutes les Notes",
+          "name": "⭐ All Ratings",
           "value": {{ (
             {%- set rating_parts = [] -%}
             {%- if item.omdb and item.omdb.imdb_rating and item.omdb.imdb_rating != 'N/A' -%}
@@ -169,12 +169,12 @@
         }
         {% endif %}
 
-        {# Casting et Équipe - jusqu'à 4 champs #}
+        {# Cast and Crew - up to 4 fields #}
         {% if item.omdb and item.omdb.director and item.omdb.director != 'N/A' and fields_added.count < 25 %}
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🎬 Réalisateur",
+          "name": "🎬 Director",
           "value": {{ item.omdb.director | tojson }},
           "inline": true
         }
@@ -184,7 +184,7 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🎭 Distribution",
+          "name": "🎭 Cast",
           "value": {{ ((item.omdb.actors[:200] + '...') if item.omdb.actors | length > 200 else item.omdb.actors) | tojson }},
           "inline": false
         }
@@ -194,18 +194,18 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "✍️ Scénariste",
+          "name": "✍️ Writer",
           "value": {{ ((item.omdb.writer[:200] + '...') if item.omdb.writer | length > 200 else item.omdb.writer) | tojson }},
           "inline": true
         }
         {% endif %}
 
-        {# Informations de production - jusqu'à 5 champs #}
+        {# Production information - up to 5 fields #}
         {% if item.omdb and item.omdb.awards and item.omdb.awards != 'N/A' and fields_added.count < 25 %}
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🏆 Récompenses",
+          "name": "🏆 Awards",
           "value": {{ item.omdb.awards | tojson }},
           "inline": false
         }
@@ -225,7 +225,7 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "📈 Recettes",
+          "name": "📈 Revenue",
           "value": {{ ("$" ~ '{:,.0f}'.format(item.tmdb.revenue)) | tojson }},
           "inline": true
         }
@@ -233,7 +233,7 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "📈 Box-Office",
+          "name": "📈 Box Office",
           "value": {{ item.omdb.box_office | tojson }},
           "inline": true
         }
@@ -249,12 +249,12 @@
         }
         {% endif %}
 
-        {# Informations de sortie #}
+        {# Release information #}
         {% if item.omdb and item.omdb.released and item.omdb.released != 'N/A' and fields_added.count < 25 %}
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "📅 Sorti le",
+          "name": "📅 Released",
           "value": {{ item.omdb.released | tojson }},
           "inline": true
         }
@@ -264,18 +264,18 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🔞 Classification",
+          "name": "🔞 Rated",
           "value": {{ item.omdb.rated | tojson }},
           "inline": true
         }
         {% endif %}
 
-        {# Langue et pays #}
+        {# Language and country #}
         {% if item.omdb and item.omdb.language and item.omdb.language != 'N/A' and fields_added.count < 25 %}
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🗣️ Langue",
+          "name": "🗣️ Language",
           "value": {{ item.omdb.language | tojson }},
           "inline": true
         }
@@ -285,18 +285,18 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🌍 Pays",
+          "name": "🌍 Country",
           "value": {{ item.omdb.country | tojson }},
           "inline": true
         }
         {% endif %}
 
-        {# Champs spécifiques TV #}
+        {# TV-specific fields #}
         {% if item.tvdb and item.tvdb.status and fields_added.count < 25 %}
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "📺 Statut",
+          "name": "📺 Status",
           "value": {{ item.tvdb.status | tojson }},
           "inline": true
         }
@@ -306,18 +306,18 @@
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "⏱️ Durée Moyenne",
+          "name": "⏱️ Avg Runtime",
           "value": {{ ((item.tvdb.average_runtime | string) ~ " min") | tojson }},
           "inline": true
         }
         {% endif %}
 
-        {# IDs externes pour référence #}
+        {# External IDs for reference #}
         {% if (item.imdb_id or item.tmdb_id or item.tvdb_id) and fields_added.count < 25 %}
           {% if fields_added.count > 0 %},{% endif %}
           {% set fields_added.count = fields_added.count + 1 %}
         {
-          "name": "🔗 IDs Externes",
+          "name": "🔗 External IDs",
           "value": {{ (
             {%- set id_parts = [] -%}
             {%- if item.imdb_id %}{% set _ = id_parts.append('[IMDb](https://www.imdb.com/title/' ~ item.imdb_id ~ '/)') %}{% endif -%}
@@ -331,7 +331,7 @@
         {% endif %}
       ],
 
-      {# Sélection d'image #}
+      {# Image selection #}
       {% if item.item_type == 'Episode' and item.series_id %}
       "thumbnail": {
         "url": {{ thumbnail_url | tojson }}

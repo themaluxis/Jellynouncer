@@ -1,18 +1,18 @@
 {#
-  Modèle d'Éléments Mis à Jour Groupés pour Jellynouncer
-  ==============================================================
+  Upgraded Items Grouped Template for Jellynouncer
+  =================================================
 
-  Notification de mise à jour groupée complète par type.
-  Affiche tous les éléments mis à jour organisés par catégorie avec changements.
+  Comprehensive grouped upgrade notification by type.
+  Shows all upgraded items organized by category with changes.
 
-  Prend en charge : Films, TV, Musique, Autre
+  Supports: Movies, TV, Music, Other
 #}
 {
   "embeds": [
     {
-      "title": {{ ("⬆️ " ~ (total_items | string) ~ " Éléments Mis à Jour dans Jellyfin") | tojson }},
+      "title": {{ ("⬆️ " ~ (total_items | string) ~ " Items Upgraded in Jellyfin") | tojson }},
 
-      "description": "Un résumé de tout le contenu mis à jour organisé par type :",
+      "description": "A summary of all upgraded content organized by type:",
 
       "color": {{ color }},
 
@@ -20,20 +20,20 @@
         {% set field_count = namespace(value=0) %}
 
         {#
-          Catégorie Films avec Mises à jour
-          ------------------------------------
+          Movies Category with Upgrades
+          ------------------------------
         #}
         {% if 'movies' in categories and categories.movies.upgraded|length > 0 %}
           {% set field_count.value = field_count.value + 1 %}
         {
-          "name": "🎬 Films Mis à Jour ({{ categories.movies.upgraded|length }})",
+          "name": "🎬 Movies Upgraded ({{ categories.movies.upgraded|length }})",
           "value": "{% for item_data in categories.movies.upgraded[:5] -%}
             **{{ item_data.item.name }}**
             {%- if item_data.item.year %} ({{ item_data.item.year }}){% endif %}
             {%- if item_data.changes and item_data.changes|length > 0 %}\n🔄 {{ item_data.changes[0].old_value }} → **{{ item_data.changes[0].new_value }}**
               {%- if item_data.changes|length > 1 %} (+{{ item_data.changes|length - 1 }}){% endif -%}
             {%- endif -%}
-            {%- if item_data.item.video_height %}\n📐 Maintenant : {{ item_data.item.video_height }}p
+            {%- if item_data.item.video_height %}\n📐 Now: {{ item_data.item.video_height }}p
               {%- if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif -%}
             {%- endif -%}
             {%- set rating_parts = [] -%}
@@ -46,20 +46,20 @@
             {%- if rating_parts|length > 0 %}\n⭐ {{ rating_parts | join(' • ') }}{% endif -%}
             {%- if not loop.last %}\n\n{% endif -%}
           {%- endfor -%}
-          {%- if categories.movies.upgraded|length > 5 %}\n\n...et {{ categories.movies.upgraded|length - 5 }} de plus{% endif %}",
+          {%- if categories.movies.upgraded|length > 5 %}\n\n...and {{ categories.movies.upgraded|length - 5 }} more{% endif %}",
           "inline": false
         }
         {% endif %}
 
         {#
-          Catégorie TV avec Mises à jour
-          ----------------------------------
+          TV Category with Upgrades
+          --------------------------
         #}
         {% if 'tv' in categories and categories.tv.upgraded|length > 0 %}
           {% if field_count.value > 0 %},{% endif %}
           {% set field_count.value = field_count.value + 1 %}
         {
-          "name": "📺 Contenu TV Mis à Jour ({{ categories.tv.upgraded|length }})",
+          "name": "📺 TV Content Upgraded ({{ categories.tv.upgraded|length }})",
           "value": "{% for item_data in categories.tv.upgraded[:5] -%}
             {%- if item_data.item.item_type == 'Episode' -%}
               **{{ item_data.item.series_name }}** S{{ '%02d'|format(item_data.item.season_number or 0) }}E{{ '%02d'|format(item_data.item.episode_number or 0) }}
@@ -67,67 +67,67 @@
               **{{ item_data.item.name }}**
             {%- endif %}
             {%- if item_data.changes and item_data.changes|length > 0 %}\n🔄 {{ item_data.changes[0].old_value }} → **{{ item_data.changes[0].new_value }}**{% endif -%}
-            {%- if item_data.item.video_height %}\n📐 Maintenant : {{ item_data.item.video_height }}p{% endif -%}
+            {%- if item_data.item.video_height %}\n📐 Now: {{ item_data.item.video_height }}p{% endif -%}
             {%- if item_data.item.tvdb and item_data.item.tvdb.rating %}\n⭐ TVDb: {{ item_data.item.tvdb.rating }}{% endif -%}
             {%- if not loop.last %}\n\n{% endif -%}
           {%- endfor -%}
-          {%- if categories.tv.upgraded|length > 5 %}\n\n...et {{ categories.tv.upgraded|length - 5 }} de plus{% endif %}",
+          {%- if categories.tv.upgraded|length > 5 %}\n\n...and {{ categories.tv.upgraded|length - 5 }} more{% endif %}",
           "inline": false
         }
         {% endif %}
 
         {#
-          Catégorie Musique avec Mises à jour
-          -------------------------------------
+          Music Category with Upgrades
+          -----------------------------
         #}
         {% if 'music' in categories and categories.music.upgraded|length > 0 %}
           {% if field_count.value > 0 %},{% endif %}
           {% set field_count.value = field_count.value + 1 %}
         {
-          "name": "🎵 Musique Mise à Jour ({{ categories.music.upgraded|length }})",
+          "name": "🎵 Music Upgraded ({{ categories.music.upgraded|length }})",
           "value": "{% for item_data in categories.music.upgraded[:6] -%}
             **{{ item_data.item.name }}**
             {%- if item_data.item.artists %} - {{ item_data.item.artists[0] }}{% endif -%}
             {%- if item_data.changes and item_data.changes|length > 0 %}\n🔄 {{ item_data.changes[0].old_value }} → **{{ item_data.changes[0].new_value }}**{% endif -%}
             {%- if not loop.last %}\n{% endif -%}
           {%- endfor -%}
-          {%- if categories.music.upgraded|length > 6 %}\n...et {{ categories.music.upgraded|length - 6 }} de plus{% endif %}",
+          {%- if categories.music.upgraded|length > 6 %}\n...and {{ categories.music.upgraded|length - 6 }} more{% endif %}",
           "inline": false
         }
         {% endif %}
 
         {#
-          Autre Catégorie avec Mises à jour
-          -----------------------------------
+          Other Category with Upgrades
+          -----------------------------
         #}
         {% if 'other' in categories and categories.other.upgraded|length > 0 %}
           {% if field_count.value > 0 %},{% endif %}
           {% set field_count.value = field_count.value + 1 %}
         {
-          "name": "📁 Autre Mis à Jour ({{ categories.other.upgraded|length }})",
+          "name": "📁 Other Upgraded ({{ categories.other.upgraded|length }})",
           "value": "{% for item_data in categories.other.upgraded[:6] -%}
             **{{ item_data.item.name }}** ({{ item_data.item.item_type }})
-            {%- if item_data.changes and item_data.changes|length > 0 %}\n🔄 Mis à jour{% endif -%}
+            {%- if item_data.changes and item_data.changes|length > 0 %}\n🔄 Upgraded{% endif -%}
             {%- if not loop.last %}\n{% endif -%}
           {%- endfor -%}
-          {%- if categories.other.upgraded|length > 6 %}\n...et {{ categories.other.upgraded|length - 6 }} de plus{% endif %}",
+          {%- if categories.other.upgraded|length > 6 %}\n...and {{ categories.other.upgraded|length - 6 }} more{% endif %}",
           "inline": false
         }
         {% endif %}
 
         {#
-          Statistiques de Résumé des Mises à Jour
-          --------------------------------------------
+          Upgrade Summary Statistics
+          ---------------------------
         #}
         {% if field_count.value > 0 %},{% endif %}
         {
-          "name": "📊 Résumé des Mises à Jour",
-          "value": "**Total des Mises à Jour :** {{ total_items }}
-            {%- if 'movies' in categories %}\n🎬 Films : {{ categories.movies.upgraded|length }}{% endif -%}
+          "name": "📊 Upgrade Summary",
+          "value": "**Total Upgrades:** {{ total_items }}
+            {%- if 'movies' in categories %}\n🎬 Movies: {{ categories.movies.upgraded|length }}{% endif -%}
             {%- if 'tv' in categories %}\n📺 TV: {{ categories.tv.upgraded|length }}{% endif -%}
-            {%- if 'music' in categories %}\n🎵 Musique : {{ categories.music.upgraded|length }}{% endif -%}
-            {%- if 'other' in categories %}\n📁 Autre : {{ categories.other.upgraded|length }}{% endif -%}
-            \n\n**Mises à Jour les Plus Fréquentes :**
+            {%- if 'music' in categories %}\n🎵 Music: {{ categories.music.upgraded|length }}{% endif -%}
+            {%- if 'other' in categories %}\n📁 Other: {{ categories.other.upgraded|length }}{% endif -%}
+            \n\n**Most Common Upgrades:**
             {%- set all_changes = [] -%}
             {%- for category in categories.values() -%}
               {%- for item_data in category.upgraded -%}
@@ -136,10 +136,10 @@
                 {%- endfor -%}
               {%- endfor -%}
             {%- endfor -%}
-            {%- if 'resolution' in all_changes %}\n📐 Mises à jour de résolution{% endif -%}
-            {%- if 'codec' in all_changes %}\n🎞️ Mises à jour de codec vidéo{% endif -%}
-            {%- if 'audio_codec' in all_changes %}\n🔊 Mises à jour audio{% endif -%}
-            {%- if 'hdr_status' in all_changes %}\n🌈 Mises à jour HDR{% endif %}",
+            {%- if 'resolution' in all_changes %}\n📐 Resolution upgrades{% endif -%}
+            {%- if 'codec' in all_changes %}\n🎞️ Video codec upgrades{% endif -%}
+            {%- if 'audio_codec' in all_changes %}\n🔊 Audio upgrades{% endif -%}
+            {%- if 'hdr_status' in all_changes %}\n🌈 HDR upgrades{% endif %}",
           "inline": false
         }
       ],

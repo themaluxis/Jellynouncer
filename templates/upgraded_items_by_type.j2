@@ -1,18 +1,18 @@
 {#
-  Modèle d'Éléments Mis à Jour par Type pour Jellynouncer
-  ============================================================
+  Upgraded Items By Type Template for Jellynouncer
+  =================================================
 
-  Regroupe les éléments mis à jour par type de média avec enrichissement des métadonnées.
-  Affiche les changements de mise à jour et la qualité actuelle avec les notes.
+  Groups upgraded items by media type with metadata enrichment.
+  Shows upgrade changes and current quality with ratings.
 
-  Catégories : films, tv, musique, autre
+  Categories: movies, tv, music, other
 #}
 {
   "embeds": [
     {% if category == 'movies' %}
     {
-      "title": "⬆️ Films Mis à Jour ({{ total_items }})",
-      "description": "Les films suivants ont été mis à jour dans Jellyfin :",
+      "title": "⬆️ Movies Upgraded ({{ total_items }})",
+      "description": "The following movies have been upgraded in Jellyfin:",
       "color": {{ color }},
 
       "fields": [
@@ -27,23 +27,23 @@
 
           "value": "
             {#
-              Afficher les changements de mise à jour
-              -------------------------------------------
+              Show upgrade changes
+              --------------------
             #}
             {%- if item_data.changes and item_data.changes|length > 0 -%}
-              **Mises à jour :**
+              **Upgrades:**
               {%- for change in item_data.changes[:2] %}
-                \n• {{ change.old_value or 'Inconnu' }} → **{{ change.new_value or 'Inconnu' }}**
+                \n• {{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**
               {%- endfor -%}
-              {%- if item_data.changes|length > 2 %} (+{{ item_data.changes|length - 2 }} de plus){% endif -%}
+              {%- if item_data.changes|length > 2 %} (+{{ item_data.changes|length - 2 }} more){% endif -%}
             {%- endif -%}
 
             {#
-              Spécifications actuelles
-              -------------------------
+              Current specs
+              -------------
             #}
             {%- if item_data.item.video_height -%}
-              \n📐 Maintenant : {{ item_data.item.video_height }}p
+              \n📐 Now: {{ item_data.item.video_height }}p
               {%- if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif -%}
             {%- endif -%}
 
@@ -56,8 +56,8 @@
             {%- endif -%}
 
             {#
-              Notes en ligne pour les films
-              ------------------------------
+              Inline ratings for movies
+              --------------------------
             #}
             {%- set rating_parts = [] -%}
             {%- if item_data.item.omdb and item_data.item.omdb.imdb_rating and item_data.item.omdb.imdb_rating != 'N/A' -%}
@@ -80,8 +80,8 @@
         {% if upgraded_items|length > 8 %}
           {% if field_count.value > 0 %},{% endif %}
         {
-          "name": "➕ Mises à Jour de Films Supplémentaires",
-          "value": "Et {{ upgraded_items|length - 8 }} films mis à jour de plus...",
+          "name": "➕ Additional Movie Upgrades",
+          "value": "And {{ upgraded_items|length - 8 }} more movies upgraded...",
           "inline": false
         }
         {% endif %}
@@ -90,8 +90,8 @@
 
     {% elif category == 'tv' %}
     {
-      "title": "⬆️ Contenu TV Mis à Jour ({{ total_items }})",
-      "description": "Le contenu TV suivant a été mis à jour dans Jellyfin :",
+      "title": "⬆️ TV Content Upgraded ({{ total_items }})",
+      "description": "The following TV content has been upgraded in Jellyfin:",
       "color": {{ color }},
 
       "fields": [
@@ -115,19 +115,19 @@
             {%- if item_data.changes and item_data.changes|length > 0 -%}
               \n**Upgrades:**
               {%- for change in item_data.changes[:2] %}
-                \n• {{ change.old_value or 'Inconnu' }} → **{{ change.new_value or 'Inconnu' }}**
+                \n• {{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**
               {%- endfor -%}
-              {%- if item_data.changes|length > 2 %} (+{{ item_data.changes|length - 2 }} de plus){% endif -%}
+              {%- if item_data.changes|length > 2 %} (+{{ item_data.changes|length - 2 }} more){% endif -%}
             {%- endif -%}
 
             {%- if item_data.item.video_height -%}
-              \n📐 Maintenant : {{ item_data.item.video_height }}p
+              \n📐 Now: {{ item_data.item.video_height }}p
               {%- if item_data.item.video_range and item_data.item.video_range != 'SDR' %} {{ item_data.item.video_range }}{% endif -%}
             {%- endif -%}
 
             {#
-              Notes TV en ligne
-              ------------------
+              TV ratings inline
+              -----------------
             #}
             {%- set rating_parts = [] -%}
             {%- if item_data.item.tvdb and item_data.item.tvdb.rating -%}
@@ -147,8 +147,8 @@
         {% if upgraded_items|length > 8 %}
           {% if field_count.value > 0 %},{% endif %}
         {
-          "name": "➕ Mises à Jour TV Supplémentaires",
-          "value": "Et {{ upgraded_items|length - 8 }} éléments TV mis à jour de plus...",
+          "name": "➕ Additional TV Upgrades",
+          "value": "And {{ upgraded_items|length - 8 }} more TV items upgraded...",
           "inline": false
         }
         {% endif %}
@@ -157,8 +157,8 @@
 
     {% elif category == 'music' %}
     {
-      "title": "⬆️ Musique Mise à Jour ({{ total_items }})",
-      "description": "La musique suivante a été mise à jour dans Jellyfin :",
+      "title": "⬆️ Music Upgraded ({{ total_items }})",
+      "description": "The following music has been upgraded in Jellyfin:",
       "color": {{ color }},
 
       "fields": [
@@ -175,14 +175,14 @@
             {%- if item_data.item.artists %}Artist: {{ item_data.item.artists | join(', ') }}\n{% endif -%}
 
             {%- if item_data.changes and item_data.changes|length > 0 -%}
-              **Mises à jour :**
+              **Upgrades:**
               {%- for change in item_data.changes[:1] %}
-                \n• {{ change.old_value or 'Inconnu' }} → **{{ change.new_value or 'Inconnu' }}**
+                \n• {{ change.old_value or 'Unknown' }} → **{{ change.new_value or 'Unknown' }}**
               {%- endfor -%}
             {%- endif -%}
 
             {%- if item_data.item.audio_codec -%}
-              \n🔊 Maintenant : {{ item_data.item.audio_codec|upper }}
+              \n🔊 Now: {{ item_data.item.audio_codec|upper }}
               {%- if item_data.item.audio_bitrate %} @ {{ (item_data.item.audio_bitrate / 1000)|round(0) }} kbps{% endif -%}
             {%- endif %}",
 
@@ -193,8 +193,8 @@
         {% if upgraded_items|length > 10 %}
           {% if field_count.value > 0 %},{% endif %}
         {
-          "name": "➕ Mises à Jour Musicales Supplémentaires",
-          "value": "Et {{ upgraded_items|length - 10 }} éléments musicaux mis à jour de plus...",
+          "name": "➕ Additional Music Upgrades",
+          "value": "And {{ upgraded_items|length - 10 }} more music items upgraded...",
           "inline": false
         }
         {% endif %}
@@ -203,8 +203,8 @@
 
     {% else %}
     {
-      "title": "⬆️ Éléments Mis à Jour ({{ total_items }})",
-      "description": "Les éléments suivants ont été mis à jour dans Jellyfin :",
+      "title": "⬆️ Items Upgraded ({{ total_items }})",
+      "description": "The following items have been upgraded in Jellyfin:",
       "color": {{ color }},
 
       "fields": [
@@ -218,9 +218,9 @@
 
           "value": "
             {%- if item_data.changes and item_data.changes|length > 0 -%}
-              Mis à jour : {{ item_data.changes[0].old_value or 'Inconnu' }} → **{{ item_data.changes[0].new_value or 'Inconnu' }}**
+              Upgraded: {{ item_data.changes[0].old_value or 'Unknown' }} → **{{ item_data.changes[0].new_value or 'Unknown' }}**
             {%- else -%}
-              Élément mis à jour
+              Item upgraded
             {%- endif %}",
 
           "inline": true
@@ -230,8 +230,8 @@
         {% if upgraded_items|length > 15 %}
           {% if field_count.value > 0 %},{% endif %}
         {
-          "name": "➕ Mises à Jour Supplémentaires",
-          "value": "Et {{ upgraded_items|length - 15 }} éléments mis à jour de plus...",
+          "name": "➕ Additional Upgrades",
+          "value": "And {{ upgraded_items|length - 15 }} more items upgraded...",
           "inline": false
         }
         {% endif %}

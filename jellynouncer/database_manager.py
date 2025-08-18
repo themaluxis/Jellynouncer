@@ -546,39 +546,9 @@ class DatabaseManager:
     async def save_items_batch(self, items: List[DatabaseItem]) -> Dict[str, int]:
         """
         Save multiple media items in a single transaction for better performance.
-
-        This method provides efficient batch processing for large numbers of
-        items, such as during library synchronization. It uses a single
-        database transaction to improve performance and ensure consistency.
-
-        **Understanding Database Transactions:**
-        A transaction is a group of database operations that are treated as
-        a single unit. Either all operations succeed, or none of them do.
-        This ensures data consistency and improves performance by reducing
-        the number of individual database commits.
-
-        Args:
-            items (List[DatabaseItem]): List of database items to save
-
-        Returns:
-            Dict[str, int]: Statistics about the batch operation
-            - 'successful': Number of items saved successfully
-            - 'failed': Number of items that failed to save
-            - 'total': Total number of items processed
-
-        Example:
-            ```python
-            # Batch save multiple items
-            items = [movie1, movie2, tv_episode1, music_track1]
-            results = await db_manager.save_items_batch(items)
-
-            logger.info(f"Batch save: {results['successful']}/{results['total']} succeeded")
-            ```
-
-        Note:
-            This method is significantly faster than calling save_item()
-            multiple times for large batches due to transaction overhead reduction.
+        ...
         """
+        self.logger.debug(f"Starting save_items_batch for {len(items)} items.")
         if not items:
             return {'successful': 0, 'failed': 0, 'total': 0}
 
@@ -588,54 +558,39 @@ class DatabaseManager:
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 self._connection_count += 1
-
-                # Begin transaction for all items with immediate lock
+                self.logger.debug("Database connection acquired. Beginning transaction.")
                 await db.execute("BEGIN IMMEDIATE")
 
-                # Define SQLite limits for batch processing to avoid "too many SQL variables" error
                 SQLITE_MAX_VARIABLES = 999
-
-                # Get the number of columns from the first item.
-                # This assumes all items have the same structure, which is a safe assumption for a batch.
                 if not items:
                     return {'successful': 0, 'failed': 0, 'total': 0}
                 
                 try:
-                    # Dynamically determine column count from the dataclass
                     num_columns = len(items[0].__dataclass_fields__)
                 except (IndexError, AttributeError):
-                    # Fallback if items list is empty or not a dataclass
                     return {'successful': 0, 'failed': 0, 'total': 0}
 
-                # Calculate a safe chunk size for batch inserts to stay under the variable limit.
                 sqlite_chunk_size = SQLITE_MAX_VARIABLES // num_columns if num_columns > 0 else 50
                 self.logger.debug(f"Calculated SQLite chunk size: {sqlite_chunk_size} rows per insert for {num_columns} columns")
 
-                # The outer loop is not strictly necessary anymore but provides an extra layer of safety
-                # and memory management for extremely large `items` lists.
                 api_chunk_size = 500
 
-                for api_chunk_start in range(0, len(items), api_chunk_size):
+                for api_chunk_num, api_chunk_start in enumerate(range(0, len(items), api_chunk_size)):
                     api_chunk = items[api_chunk_start:api_chunk_start + api_chunk_size]
+                    self.logger.debug(f"Processing API chunk #{api_chunk_num + 1} with {len(api_chunk)} items.")
                     
-                    # Inner loop to process items in smaller, SQLite-safe chunks
                     for i in range(0, len(api_chunk), sqlite_chunk_size):
                         sqlite_chunk = api_chunk[i:i + sqlite_chunk_size]
+                        self.logger.debug(f"  Processing SQLite chunk with {len(sqlite_chunk)} items.")
 
                         try:
-                            # Prepare all items in the smaller SQLite chunk
                             columns = None
                             items_to_insert = []
                             
+                            self.logger.debug("    Preparing items for batch insert...")
                             for item in sqlite_chunk:
                                 try:
-                                    # Convert to dictionary and serialize JSON fields efficiently
                                     item_dict = asdict(item)
-
-                                    # The content_hash is computed in __post_init__ and included by asdict.
-                                    # The old code checking for '_content_hash' was incorrect and has been removed.
-
-                                    # Optimize JSON serialization
                                     json_fields = {'genres', 'studios', 'tags', 'artists', 'subtitle_languages', 'subtitle_formats'}
                                     for field in json_fields:
                                         if field in item_dict and item_dict[field] is not None:
@@ -645,34 +600,29 @@ class DatabaseManager:
                                         columns = list(item_dict.keys())
 
                                     items_to_insert.append(list(item_dict.values()))
-
                                 except Exception as e:
-                                    self.logger.warning(f"Failed to prepare item {item.item_id} for batch insert: {e}")
+                                    self.logger.warning(f"    Failed to prepare item {getattr(item, 'item_id', 'N/A')} for batch insert: {e}")
                                     failed += 1
                             
                             if items_to_insert and columns:
-                                # Build optimized batch INSERT for the smaller chunk
+                                self.logger.debug("    Items prepared. Building SQL statement.")
                                 placeholders_per_item = f"({','.join('?' * len(columns))})"
                                 all_placeholders = ','.join([placeholders_per_item] * len(items_to_insert))
                                 columns_str = ','.join(columns)
-                                
-                                # Flatten values list for the SQL execution
                                 all_values = [val for item_values in items_to_insert for val in item_values]
-                                
                                 sql = f"INSERT OR REPLACE INTO media_items ({columns_str}) VALUES {all_placeholders}"
+                                self.logger.debug(f"    Executing batch insert for {len(items_to_insert)} items with {len(all_values)} total values.")
                                 
                                 await db.execute(sql, all_values)
                                 successful += len(items_to_insert)
+                                self.logger.debug(f"    Batch insert successful for {len(items_to_insert)} items.")
 
                         except Exception as e:
-                            # Fall back to individual inserts for this chunk if the batch insert fails
-                            self.logger.warning(f"Batch insert for chunk failed, using individual insert fallback: {e}")
+                            self.logger.error(f"    Batch insert for chunk failed, using individual insert fallback: {e}", exc_info=True)
 
                             for item in sqlite_chunk:
                                 try:
                                     item_dict = asdict(item)
-
-                                    # Ensure content hash and JSON fields are correctly handled for individual insert
                                     json_fields = {'genres', 'studios', 'tags', 'artists', 'subtitle_languages', 'subtitle_formats'}
                                     for field in json_fields:
                                         if field in item_dict and item_dict[field] is not None:
@@ -686,12 +636,11 @@ class DatabaseManager:
                                         list(item_dict.values())
                                     )
                                     successful += 1
-
                                 except Exception as e_ind:
-                                    self.logger.error(f"Failed to save item {item.item_id} individually after batch failure: {e_ind}")
+                                    self.logger.error(f"    Failed to save item {getattr(item, 'item_id', 'N/A')} individually after batch failure: {e_ind}")
                                     failed += 1
 
-                # Commit the entire transaction
+                self.logger.debug("All chunks processed. Committing transaction.")
                 await db.commit()
                 self._connection_count -= 1
 
@@ -703,7 +652,7 @@ class DatabaseManager:
             }
 
         except Exception as e:
-            self.logger.error(f"Batch save transaction failed: {e}")
+            self.logger.error(f"Batch save transaction failed: {e}", exc_info=True)
             return {
                 'successful': 0,
                 'failed': len(items),
