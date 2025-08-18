@@ -195,6 +195,13 @@ async def lifespan(app_instance: FastAPI):
         # Everything after this yield runs during shutdown
         yield
 
+    except asyncio.CancelledError:
+        # Handle cancellation during startup
+        if logger:
+            logger.info("Service startup cancelled")
+        else:
+            print("Service startup cancelled")
+        raise
     except Exception as e:
         # Use logger if available, otherwise fall back to print
         if logger:
@@ -231,6 +238,12 @@ async def lifespan(app_instance: FastAPI):
         else:
             print("Jellynouncer shutdown completed successfully")
 
+    except asyncio.CancelledError:
+        # This is expected during normal shutdown when Uvicorn cancels the lifespan
+        if logger:
+            logger.debug("Lifespan cancelled during shutdown (normal)")
+        else:
+            print("Lifespan cancelled during shutdown (normal)")
     except Exception as e:
         if logger:
             logger.error(f"Error during shutdown: {e}", exc_info=True)

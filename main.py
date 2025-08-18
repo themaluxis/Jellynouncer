@@ -72,6 +72,9 @@ class ServiceLauncher:
                 log_level=os.environ.get("LOG_LEVEL", "info").lower(),
                 access_log=False  # We have our own logging
             )
+        except asyncio.CancelledError:
+            # Normal shutdown cancellation, not an error
+            self.logger.info("Webhook service shutdown cancelled (normal)")
         except Exception as e:
             self.logger.error(f"Webhook service failed: {e}")
             sys.exit(1)
@@ -108,6 +111,9 @@ class ServiceLauncher:
                 log_level=os.environ.get("LOG_LEVEL", "info").lower(),
                 access_log=False  # We have our own logging
             )
+        except asyncio.CancelledError:
+            # Normal shutdown cancellation, not an error
+            self.logger.info("Web service shutdown cancelled (normal)")
         except Exception as e:
             self.logger.error(f"Web service failed: {e}")
             sys.exit(1)
