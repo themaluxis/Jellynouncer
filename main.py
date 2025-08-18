@@ -55,6 +55,10 @@ class ServiceLauncher:
     def start_webhook_service(self):
         """Start the webhook service in a separate process"""
         try:
+            # Reset signal handlers in child process
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+
             # Setup logging for the webhook service process
             setup_logging()
             
@@ -79,6 +83,10 @@ class ServiceLauncher:
     def start_web_service(self):
         """Start the web interface in a separate process"""
         try:
+            # Reset signal handlers in child process
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+
             # Setup logging for the web service process
             setup_logging()
             
@@ -123,20 +131,32 @@ class ServiceLauncher:
         """Shutdown both services gracefully"""
         self.running = False
         
-        if self.webhook_process and self.webhook_process.is_alive():
+        # Gracefully shutdown webhook process
+        if self.webhook_process:
             self.logger.info("Stopping webhook service...")
-            self.webhook_process.terminate()
-            self.webhook_process.join(timeout=5)
-            if self.webhook_process.is_alive():
-                self.webhook_process.kill()
+            try:
+                if self.webhook_process.is_alive():
+                    self.webhook_process.terminate()
+                    self.webhook_process.join(timeout=5)
+                if self.webhook_process.is_alive():
+                    self.logger.warning("Webhook service did not terminate gracefully. Killing.")
+                    self.webhook_process.kill()
+            except Exception as e:
+                self.logger.error(f"Error terminating webhook process: {e}")
         
-        if self.web_process and self.web_process.is_alive():
+        # Gracefully shutdown web process
+        if self.web_process:
             self.logger.info("Stopping web interface...")
-            self.web_process.terminate()
-            self.web_process.join(timeout=5)
-            if self.web_process.is_alive():
-                self.web_process.kill()
-        
+            try:
+                if self.web_process.is_alive():
+                    self.web_process.terminate()
+                    self.web_process.join(timeout=5)
+                if self.web_process.is_alive():
+                    self.logger.warning("Web interface did not terminate gracefully. Killing.")
+                    self.web_process.kill()
+            except Exception as e:
+                self.logger.error(f"Error terminating web process: {e}")
+
         self.logger.info("All services stopped")
     
     def run(self):
