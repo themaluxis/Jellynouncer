@@ -123,19 +123,21 @@ class ServiceLauncher:
         """Shutdown both services gracefully"""
         self.running = False
         
-        if self.webhook_process and self.webhook_process.is_alive():
-            self.logger.info("Stopping webhook service...")
-            self.webhook_process.terminate()
-            self.webhook_process.join(timeout=5)
+        if self.webhook_process is not None:
             if self.webhook_process.is_alive():
-                self.webhook_process.kill()
+                self.logger.info("Stopping webhook service...")
+                self.webhook_process.terminate()
+                self.webhook_process.join(timeout=5)
+                if self.webhook_process.is_alive():
+                    self.webhook_process.kill()
         
-        if self.web_process and self.web_process.is_alive():
-            self.logger.info("Stopping web interface...")
-            self.web_process.terminate()
-            self.web_process.join(timeout=5)
+        if self.web_process is not None:
             if self.web_process.is_alive():
-                self.web_process.kill()
+                self.logger.info("Stopping web interface...")
+                self.web_process.terminate()
+                self.web_process.join(timeout=5)
+                if self.web_process.is_alive():
+                    self.web_process.kill()
         
         self.logger.info("All services stopped")
     
