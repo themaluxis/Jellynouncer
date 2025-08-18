@@ -152,9 +152,9 @@ class ServiceLauncher:
             
             # Check if we should run only one service (for development)
             # Get run mode from config or environment override
-            from jellynouncer.config_models import ConfigurationManager
-            config_manager = ConfigurationManager()
-            config = config_manager.load_config()
+            from jellynouncer.config_models import ConfigurationValidator
+            config_validator = ConfigurationValidator()
+            config = config_validator.load_and_validate_config()
             run_mode = os.environ.get("JELLYNOUNCER_RUN_MODE", config.server.run_mode).lower()
             
             if run_mode in ["all", "both"]:

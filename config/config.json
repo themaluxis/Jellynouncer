@@ -111,16 +111,14 @@
       "audio_codec": true,
       "audio_channels": true,
       "hdr_status": true,
-      "file_size": true,
-      "provider_ids": true
+      "file_size": true
     },
     "colors": {
       "new_item": 65280,
       "resolution_upgrade": 16766720,
       "codec_upgrade": 16747520,
       "audio_upgrade": 9662683,
-      "hdr_upgrade": 16716947,
-      "provider_update": 2003199
+      "hdr_upgrade": 16716947
     },
     "filter_renames": true,
     "filter_deletes": true
