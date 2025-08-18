@@ -2,7 +2,7 @@
 
     on:
       push:
-        branches: [ "main" ] # or your desired branch
+        branches: [ "main", "develop" ] # or your desired branch
 
     jobs:
       build:
