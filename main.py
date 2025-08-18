@@ -917,10 +917,16 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     errors = []
     for error in exc.errors():
         field_path = " → ".join(str(loc) for loc in error["loc"])
+        error_input = error.get("input", "unknown")
+
+        # Ensure the input is JSON serializable
+        if isinstance(error_input, bytes):
+            error_input = error_input.decode('utf-8', errors='replace')
+
         errors.append({
             "field": field_path,
             "message": error["msg"],
-            "input": error.get("input", "unknown")
+            "input": error_input
         })
 
     # Log the validation error for debugging
