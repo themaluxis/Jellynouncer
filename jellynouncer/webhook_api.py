@@ -172,7 +172,7 @@ async def lifespan(app_instance: FastAPI):
         )
         logger.info("Starting Jellynouncer service initialization...")
         # Log which source provided the log level for debugging
-        logger.debug(f"Log level '{log_level}' determined from configuration system")
+        logger.debug(f"Log level '{app_log_level}' determined from configuration system")
 
         # Create and initialize the main webhook service
         # This handles all the complex business logic and integrations
