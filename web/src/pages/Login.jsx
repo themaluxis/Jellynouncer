@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LockClosedIcon, UserIcon, XCircleIcon } from '@heroicons/react/24/outline';
+import { Icon, IconDuotone, IconLight } from '../components/FontAwesomeIcon';
 import { useAuthStore } from '../stores/authStore';
 
 const Login = () => {
@@ -45,7 +45,7 @@ const Login = () => {
         <div>
           <div className="flex justify-center">
             <div className="bg-purple-600 rounded-full p-3">
-              <LockClosedIcon className="h-12 w-12 text-white" />
+              <IconDuotone icon="lock-alt" size="3x" className="text-white" />
             </div>
           </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-white">
@@ -65,7 +65,7 @@ const Login = () => {
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <UserIcon className="h-5 w-5 text-gray-400" />
+                  <IconLight icon="user" className="text-gray-400" size="lg" />
                 </div>
                 <input
                   id="username"
@@ -86,7 +86,7 @@ const Login = () => {
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <LockClosedIcon className="h-5 w-5 text-gray-400" />
+                  <IconLight icon="lock" className="text-gray-400" size="lg" />
                 </div>
                 <input
                   id="password"
@@ -107,7 +107,7 @@ const Login = () => {
             <div className="rounded-md bg-red-50 dark:bg-red-900/20 p-4">
               <div className="flex">
                 <div className="flex-shrink-0">
-                  <XCircleIcon className="h-5 w-5 text-red-400" aria-hidden="true" />
+                  <IconDuotone icon="exclamation-circle" className="text-red-400" size="lg" aria-hidden="true" />
                 </div>
                 <div className="ml-3">
                   <h3 className="text-sm font-medium text-red-800 dark:text-red-200">

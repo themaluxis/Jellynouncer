@@ -1,18 +1,19 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { apiService } from '../services/api'
-import Editor from '@monaco-editor/react'
-import { Save, RotateCcw, Plus, Info, FileText, X } from 'lucide-react'
+import Jinja2Editor from '../components/Jinja2Editor'
+import { Icon, IconDuotone, IconLight } from '../components/FontAwesomeIcon'
 import toast from 'react-hot-toast'
-import { registerJinja2Language, getJinja2Completions } from '../utils/jinja2Language'
 
 const Templates = () => {
   const [selectedTemplate, setSelectedTemplate] = useState(null)
   const [editorContent, setEditorContent] = useState('')
   const [showCheatsheet, setShowCheatsheet] = useState(false)
   const [isModified, setIsModified] = useState(false)
-  const editorRef = useRef(null)
-  const monacoRef = useRef(null)
+  const [theme, setTheme] = useState(() => {
+    // Check if dark mode is enabled
+    return document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+  })
   
   const { data: templates, refetch } = useQuery({
     queryKey: ['templates'],
@@ -44,31 +45,15 @@ const Templates = () => {
     setIsModified(false)
   }
 
-  const handleEditorDidMount = (editor, monaco) => {
-    editorRef.current = editor
-    monacoRef.current = monaco
-    
-    // Register Jinja2 language
-    registerJinja2Language(monaco)
-    
-    // Set up auto-completion
-    monaco.languages.registerCompletionItemProvider('jinja2', {
-      provideCompletionItems: (model, position) => {
-        return getJinja2Completions(monaco, position)
-      }
-    })
-    
-    // Add keyboard shortcuts
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      if (isModified && selectedTemplate) {
-        saveMutation.mutate({ name: selectedTemplate, content: editorContent })
-      }
-    })
-  }
-
   const handleEditorChange = (value) => {
     setEditorContent(value || '')
     setIsModified(true)
+  }
+
+  const handleSave = () => {
+    if (isModified && selectedTemplate) {
+      saveMutation.mutate({ name: selectedTemplate, content: editorContent })
+    }
   }
 
   return (
@@ -80,7 +65,7 @@ const Templates = () => {
             onClick={() => setShowCheatsheet(!showCheatsheet)}
             className="btn btn-secondary"
           >
-            <Info size={16} className="mr-2" />
+            <IconDuotone icon="info-circle" className="mr-2" color="text-blue-500" />
             Jinja2 Guide
           </button>
         </div>
@@ -93,7 +78,7 @@ const Templates = () => {
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-dark-text-secondary">Templates</h3>
               <button className="p-1 hover:bg-dark-elevated rounded">
-                <Plus size={16} />
+                <IconLight icon="plus-circle" size="lg" color="text-gray-400 hover:text-purple-500" />
               </button>
             </div>
             
@@ -112,7 +97,7 @@ const Templates = () => {
                   `}
                 >
                   <div className="flex items-center gap-2">
-                    <FileText size={14} className="text-dark-text-muted" />
+                    <IconDuotone icon="file-code" className="text-dark-text-muted" size="sm" />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{template.name}</p>
                       <p className="text-xs text-dark-text-muted">
@@ -151,7 +136,7 @@ const Templates = () => {
                     className="btn btn-secondary"
                     disabled={!templates?.data?.find(t => t.name === selectedTemplate)?.['is_default']}
                   >
-                    <RotateCcw size={16} className="mr-2" />
+                    <IconDuotone icon="undo-alt" className="mr-2" color="text-yellow-500" />
                     Restore Default
                   </button>
                   <button 
@@ -159,40 +144,22 @@ const Templates = () => {
                     className="btn btn-primary"
                     disabled={!isModified}
                   >
-                    <Save size={16} className="mr-2" />
+                    <IconDuotone icon="save" className="mr-2" color="text-green-500" />
                     Save
                   </button>
                 </div>
               </div>
               
-              {/* Monaco Editor */}
+              {/* CodeMirror 6 Jinja2 Editor */}
               <div className="flex-1 relative">
-                <Editor
-                  height="100%"
-                  language="jinja2"
-                  theme="jinja2-dark"
+                <Jinja2Editor
                   value={editorContent}
                   onChange={handleEditorChange}
-                  onMount={handleEditorDidMount}
-                  options={{
-                    minimap: { enabled: false },
-                    fontSize: 14,
-                    fontFamily: "'JetBrains Mono', 'Cascadia Code', Consolas, monospace",
-                    wordWrap: 'on',
-                    lineNumbers: 'on',
-                    scrollBeyondLastLine: false,
-                    automaticLayout: true,
-                    tabSize: 2,
-                    insertSpaces: true,
-                    folding: true,
-                    bracketPairColorization: {
-                      enabled: true
-                    },
-                    suggest: {
-                      showKeywords: true,
-                      showSnippets: true
-                    }
-                  }}
+                  onSave={handleSave}
+                  theme={theme}
+                  height="100%"
+                  readOnly={false}
+                  placeholder="Enter your Jinja2 template here..."
                 />
                 
                 {/* Jinja2 Cheatsheet Overlay */}
@@ -204,7 +171,7 @@ const Templates = () => {
                         onClick={() => setShowCheatsheet(false)}
                         className="p-1 hover:bg-dark-elevated rounded"
                       >
-                        <X size={16} />
+                        <IconLight icon="times" size="lg" />
                       </button>
                     </div>
                     
@@ -306,7 +273,7 @@ const Templates = () => {
           ) : (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <FileText size={48} className="text-dark-text-muted mx-auto mb-4" />
+                <IconDuotone icon="file-code" size="3x" className="text-dark-text-muted mx-auto mb-4" />
                 <p className="text-dark-text-secondary">Select a template to edit</p>
               </div>
             </div>

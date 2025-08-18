@@ -19,6 +19,10 @@ jellynouncer/*.pyo
 web/PERFORMANCE_OPTIMIZATIONS.md
 web/IMPLEMENTATION_GUIDE.md
 /web/node_modules
-package-lock.json
 /web/dist/assets
 nul
+
+# Environment files
+.env
+.env.local
+.env.production
