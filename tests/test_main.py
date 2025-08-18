@@ -1,11 +1,13 @@
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
+from fastapi import Request
+from fastapi.exceptions import RequestValidationError
+import json
 
 # We need to import the 'app' instance from main
-from main import app
+from main import app, validation_exception_handler
 
-# Use a mock for the lifespan context manager to avoid running full initialization
 @pytest.fixture
 def client(mocker):
     # Set dummy environment variables to satisfy the configuration validator
@@ -18,44 +20,57 @@ def client(mocker):
             'DISCORD_WEBHOOK_URL': 'https://discord.com/api/webhooks/123/abc'
         }
     )
-    # Mock the WebhookService class to return an AsyncMock instance.
-    # This instance will have awaitable methods, preventing TypeErrors in the lifespan.
-    mock_service_instance = AsyncMock()
-    mocker.patch('main.WebhookService', return_value=mock_service_instance)
+    # Mock the WebhookService class to return a mock instance
+    mock_service_class = mocker.patch('main.WebhookService', autospec=True)
+    mock_instance = mock_service_class.return_value
+    mock_instance.initialize = AsyncMock()
+    mock_instance.process_webhook = AsyncMock()
+    # Add a mock logger to the service instance
+    mock_instance.logger = MagicMock()
 
     with TestClient(app) as test_client:
-        # The app's lifespan manager will set the global webhook_service.
-        # We need our test to use this instance when calling the endpoint.
-        from main import webhook_service
-        # The test will fail if the global is not the mock we expect
-        assert webhook_service is mock_service_instance
-        yield test_client
+        yield test_client, mock_instance
 
-import json
-import pytest
-from fastapi import Request
-from fastapi.exceptions import RequestValidationError
-
-from main import validation_exception_handler
-
-
-def test_validation_error_does_not_crash(client):
+def test_webhook_happy_path(client, webhook_payload_data):
     """
-    Tests that the validation_exception_handler does not crash on invalid input.
-    This is a regression test for the "Object of type bytes is not JSON serializable" bug.
+    Tests the happy path for the /webhook endpoint with a valid payload.
     """
-    # Send a request with a raw bytes body and no 'application/json' content-type.
-    # This simulates a condition that could cause validation errors.
-    response = client.post("/webhook", content=b'{"invalid_json": "true"')
+    test_client, mock_service = client
 
-    # The most important assertion is that we get a 422 and not a 500
+    # Configure the mock to return a successful response
+    success_response = {"status": "success", "action": "new_item"}
+    mock_service.process_webhook.return_value = success_response
+
+    # Post the valid JSON data
+    response = test_client.post("/webhook", json=webhook_payload_data)
+
+    # Assert a successful response
+    assert response.status_code == 200
+    assert response.json() == success_response
+
+    # Verify that the service's process_webhook method was called
+    mock_service.process_webhook.assert_called_once()
+
+def test_json_decode_error(client):
+    """
+    Tests that the endpoint returns a 400 Bad Request for malformed JSON.
+    """
+    test_client, _ = client
+    response = test_client.post("/webhook", content=b'{"invalid_json": "true"')
+    assert response.status_code == 400
+    assert "Invalid JSON" in response.json()["detail"]
+
+def test_validation_error_from_invalid_data(client):
+    """
+    Tests that the endpoint returns a 422 for JSON that is valid
+    but does not match the Pydantic model.
+    """
+    test_client, _ = client
+    # Send valid JSON, but missing required fields like 'ItemId'
+    response = test_client.post("/webhook", json={"Name": "Test", "ItemType": "Movie"})
     assert response.status_code == 422
-
-    # And that the response is valid JSON
-    try:
-        response.json()
-    except json.JSONDecodeError:
-        pytest.fail("Response on validation error is not valid JSON")
+    json_response = response.json()
+    assert "Webhook Validation Error" in json_response["error"]
 
 @pytest.mark.asyncio
 async def test_validation_handler_decodes_bytes():
