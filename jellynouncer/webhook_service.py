@@ -1212,6 +1212,7 @@ class WebhookService:
             
             async def producer():
                 """Fetch batches from Jellyfin API and queue them for processing."""
+                nonlocal progress_display  # Declare nonlocal at the start of the function
                 batch_num = 0
                 try:
                     async for batch_items, total_count in self.jellyfin.get_items_stream():
@@ -1222,7 +1223,6 @@ class WebhookService:
                         
                         # Initialize progress display on first batch
                         if batch_num == 1 and progress_display is None:
-                            nonlocal progress_display
                             sync_type = "initial" if not background else "background"
                             progress_display = SyncProgressDisplay(
                                 total_items=total_count,
@@ -1272,6 +1272,7 @@ class WebhookService:
             
             async def consumer():
                 """Process batches from queue and save to database."""
+                nonlocal progress_display  # Declare nonlocal at the start of the function
                 consecutive_batch_errors = 0
                 try:
                     while True:

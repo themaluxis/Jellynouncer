@@ -338,10 +338,10 @@ class DatabaseItem:
         # Create instance
         instance = cls(**data)
         
-        # Set computed fields directly
+        # Set computed fields directly using setattr to avoid IDE warnings
         if content_hash:
-            instance.content_hash = content_hash
+            setattr(instance, 'content_hash', content_hash)
         if timestamp_created:
-            instance.timestamp_created = timestamp_created
+            setattr(instance, 'timestamp_created', timestamp_created)
             
         return instance

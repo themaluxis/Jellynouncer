@@ -414,13 +414,12 @@ class TMDbAPI:
             self.logger.error(f"Error parsing TV response: {e}")
             return TMDbMetadata(success=False, error=str(e))
 
-    def _parse_episode_response(self, episode_data: Any, series_id: Optional[int] = None) -> TMDbMetadata:
+    def _parse_episode_response(self, episode_data: Any) -> TMDbMetadata:
         """
         Parse TMDb episode response into TMDbMetadata dataclass.
 
         Args:
             episode_data: Raw episode data from TMDb API
-            series_id: Optional series TMDb ID
 
         Returns:
             TMDbMetadata: Parsed and sanitized metadata
@@ -626,7 +625,7 @@ class TMDbAPI:
             )
 
             if episode_data:
-                return self._parse_episode_response(episode_data, series_tmdb_id)
+                return self._parse_episode_response(episode_data)
 
         return None
 

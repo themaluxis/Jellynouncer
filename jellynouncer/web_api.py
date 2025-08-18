@@ -28,34 +28,30 @@ License: MIT
 """
 
 import os
-import sys
 import json
-import asyncio
-import hashlib
 import secrets
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List
 from contextlib import asynccontextmanager
 
 # Third-party imports
-from fastapi import FastAPI, HTTPException, Depends, Security, status, Request, Response
+from fastapi import FastAPI, HTTPException, Depends, Security, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse
 import uvicorn
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 import aiosqlite
 import jwt
 from passlib.context import CryptContext
 import bcrypt
 
 # Import Jellynouncer modules
-from jellynouncer.config_models import AppConfig, ConfigurationValidator
-from jellynouncer.database_manager import DatabaseManager
-from jellynouncer.utils import setup_logging, get_logger
+from jellynouncer.config_models import ConfigurationValidator
+from jellynouncer.utils import get_logger
 from jellynouncer.webhook_service import WebhookService
 from jellynouncer.ssl_manager import SSLManager, setup_ssl_routes
 
@@ -66,14 +62,21 @@ JWT_ALGORITHM = "HS256"
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 30
 JWT_REFRESH_TOKEN_EXPIRE_DAYS = 7
 
+# Determine log directory - use relative path for flexibility
+# Works both in Docker (/app/logs) and outside (./logs)
+LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+if not os.path.exists(LOG_DIR):
+    # Fallback to current directory logs if parent doesn't exist
+    LOG_DIR = "logs"
+
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # JWT token handler
 security = HTTPBearer()
 
-# Logger setup
-logger = get_logger("web_api")
+# Logger setup with extensive debug logging
+logger = get_logger("jellynouncer.web_api")
 
 
 # ==================== Pydantic Models ====================
@@ -84,7 +87,8 @@ class UserCreate(BaseModel):
     password: str = Field(..., min_length=8)
     email: Optional[str] = None
     
-    @validator('username')
+    @field_validator('username')
+    @classmethod
     def username_alphanumeric(cls, v):
         if not v.replace('_', '').replace('-', '').isalnum():
             raise ValueError('Username must be alphanumeric with optional _ or -')
@@ -145,11 +149,14 @@ class WebDatabaseManager:
     
     def __init__(self, db_path: str = WEB_DB_PATH):
         self.db_path = db_path
-        self.logger = get_logger("web_db")
+        self.logger = get_logger("jellynouncer.web_db")
+        self.logger.debug(f"Initializing WebDatabaseManager with path: {db_path}")
         
     async def initialize(self):
         """Initialize the web database with required tables"""
+        self.logger.debug(f"Starting database initialization at {self.db_path}")
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        self.logger.debug(f"Ensured parent directory exists for {self.db_path}")
         
         async with aiosqlite.connect(self.db_path) as db:
             # Enable WAL mode for better concurrency
@@ -214,10 +221,15 @@ class WebDatabaseManager:
             
             # Initialize security settings if not exists
             cursor = await db.execute("SELECT COUNT(*) FROM security_settings")
-            if (await cursor.fetchone())[0] == 0:
+            count = (await cursor.fetchone())[0]
+            self.logger.debug(f"Found {count} security settings records")
+            
+            if count == 0:
                 await db.execute("INSERT INTO security_settings (auth_enabled, require_webhook_auth) VALUES (0, 0)")
                 await db.commit()
                 self.logger.info("Initialized security settings with authentication disabled")
+            else:
+                self.logger.debug("Security settings already initialized")
     
     async def get_security_settings(self) -> Dict[str, bool]:
         """Get current security settings"""
@@ -244,25 +256,28 @@ class WebDatabaseManager:
             )
             await db.commit()
     
-    def _generate_salt(self) -> str:
+    @staticmethod
+    def _generate_salt() -> str:
         """Generate a random salt for password hashing"""
         return secrets.token_hex(32)
     
-    def _hash_password_with_salt(self, password: str, salt: str) -> str:
+    @staticmethod
+    def _hash_password_with_salt(password: str, salt: str) -> str:
         """Hash password with salt using bcrypt"""
         # Combine password and salt, then hash with bcrypt
         salted_password = f"{password}{salt}".encode('utf-8')
         return bcrypt.hashpw(salted_password, bcrypt.gensalt()).decode('utf-8')
     
-    def _verify_password_with_salt(self, password: str, salt: str, password_hash: str) -> bool:
+    @staticmethod
+    def _verify_password_with_salt(password: str, salt: str, password_hash: str) -> bool:
         """Verify password against hash with salt"""
         salted_password = f"{password}{salt}".encode('utf-8')
         return bcrypt.checkpw(salted_password, password_hash.encode('utf-8'))
     
     async def create_user(self, username: str, password: str, email: Optional[str] = None, is_admin: bool = False) -> int:
         """Create a new user with salt and hash"""
-        salt = self._generate_salt()
-        hashed_password = self._hash_password_with_salt(password, salt)
+        salt = AuthenticationDB._generate_salt()
+        hashed_password = AuthenticationDB._hash_password_with_salt(password, salt)
         
         async with aiosqlite.connect(self.db_path) as db:
             try:
@@ -285,7 +300,7 @@ class WebDatabaseManager:
             )
             user = await cursor.fetchone()
             
-            if user and self._verify_password_with_salt(password, user["salt"], user["password_hash"]):
+            if user and AuthenticationDB._verify_password_with_salt(password, user["salt"], user["password_hash"]):
                 # Update last login
                 await db.execute(
                     "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
@@ -298,8 +313,8 @@ class WebDatabaseManager:
     
     async def update_user_password(self, user_id: int, new_password: str):
         """Update user password with new salt"""
-        salt = self._generate_salt()
-        hashed_password = self._hash_password_with_salt(new_password, salt)
+        salt = AuthenticationDB._generate_salt()
+        hashed_password = AuthenticationDB._hash_password_with_salt(new_password, salt)
         
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
@@ -418,19 +433,43 @@ class WebInterfaceService:
         self.config = None
         self.web_db = WebDatabaseManager()
         self.ssl_manager = SSLManager(WEB_DB_PATH)
-        self.logger = get_logger("web_interface")
+        self.logger = get_logger("jellynouncer.web_interface")
+        self.logger.debug("Initializing WebInterfaceService")
+        
+        if webhook_service:
+            self.logger.debug("WebhookService provided - will have access to main database")
+        else:
+            self.logger.debug("No WebhookService - running in standalone mode")
         
     async def initialize(self):
         """Initialize the web interface service"""
+        self.logger.debug("Starting web interface service initialization")
+        
+        # Initialize database
+        self.logger.debug("Initializing web database...")
         await self.web_db.initialize()
+        self.logger.debug("Web database initialized successfully")
+        
+        # Initialize SSL manager
+        self.logger.debug("Initializing SSL manager...")
         await self.ssl_manager.initialize()
+        self.logger.debug("SSL manager initialized successfully")
         
         # Load configuration
+        self.logger.debug("Loading configuration...")
         try:
-            validator = ConfigurationValidator()
-            self.config = validator.load_and_validate_config()
+            config_validator = ConfigurationValidator()
+            self.config = config_validator.load_and_validate_config()
+            self.logger.debug(f"Configuration loaded successfully from {config_validator.config_path if hasattr(config_validator, 'config_path') else 'default path'}")
+            
+            # Initialize SSL manager with config
+            self.logger.debug("Initializing SSL manager with config...")
+            ssl_config_obj = self.config.ssl if hasattr(self.config, 'ssl') else None
+            self.ssl_manager = SSLManager(ssl_config=ssl_config_obj, db_path=WEB_DB_PATH)
+            await self.ssl_manager.initialize()
+            self.logger.debug("SSL manager initialized successfully")
         except Exception as e:
-            self.logger.error(f"Failed to load configuration: {e}")
+            self.logger.error(f"Failed to load configuration: {e}", exc_info=True)
             raise
     
     async def get_overview_stats(self) -> OverviewStats:
@@ -493,7 +532,8 @@ class WebInterfaceService:
     async def get_config(self, include_sensitive: bool = False) -> Dict[str, Any]:
         """Get current configuration"""
         if not self.config:
-            self.config = ConfigurationValidator.load_and_validate()
+            validator = ConfigurationValidator()
+            self.config = validator.load_and_validate_config()
         
         config_dict = self.config.model_dump()
         
@@ -531,8 +571,9 @@ class WebInterfaceService:
             
             config_data[section][key] = value
             
-            # Validate the new configuration
-            validated_config = ConfigurationValidator.validate_config(config_data)
+            # Validate the new configuration using Pydantic model
+            from jellynouncer.config_models import AppConfig
+            validated_config = AppConfig(**config_data)
             
             # Save the updated config
             with open(config_path, 'w') as f:
@@ -548,7 +589,8 @@ class WebInterfaceService:
             self.logger.error(f"Failed to update config: {e}")
             raise ValueError(f"Configuration update failed: {str(e)}")
     
-    async def get_templates(self) -> List[Dict[str, Any]]:
+    @staticmethod
+    async def get_templates() -> List[Dict[str, Any]]:
         """Get list of available templates"""
         templates_dir = Path("templates")
         templates = []
@@ -556,7 +598,7 @@ class WebInterfaceService:
         for template_file in templates_dir.glob("*.j2"):
             # Read template metadata from first line comment if available
             with open(template_file, 'r') as f:
-                content = f.read()
+                _ = f.read()  # Read to check file is accessible but content not needed here
                 
             templates.append({
                 "name": template_file.stem,
@@ -568,7 +610,8 @@ class WebInterfaceService:
         
         return sorted(templates, key=lambda x: x["name"])
     
-    async def get_template_content(self, name: str) -> str:
+    @staticmethod
+    async def get_template_content(name: str) -> str:
         """Get template content"""
         template_path = Path(f"templates/{name}.j2")
         
@@ -590,7 +633,10 @@ class WebInterfaceService:
             # Validate Jinja2 syntax
             from jinja2 import Environment, TemplateSyntaxError
             env = Environment()
-            env.parse(content)
+            try:
+                env.parse(content)
+            except TemplateSyntaxError as e:
+                raise ValueError(f"Invalid Jinja2 syntax: {str(e)}")
             
             # Save the template
             with open(template_path, 'w') as f:
@@ -599,8 +645,8 @@ class WebInterfaceService:
             self.logger.info(f"Saved template: {name}")
             return True
             
-        except TemplateSyntaxError as e:
-            raise ValueError(f"Invalid Jinja2 syntax: {str(e)}")
+        except ValueError:
+            raise  # Re-raise validation errors
         except Exception as e:
             self.logger.error(f"Failed to save template: {e}")
             raise
@@ -613,10 +659,26 @@ class WebInterfaceService:
     
     async def get_logs(self, query: LogQuery) -> List[Dict[str, Any]]:
         """Get log entries based on query parameters"""
-        log_path = Path(f"logs/{query.file}")
+        # Use the configured log directory
+        log_path = Path(LOG_DIR) / query.file
+        self.logger.debug(f"Attempting to read log file: {log_path}")
         
         if not log_path.exists():
-            raise ValueError(f"Log file {query.file} not found")
+            self.logger.warning(f"Log file not found: {log_path}")
+            # Try alternative paths
+            alt_paths = [
+                Path("logs") / query.file,
+                Path("/app/logs") / query.file,
+                Path("../logs") / query.file
+            ]
+            for alt_path in alt_paths:
+                self.logger.debug(f"Trying alternative path: {alt_path}")
+                if alt_path.exists():
+                    log_path = alt_path
+                    self.logger.debug(f"Found log file at: {log_path}")
+                    break
+            else:
+                raise ValueError(f"Log file {query.file} not found in any standard location")
         
         logs = []
         
@@ -660,14 +722,14 @@ class WebInterfaceService:
 web_service = WebInterfaceService()
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app_instance: FastAPI):
     """Manage application lifecycle"""
     # Startup
     logger.info("Starting Jellynouncer Web Interface...")
     await web_service.initialize()
     
     # Setup SSL routes
-    await setup_ssl_routes(app, web_service.ssl_manager)
+    await setup_ssl_routes(app_instance, web_service.ssl_manager)
     
     # Try to connect to webhook service if available
     # This would be passed in from main.py when both services run together
@@ -693,6 +755,79 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Request/Response logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all HTTP requests and responses with extensive debug information"""
+    import time
+    start_time = time.time()
+    
+    # Generate request ID for tracking
+    request_id = secrets.token_hex(8)
+    
+    # Log incoming request with detailed information
+    logger.debug(f"[{request_id}] Incoming request: {request.method} {request.url.path}")
+    logger.debug(f"[{request_id}] Client: {request.client.host if request.client else 'unknown'}")
+    logger.debug(f"[{request_id}] Headers: {dict(request.headers)}")
+    logger.debug(f"[{request_id}] Query params: {dict(request.query_params)}")
+    
+    # Log request body for POST/PUT/PATCH (be careful with sensitive data)
+    if request.method in ["POST", "PUT", "PATCH"]:
+        # Don't log auth endpoints bodies (contains passwords)
+        if "/auth/" not in request.url.path:
+            try:
+                body = await request.body()
+                if body:
+                    logger.debug(f"[{request_id}] Request body size: {len(body)} bytes")
+                    # Only log small bodies to avoid cluttering logs
+                    if len(body) < 1000:
+                        try:
+                            body_json = json.loads(body)
+                            # Mask sensitive fields
+                            if "password" in body_json:
+                                body_json["password"] = "***MASKED***"
+                            if "api_key" in body_json:
+                                body_json["api_key"] = "***MASKED***"
+                            logger.debug(f"[{request_id}] Request body: {json.dumps(body_json, indent=2)}")
+                        except json.JSONDecodeError:
+                            logger.debug(f"[{request_id}] Request body (non-JSON): {body[:200]}...")
+                # Need to recreate the request body stream
+                from starlette.datastructures import Headers
+                from starlette.requests import Request as StarletteRequest
+                request = StarletteRequest(request.scope, request.receive)
+                request._body = body
+            except Exception as e:
+                logger.debug(f"[{request_id}] Could not read request body: {e}")
+    
+    # Process the request
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        # Log any unhandled exceptions
+        logger.error(f"[{request_id}] Unhandled exception: {e}", exc_info=True)
+        raise
+    
+    # Calculate processing time
+    process_time = time.time() - start_time
+    
+    # Log response
+    logger.debug(f"[{request_id}] Response status: {response.status_code}")
+    logger.debug(f"[{request_id}] Processing time: {process_time:.3f}s")
+    
+    # Add custom headers for debugging
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time"] = str(process_time)
+    
+    # Log response details based on status code
+    if response.status_code >= 400:
+        logger.warning(f"[{request_id}] Error response: {response.status_code} for {request.method} {request.url.path}")
+    elif response.status_code >= 300:
+        logger.debug(f"[{request_id}] Redirect response: {response.status_code}")
+    else:
+        logger.debug(f"[{request_id}] Success response: {response.status_code}")
+    
+    return response
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
@@ -707,6 +842,9 @@ if os.environ.get("JELLYNOUNCER_PRODUCTION"):
     allowed_hosts = os.environ.get("JELLYNOUNCER_ALLOWED_HOSTS", "").split(",")
     if allowed_hosts:
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+        logger.info(f"Trusted host middleware enabled with hosts: {allowed_hosts}")
+else:
+    logger.debug("Running in development mode - trusted host middleware disabled")
 
 
 # ==================== API Endpoints ====================
@@ -729,11 +867,11 @@ async def login(user_login: UserLogin, request: Request):
     
     # Create tokens
     access_token = create_access_token({"user_id": user["id"], "username": user["username"]})
-    refresh_token = create_refresh_token({"user_id": user["id"]})
+    user_refresh_token = create_refresh_token({"user_id": user["id"]})
     
     # Save refresh token
     expires_at = datetime.now(timezone.utc) + timedelta(days=JWT_REFRESH_TOKEN_EXPIRE_DAYS)
-    await web_service.web_db.save_refresh_token(user["id"], refresh_token, expires_at)
+    await web_service.web_db.save_refresh_token(user["id"], user_refresh_token, expires_at)
     
     # Log successful login
     await web_service.web_db.log_audit(
@@ -742,15 +880,15 @@ async def login(user_login: UserLogin, request: Request):
     
     return TokenResponse(
         access_token=access_token,
-        refresh_token=refresh_token,
+        refresh_token=user_refresh_token,
         expires_in=JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
 
 
 @app.post("/api/auth/refresh", response_model=TokenResponse)
-async def refresh_token(refresh_token: str):
+async def refresh_token(token_string: str):
     """Refresh access token using refresh token"""
-    user_id = await web_service.web_db.verify_refresh_token(refresh_token)
+    user_id = await web_service.web_db.verify_refresh_token(token_string)
     
     if not user_id:
         raise HTTPException(
@@ -775,7 +913,7 @@ async def refresh_token(refresh_token: str):
     
     return TokenResponse(
         access_token=access_token,
-        refresh_token=refresh_token,  # Return same refresh token
+        refresh_token=token_string,  # Return same refresh token
         expires_in=JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
 
@@ -815,16 +953,16 @@ async def setup_authentication(user_create: UserCreate):
         
         # Create tokens for immediate login
         access_token = create_access_token({"user_id": user_id, "username": user_create.username})
-        refresh_token = create_refresh_token({"user_id": user_id})
+        new_refresh_token = create_refresh_token({"user_id": user_id})
         
         # Save refresh token
         expires_at = datetime.now(timezone.utc) + timedelta(days=JWT_REFRESH_TOKEN_EXPIRE_DAYS)
-        await web_service.web_db.save_refresh_token(user_id, refresh_token, expires_at)
+        await web_service.web_db.save_refresh_token(user_id, new_refresh_token, expires_at)
         
         return {
             "message": "Authentication configured successfully",
             "access_token": access_token,
-            "refresh_token": refresh_token,
+            "refresh_token": new_refresh_token,
             "expires_in": JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
         }
         
@@ -1020,8 +1158,31 @@ async def health_check():
 
 
 # Serve static files (React build)
-if os.path.exists("web/dist"):
-    app.mount("/", StaticFiles(directory="web/dist", html=True), name="static")
+web_dist_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web", "dist")
+if os.path.exists(web_dist_path):
+    logger.info(f"Serving static files from {web_dist_path}")
+    app.mount("/", StaticFiles(directory=web_dist_path, html=True), name="static")
+else:
+    logger.warning(f"Web interface build not found at {web_dist_path}")
+    logger.warning("The React frontend needs to be built first. Run 'npm run build' in the web directory.")
+    
+    # Add a fallback route that returns instructions
+    @app.get("/")
+    async def web_ui_not_built():
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "Web interface not built",
+                "message": "The web interface needs to be built before it can be served.",
+                "instructions": [
+                    "1. Navigate to the 'web' directory",
+                    "2. Run 'npm install' to install dependencies",
+                    "3. Run 'npm run build' to build the production files",
+                    "4. Restart the Jellynouncer service"
+                ],
+                "api_status": "The API endpoints are still available at /api/*"
+            }
+        )
 
 
 # ==================== Main Entry Point ====================

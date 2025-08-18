@@ -1612,7 +1612,7 @@ class DiscordNotifier:
             # Try to at least show the structure
             try:
                 self.logger.debug(f"Payload structure: {repr(payload)[:1000]}")
-            except Exception:
+            except (TypeError, ValueError, AttributeError):
                 self.logger.debug("Could not even repr() the payload")
 
         # Detailed embed analysis if embeds exist

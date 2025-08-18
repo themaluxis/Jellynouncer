@@ -21,7 +21,7 @@ License: MIT
 """
 
 import logging
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Union, Optional
 
 from .config_models import NotificationsConfig
 from .media_models import MediaItem
@@ -399,7 +399,7 @@ class ChangeDetector:
         return changes
 
     async def is_rename(self, new_item: Union[MediaItem, DatabaseItem], 
-                        existing_items: List[DatabaseItem]) -> tuple[bool, DatabaseItem]:
+                        existing_items: List[DatabaseItem]) -> tuple[bool, Optional[DatabaseItem]]:
         """
         Detect if a new item is actually a rename/move of an existing item.
         
@@ -432,7 +432,7 @@ class ChangeDetector:
             ```
         """
         # Get content hash for comparison
-        new_hash = new_item.content_hash if hasattr(new_item, 'content_hash') else new_item._generate_content_hash()
+        new_hash = new_item.content_hash
         
         for existing_item in existing_items:
             # Check if same content (hash) and same name but different item_id
@@ -449,7 +449,8 @@ class ChangeDetector:
         
         return False, None
     
-    def _normalize_hdr_status(self, video_range: str) -> str:
+    @staticmethod
+    def _normalize_hdr_status(video_range: str) -> str:
         """
         Normalize HDR status values for consistent comparison and reporting.
 

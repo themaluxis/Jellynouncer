@@ -20,8 +20,7 @@ import os
 import sys
 import time
 import locale
-from typing import Optional, Dict, Any, Tuple
-from colorama import init, Fore, Back, Style
+from colorama import init, Fore
 
 # Initialize colorama for Windows support
 init(autoreset=False)
@@ -127,8 +126,8 @@ class SyncProgressDisplay:
         self.max_batch_history = 10  # Keep last 10 batches for average
         
         # Detect terminal capabilities
-        self.color_support = self._detect_color_support()
-        self.unicode_level = self._detect_unicode_support()
+        self.color_support = SyncProgressDisplay._detect_color_support()
+        self.unicode_level = SyncProgressDisplay._detect_unicode_support()
         self.chars = self.UI_CHARS[self.unicode_level]
         
         # Color reset code
@@ -138,7 +137,8 @@ class SyncProgressDisplay:
         if logger:
             logger.debug(f"Terminal capabilities - Colors: {self.color_support}, Unicode: {self.unicode_level}")
     
-    def _detect_color_support(self) -> str:
+    @staticmethod
+    def _detect_color_support() -> str:
         """
         Detect the maximum level of color support in Linux/Docker terminals.
         
@@ -190,7 +190,8 @@ class SyncProgressDisplay:
         # Default to basic colors for Linux
         return 'basic'
     
-    def _detect_unicode_support(self) -> str:
+    @staticmethod
+    def _detect_unicode_support() -> str:
         """
         Detect Unicode support level in Linux/Docker terminals.
         
@@ -215,7 +216,7 @@ class SyncProgressDisplay:
                         test_emoji = '🚀📊✅'
                         test_emoji.encode('utf-8')
                         return 'full'
-                    except:
+                    except (UnicodeEncodeError, AttributeError):
                         return 'unicode'
                 
                 # Docker environment - usually supports Unicode but not always emojis
@@ -231,7 +232,7 @@ class SyncProgressDisplay:
                         else:
                             # Docker logs command - safer to avoid emojis
                             return 'unicode'
-                    except:
+                    except (UnicodeEncodeError, AttributeError):
                         return 'unicode'
                 
                 # Standard Linux terminal - supports Unicode
@@ -242,15 +243,15 @@ class SyncProgressDisplay:
                 test_unicode = '█░├└─│╭╮╰╯'
                 test_unicode.encode(encoding)
                 return 'unicode'
-            except:
+            except (UnicodeEncodeError, LookupError):
                 return 'ascii'
                 
-        except Exception:
+        except (AttributeError, LookupError):
             # Error getting encoding, fallback to ASCII
             return 'ascii'
         
-        # Default fallback
-        return 'ascii'
+        # Default fallback (unreachable but kept for clarity)
+        # return 'ascii'
     
     def _rgb_color(self, r: int, g: int, b: int) -> str:
         """
@@ -270,13 +271,14 @@ class SyncProgressDisplay:
             return f'\033[38;2;{r};{g};{b}m'
         elif self.color_support == '256':
             # Convert RGB to nearest 256 color
-            color_code = self._rgb_to_256(r, g, b)
+            color_code = SyncProgressDisplay._rgb_to_256(r, g, b)
             return f'\033[38;5;{color_code}m'
         else:  # basic 16 colors
             # Map to nearest basic color
-            return self._rgb_to_basic(r, g, b)
+            return SyncProgressDisplay._rgb_to_basic(r, g, b)
     
-    def _rgb_to_256(self, r: int, g: int, b: int) -> int:
+    @staticmethod
+    def _rgb_to_256(r: int, g: int, b: int) -> int:
         """Convert RGB to nearest 256 color palette index."""
         # Use the 216 color cube (16-231) for better color matching
         if r == g == b:
@@ -290,7 +292,8 @@ class SyncProgressDisplay:
             b = int(b / 255 * 5)
             return 16 + (36 * r) + (6 * g) + b
     
-    def _rgb_to_basic(self, r: int, g: int, b: int) -> str:
+    @staticmethod
+    def _rgb_to_basic(r: int, g: int, b: int) -> str:
         """Convert RGB to nearest 16-color ANSI code."""
         # Determine the nearest basic color
         brightness = (r + g + b) / 3
@@ -344,7 +347,7 @@ class SyncProgressDisplay:
             elif percent < 90:
                 r, g, b = int(204 - (percent - 80) * 2.55), 255, 0  # Light Green
             else:
-                r, g, b = int(max(0, 178 - (percent - 90) * 2.55)), 255, 0  # Green
+                r, g, b = int(max(0, int(178 - (percent - 90) * 2.55))), 255, 0  # Green
         else:
             # Background sync: White → Light Green → Green gradient
             if percent < 20:
@@ -360,7 +363,7 @@ class SyncProgressDisplay:
                 intensity = int(153 - (percent - 60) * 2.55)
                 r, g, b = intensity, 255, intensity  # Soft Green
             else:
-                intensity = int(max(0, 102 - (percent - 80) * 2.55))
+                intensity = int(max(0, int(102 - (percent - 80) * 2.55)))
                 r, g, b = intensity, 255, intensity  # Pure Green
         
         return self._rgb_color(r, g, b)
@@ -496,7 +499,8 @@ class SyncProgressDisplay:
         
         return eta_seconds
     
-    def _calculate_display_width(self, text: str) -> int:
+    @staticmethod
+    def _calculate_display_width(text: str) -> int:
         """
         Calculate the actual display width of text, accounting for emojis and ANSI codes.
         
@@ -522,7 +526,8 @@ class SyncProgressDisplay:
         # Base length plus extra width for emojis
         return len(text_no_ansi) + emoji_count
     
-    def _format_time(self, seconds: float) -> str:
+    @staticmethod
+    def _format_time(seconds: float) -> str:
         """Format seconds into human-readable time."""
         if seconds < 60:
             return f"{int(seconds)}s"
@@ -643,7 +648,8 @@ class SyncProgressDisplay:
         self.updated_items = updated_items
         
         # Calculate metrics
-        percent = (total_fetched / self.total_items * 100) if self.total_items > 0 else 0
+        # Calculate percentage for display (not currently used but may be needed later)
+        # percent = (total_fetched / self.total_items * 100) if self.total_items > 0 else 0
         elapsed = time.time() - self.start_time
         speed = total_fetched / elapsed if elapsed > 0 else 0
         
@@ -672,14 +678,14 @@ class SyncProgressDisplay:
             # Use proper tree characters with spacing
             self.logger.info(f"{tree['tree_mid']}  {icon['batch']}  Batch: #{batch_num} ({items_in_batch} items)  │  Total: {total_fetched:,}/{self.total_items:,}")
             self.logger.info(f"{tree['tree_mid']}  {icon['speed']}  Speed: {speed_color}{speed:.0f} items/sec{self.reset}")
-            self.logger.info(f"{tree['tree_mid']}  {icon['time']}  ETA: {eta_color}~{self._format_time(eta)}{self.reset}")
+            self.logger.info(f"{tree['tree_mid']}  {icon['time']}  ETA: {eta_color}~{SyncProgressDisplay._format_time(eta)}{self.reset}")
             self.logger.info(f"{tree['tree_mid']}  {icon['success']}  Processed: {items_processed:,}  │  {icon['error']}  Errors: {error_color}{errors}{self.reset}")
             self.logger.info(f"{tree['tree_end']}  {icon['new']}  New: {new_color}{new_items}{self.reset}  │  {icon['update']}  Updated: {update_color}{updated_items}{self.reset}")
         else:
             # ASCII fallback with simpler formatting
             self.logger.info(f"{tree['tree_mid']} {icon['batch']} Batch: #{batch_num} ({items_in_batch} items) | Total: {total_fetched:,}/{self.total_items:,}")
             self.logger.info(f"{tree['tree_mid']} {icon['speed']} Speed: {speed_color}{speed:.0f} items/sec{self.reset}")
-            self.logger.info(f"{tree['tree_mid']} {icon['time']} ETA: {eta_color}~{self._format_time(eta)}{self.reset}")
+            self.logger.info(f"{tree['tree_mid']} {icon['time']} ETA: {eta_color}~{SyncProgressDisplay._format_time(eta)}{self.reset}")
             self.logger.info(f"{tree['tree_mid']} {icon['success']} Processed: {items_processed:,} | {icon['error']} Errors: {error_color}{errors}{self.reset}")
             self.logger.info(f"{tree['tree_end']} {icon['new']} New: {new_color}{new_items}{self.reset} | {icon['update']} Updated: {update_color}{updated_items}{self.reset}")
     
@@ -706,7 +712,7 @@ class SyncProgressDisplay:
             self.logger.info("╭────────────────────────────────────────────────────────────────╮")
             
             # Format status line with proper padding accounting for color codes
-            status_line = f"{status_icon}  {status_text}: {self.items_processed:,} items in {self._format_time(elapsed)}"
+            status_line = f"{status_icon}  {status_text}: {self.items_processed:,} items in {SyncProgressDisplay._format_time(elapsed)}"
             # Color codes don't take visual space, so calculate padding without them
             visual_length = len(status_line) + 1  # +1 for emoji width
             padding_needed = 64 - visual_length
@@ -729,7 +735,7 @@ class SyncProgressDisplay:
             self.logger.info("╰────────────────────────────────────────────────────────────────╯")
         elif self.unicode_level == 'unicode':
             self.logger.info("╭────────────────────────────────────────────────────────────╮")
-            self.logger.info(f"│ {status_icon} {status_color}{status_text}: {self.items_processed:,} items in {self._format_time(elapsed)}{self.reset}".ljust(62 + len(status_color) + len(self.reset)) + "│")
+            self.logger.info(f"│ {status_icon} {status_color}{status_text}: {self.items_processed:,} items in {SyncProgressDisplay._format_time(elapsed)}{self.reset}".ljust(62 + len(status_color) + len(self.reset)) + "│")
             self.logger.info("├────────────────────────────────────────────────────────────┤")
             self.logger.info(f"│ {icon['new']} New items: {self.new_items:,}".ljust(62) + "│")
             self.logger.info(f"│ {icon['update']} Updated: {self.updated_items:,}".ljust(62) + "│")
@@ -737,7 +743,7 @@ class SyncProgressDisplay:
             self.logger.info("╰────────────────────────────────────────────────────────────╯")
         else:
             self.logger.info("+------------------------------------------------------------+")
-            self.logger.info(f"| {status_icon} {status_text}: {self.items_processed:,} items in {self._format_time(elapsed)}".ljust(60) + "|")
+            self.logger.info(f"| {status_icon} {status_text}: {self.items_processed:,} items in {SyncProgressDisplay._format_time(elapsed)}".ljust(60) + "|")
             self.logger.info("+------------------------------------------------------------+")
             self.logger.info(f"| {icon['new']} New items: {self.new_items:,}".ljust(60) + "|")
             self.logger.info(f"| {icon['update']} Updated: {self.updated_items:,}".ljust(60) + "|")

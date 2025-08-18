@@ -103,7 +103,7 @@ webhook_service: Optional[WebhookService] = None
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app_instance: FastAPI):
     """
     Async context manager for FastAPI application lifespan management.
 
@@ -115,7 +115,7 @@ async def lifespan(app: FastAPI):
     replacing the deprecated @app.on_event("startup") decorators.
 
     Args:
-        app: The FastAPI application instance
+        app_instance: The FastAPI application instance
 
     Yields:
         None: Control is yielded back to FastAPI to handle requests
@@ -150,24 +150,24 @@ async def lifespan(app: FastAPI):
         # The setup_logging function creates both console and file handlers
 
         # This ensures environment variables can override config file settings
-        config_validator = ConfigurationValidator()
-        config = None
-        log_level = "INFO"  # Default fallback
+        validator = ConfigurationValidator()
+        app_config = None
+        app_log_level = "INFO"  # Default fallback
 
         try:
             # Try to load full configuration
-            config = config_validator.load_and_validate_config()
-            log_level = config.server.log_level
+            app_config = validator.load_and_validate_config()
+            app_log_level = app_config.server.log_level
         except Exception as config_error:
             # If config loading fails, fall back to environment variable or default
-            log_level = os.getenv("LOG_LEVEL", "INFO")
+            app_log_level = os.getenv("LOG_LEVEL", "INFO")
             # Use print since logging isn't set up yet
-            print(f"Warning: Could not load config for log level, using {log_level}: {config_error}")
+            print(f"Warning: Could not load config for log level, using {app_log_level}: {config_error}")
 
         # Initialize logging with the determined log level
         # The setup_logging function creates both console and file handlers
         logger = setup_logging(
-            log_level=log_level,
+            log_level=app_log_level,
             log_dir=os.getenv("LOG_DIR", "/app/logs")
         )
         logger.info("Starting Jellynouncer service initialization...")
@@ -184,12 +184,12 @@ async def lifespan(app: FastAPI):
         background_task = asyncio.create_task(webhook_service.background_tasks())
 
         # Get port from same config system used by uvicorn
-        if config:
-            port = int(os.getenv("PORT", str(config.server.port)))
+        if app_config:
+            service_port = int(os.getenv("PORT", str(app_config.server.port)))
         else:
-            port = int(os.getenv("PORT", 1984))
+            service_port = int(os.getenv("PORT", 1984))
 
-        log_jellynouncer_startup(port=port, logger=logger)
+        log_jellynouncer_startup(port=service_port, logger=logger)
 
         # Yield control back to FastAPI to start serving requests
         # Everything after this yield runs during shutdown
@@ -423,6 +423,7 @@ async def webhook_debug_endpoint_deprecated(request: Request) -> Dict[str, Any]:
     
     Set LOG_LEVEL=DEBUG to enable comprehensive request/response logging.
     """
+    _ = request  # Required by FastAPI signature but not used
     return {
         "status": "deprecated",
         "message": "The /webhook/debug endpoint has been deprecated",
@@ -691,7 +692,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             try:
                 # Try to decode bytes to string for better error messages
                 input_value = input_value.decode('utf-8')[:500]  # Limit to 500 chars
-            except:
+            except (UnicodeDecodeError, AttributeError):
                 input_value = f"<binary data: {len(input_value)} bytes>"
         errors.append({
             "field": field_path,
@@ -784,6 +785,7 @@ def setup_signal_handlers():
 
     def signal_handler(signum, frame):
         """Handle shutdown signals gracefully."""
+        _ = frame  # Required by signal handler signature but not used
         signal_name = signal.Signals(signum).name
         logger.info(f"Received {signal_name} signal - initiating graceful shutdown...")
 

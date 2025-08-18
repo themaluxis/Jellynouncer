@@ -23,7 +23,6 @@ import os
 import sys
 import asyncio
 import signal
-import logging
 import platform
 from multiprocessing import Process, set_start_method
 from typing import Optional
@@ -109,6 +108,8 @@ class ServiceLauncher:
     
     def signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully"""
+        # frame parameter is required by signal handler signature but not used
+        _ = frame
         self.logger.info(f"Received signal {signum}, shutting down services...")
         self.shutdown()
     

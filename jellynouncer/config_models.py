@@ -51,7 +51,7 @@ from typing import Dict, Any, Optional, List
 from urllib.parse import urlparse
 
 import yaml
-from pydantic import BaseModel, Field, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, Field, ConfigDict, ValidationError, field_validator, model_validator
 from .utils import get_logger
 
 
@@ -677,6 +677,170 @@ class ServerConfig(BaseModel):
 
 
 
+# ==================== SSL/TLS CONFIGURATION ====================
+
+class SSLConfig(BaseModel):
+    """
+    SSL/TLS configuration for securing the webhook and web interface.
+
+    This model handles all SSL-related settings including certificate paths,
+    types (PEM vs PFX), and security headers like HSTS. It supports both
+    PEM (separate cert/key files) and PFX/PKCS12 (bundled) formats.
+
+    **Understanding SSL/TLS Configuration:**
+        SSL/TLS provides encrypted communication between clients and the server.
+        This is essential when exposing the webhook or web interface over the
+        internet to prevent credential theft and data tampering.
+
+    **Certificate Format Support:**
+        - PEM: Separate certificate (.crt/.pem) and key (.key) files
+        - PFX/PKCS12: Single file (.pfx/.p12) containing cert, key, and chain
+
+    **Security Headers:**
+        - HSTS: Forces browsers to use HTTPS for all future connections
+        - force_https: Redirects all HTTP requests to HTTPS
+
+    Attributes:
+        enabled (bool): Whether SSL is enabled for the server
+        cert_type (str): Certificate format - 'pem' or 'pfx'
+        cert_path (Optional[str]): Path to certificate file (.crt/.pem for PEM, .pfx for PFX)
+        key_path (Optional[str]): Path to private key file (PEM only)
+        chain_path (Optional[str]): Path to certificate chain file (PEM only)
+        pfx_password (Optional[str]): Password for PFX file (PFX only)
+        port (int): HTTPS port to listen on (default: 9000)
+        force_https (bool): Redirect all HTTP to HTTPS
+        hsts_enabled (bool): Enable HTTP Strict Transport Security
+        hsts_max_age (int): HSTS max-age in seconds (default: 1 year)
+
+    Example:
+        ```python
+        # PEM certificate configuration
+        ssl = SSLConfig(
+            enabled=True,
+            cert_type="pem",
+            cert_path="/app/certs/cert.pem",
+            key_path="/app/certs/key.pem",
+            chain_path="/app/certs/chain.pem",
+            port=9000,
+            force_https=True,
+            hsts_enabled=True
+        )
+
+        # PFX certificate configuration
+        ssl = SSLConfig(
+            enabled=True,
+            cert_type="pfx",
+            cert_path="/app/certs/certificate.pfx",
+            pfx_password="certificate_password",
+            port=443,
+            force_https=True
+        )
+
+        # Disabled SSL (HTTP only)
+        ssl = SSLConfig(enabled=False)
+        ```
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=False, description="Enable SSL/TLS for the server")
+    cert_type: Optional[str] = Field(default=None, description="Certificate type: 'pem' or 'pfx'")
+    cert_path: Optional[str] = Field(default=None, description="Path to certificate file")
+    key_path: Optional[str] = Field(default=None, description="Path to private key file (PEM only)")
+    chain_path: Optional[str] = Field(default=None, description="Path to certificate chain file (PEM only)")
+    pfx_password: Optional[str] = Field(default=None, description="Password for PFX file (PFX only)")
+    port: int = Field(default=9000, ge=1024, le=65535, description="HTTPS port")
+    force_https: bool = Field(default=False, description="Redirect HTTP to HTTPS")
+    hsts_enabled: bool = Field(default=False, description="Enable HSTS header")
+    hsts_max_age: int = Field(default=31536000, ge=0, description="HSTS max-age in seconds")
+
+    @field_validator('cert_type')
+    @classmethod
+    def validate_cert_type(cls, v: Optional[str]) -> Optional[str]:
+        """Validate certificate type is either 'pem' or 'pfx'."""
+        if v is not None:
+            v = v.lower()
+            if v not in ['pem', 'pfx']:
+                raise ValueError("cert_type must be 'pem' or 'pfx'")
+        return v
+
+    @model_validator(mode='after')
+    def validate_ssl_config(self) -> 'SSLConfig':
+        """
+        Validate SSL configuration has required fields when enabled.
+        
+        When SSL is enabled, we need:
+        - cert_type specified
+        - For PEM: cert_path and key_path
+        - For PFX: cert_path and optionally pfx_password
+        """
+        if self.enabled:
+            if not self.cert_type:
+                raise ValueError("cert_type must be specified when SSL is enabled")
+            
+            if self.cert_type == 'pem':
+                if not self.cert_path:
+                    raise ValueError("cert_path is required for PEM certificates")
+                if not self.key_path:
+                    raise ValueError("key_path is required for PEM certificates")
+            elif self.cert_type == 'pfx':
+                if not self.cert_path:
+                    raise ValueError("cert_path is required for PFX certificates")
+        
+        return self
+
+
+# ==================== WEB INTERFACE CONFIGURATION ====================
+
+class WebInterfaceConfig(BaseModel):
+    """
+    Web interface configuration for the management UI.
+
+    This model controls settings specific to the web-based management interface
+    that allows users to view logs, manage settings, and monitor the application.
+
+    **Understanding the Web Interface:**
+        The web interface provides a user-friendly way to manage Jellynouncer
+        without editing configuration files or using the command line. It runs
+        on a separate port from the webhook server.
+
+    Attributes:
+        enabled (bool): Whether the web interface is enabled
+        port (int): Port for the web interface (default: 1985)
+        host (str): Host to bind the web interface to
+        auth_enabled (bool): Whether authentication is required
+        username (Optional[str]): Username for basic auth
+        password (Optional[str]): Password for basic auth
+
+    Example:
+        ```python
+        web = WebInterfaceConfig(
+            enabled=True,
+            port=1985,
+            host="0.0.0.0",
+            auth_enabled=True,
+            username="admin",
+            password="secure_password"
+        )
+        ```
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=True, description="Enable web interface")
+    port: int = Field(default=1985, ge=1024, le=65535, description="Web interface port")
+    host: str = Field(default="0.0.0.0", description="Web interface host")
+    auth_enabled: bool = Field(default=False, description="Enable basic authentication")
+    username: Optional[str] = Field(default=None, description="Basic auth username")
+    password: Optional[str] = Field(default=None, description="Basic auth password")
+
+    @model_validator(mode='after')
+    def validate_auth(self) -> 'WebInterfaceConfig':
+        """Validate authentication settings when enabled."""
+        if self.auth_enabled:
+            if not self.username or not self.password:
+                raise ValueError("Username and password required when auth is enabled")
+        return self
+
+
 # ==================== METADATA SERVICES CONFIGURATION ====================
 
 class MetadataServiceConfig(BaseModel):
@@ -931,6 +1095,8 @@ class AppConfig(BaseModel):
     templates: TemplatesConfig = Field(default_factory=TemplatesConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
+    ssl: SSLConfig = Field(default_factory=SSLConfig)
+    web_interface: WebInterfaceConfig = Field(default_factory=WebInterfaceConfig)
     metadata_services: MetadataServicesConfig = Field(default_factory=MetadataServicesConfig)
 
 

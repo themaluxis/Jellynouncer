@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { apiService } from '../services/api'
-import { Search, Filter, Download, RefreshCw, AlertCircle, Info, AlertTriangle, Bug, ChevronDown } from 'lucide-react'
+import { Search, Download, RefreshCw, AlertCircle, Info, AlertTriangle, Bug, ChevronDown } from 'lucide-react'
 import { parseLogText, filterLogs, getLogStatistics, formatLogForDisplay, exportLogs, LOG_LEVEL_COLORS } from '../utils/logParser'
 import { FixedSizeList as VirtualList } from 'react-window'
 
@@ -12,7 +12,7 @@ const Logs = () => {
   const [component, setComponent] = useState('')
   const [search, setSearch] = useState('')
   const [autoRefresh, setAutoRefresh] = useState(false)
-  const [showStats, setShowStats] = useState(true)
+  const [showStats] = useState(true) // Could be toggled in future
   
   const listRef = useRef(null)
   

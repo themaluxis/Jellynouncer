@@ -547,10 +547,9 @@ class JellyfinAPI:
         try:
             all_items = []
             start_index = 0
-            total_record_count = None
             
             # Hardcoded optimal API request delay (based on research of other projects)
-            API_REQUEST_DELAY = 0.1  # 100ms between requests, standard for Jellyfin projects
+            api_request_delay = 0.1  # 100ms between requests, standard for Jellyfin projects
             
             # Get initial count to determine adaptive batch size
             if batch_size is None:
@@ -597,7 +596,7 @@ class JellyfinAPI:
 
                     # Add delay between requests to avoid overwhelming the server
                     if start_index > 0:  # No delay for first request
-                        await asyncio.sleep(API_REQUEST_DELAY)
+                        await asyncio.sleep(api_request_delay)
                     
                     response = self.client.jellyfin.user_items(
                         params={
@@ -709,10 +708,10 @@ class JellyfinAPI:
             
         try:
             start_index = 0
-            total_record_count = None
+            total_record_count = None  # Initialize to None to avoid reference before assignment
             
             # Hardcoded optimal API request delay
-            API_REQUEST_DELAY = 0.1  # 100ms between requests
+            api_request_delay = 0.1  # 100ms between requests
             
             # Get initial count to determine adaptive batch size if not specified
             if batch_size is None:
@@ -751,7 +750,7 @@ class JellyfinAPI:
                     
                     # Add delay between requests to avoid overwhelming the server
                     if start_index > 0:  # No delay for first request
-                        await asyncio.sleep(API_REQUEST_DELAY)
+                        await asyncio.sleep(api_request_delay)
                     
                     response = self.client.jellyfin.user_items(
                         params={
@@ -772,7 +771,7 @@ class JellyfinAPI:
                         break
                         
                     # Yield the batch immediately for streaming processing
-                    yield (batch_items, total_record_count)
+                    yield batch_items, total_record_count
                     
                     self.logger.debug(
                         f"Streamed batch at index {start_index}: {len(batch_items)} items "
@@ -1170,14 +1169,7 @@ class JellyfinAPI:
             audio_language = None
             audio_default = None
 
-            # Subtitle stream properties
-            subtitle_title = None
-            subtitle_type = None
-            subtitle_language = None
-            subtitle_codec = None
-            subtitle_default = None
-            subtitle_forced = None
-            subtitle_external = None
+            # Subtitle stream properties are extracted later from media_streams
 
             # Get media streams from different possible locations
             media_streams = []
@@ -1260,7 +1252,6 @@ class JellyfinAPI:
                 subtitle_external = subtitle_stream.get('IsExternal')
             
             # Aggregate subtitle information for change detection
-            subtitle_count = len(subtitle_streams)
             subtitle_languages = []
             subtitle_formats = []
             

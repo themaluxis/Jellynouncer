@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { apiService } from '../services/api'
 import Editor from '@monaco-editor/react'
-import { Save, RotateCcw, Plus, Info, FileText, Check, X } from 'lucide-react'
+import { Save, RotateCcw, Plus, Info, FileText, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { registerJinja2Language, getJinja2Completions } from '../utils/jinja2Language'
 
@@ -24,7 +24,7 @@ const Templates = () => {
     onSuccess: () => {
       toast.success('Template saved successfully')
       setIsModified(false)
-      refetch()
+      void refetch()
     }
   })
 
@@ -32,8 +32,8 @@ const Templates = () => {
     mutationFn: (name) => apiService.restoreTemplate(name),
     onSuccess: () => {
       toast.success('Template restored to default')
-      loadTemplate(selectedTemplate)
-      refetch()
+      void loadTemplate(selectedTemplate)
+      void refetch()
     }
   })
 
@@ -59,7 +59,7 @@ const Templates = () => {
     })
     
     // Add keyboard shortcuts
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KEY_S, () => {
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       if (isModified && selectedTemplate) {
         saveMutation.mutate({ name: selectedTemplate, content: editorContent })
       }
@@ -116,7 +116,7 @@ const Templates = () => {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{template.name}</p>
                       <p className="text-xs text-dark-text-muted">
-                        {template.is_default ? 'Default' : 'Custom'}
+                        {template['is_default'] ? 'Default' : 'Custom'}
                       </p>
                     </div>
                   </div>
@@ -143,15 +143,15 @@ const Templates = () => {
                 </div>
                 <div className="flex gap-2">
                   <button 
-                    onClick={() => restoreMutation.mutate(selectedTemplate)}
+                    onClick={() => { selectedTemplate && restoreMutation.mutate(selectedTemplate) }}
                     className="btn btn-secondary"
-                    disabled={!templates?.data?.find(t => t.name === selectedTemplate)?.is_default}
+                    disabled={!templates?.data?.find(t => t.name === selectedTemplate)?.['is_default']}
                   >
                     <RotateCcw size={16} className="mr-2" />
                     Restore Default
                   </button>
                   <button 
-                    onClick={() => saveMutation.mutate({ name: selectedTemplate, content: editorContent })}
+                    onClick={() => { saveMutation.mutate({ name: selectedTemplate, content: editorContent }) }}
                     className="btn btn-primary"
                     disabled={!isModified}
                   >

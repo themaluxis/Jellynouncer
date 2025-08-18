@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Line, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -53,9 +53,11 @@ const Overview = () => {
         apiClient.get('/api/health'),
       ]);
 
-      setStats(overviewData.statistics);
-      setHealth(healthData);
-      setRecentNotifications(overviewData.recent_notifications || []);
+      // The API returns the data directly, not wrapped in a 'data' property
+      const overview = overviewData.data || overviewData;
+      setStats(overview);
+      setHealth(healthData.data || healthData);
+      setRecentNotifications(overview && overview['recent_notifications'] ? overview['recent_notifications'] : []);
       setError(null);
     } catch (err) {
       setError('Failed to fetch dashboard data');
@@ -67,7 +69,7 @@ const Overview = () => {
   };
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
     const interval = setInterval(fetchData, 30000); // Refresh every 30 seconds
     return () => clearInterval(interval);
   }, []);
@@ -115,11 +117,11 @@ const Overview = () => {
 
   // Chart data
   const notificationChartData = {
-    labels: stats?.chart_data?.labels || [],
+    labels: stats && stats['queue_stats'] ? Object.keys(stats['queue_stats']) : [],
     datasets: [
       {
         label: 'Notifications',
-        data: stats?.chart_data?.values || [],
+        data: stats && stats['queue_stats'] ? Object.values(stats['queue_stats']) : [],
         borderColor: 'rgb(147, 51, 234)',
         backgroundColor: 'rgba(147, 51, 234, 0.1)',
         tension: 0.3,
@@ -133,9 +135,9 @@ const Overview = () => {
     datasets: [
       {
         data: [
-          stats?.content_types?.movies || 0,
-          stats?.content_types?.tv || 0,
-          stats?.content_types?.music || 0,
+          (stats && stats['discord_webhooks'] && stats['discord_webhooks']['movies'] && stats['discord_webhooks']['movies']['count']) || 0,
+          (stats && stats['discord_webhooks'] && stats['discord_webhooks']['tv'] && stats['discord_webhooks']['tv']['count']) || 0,
+          (stats && stats['discord_webhooks'] && stats['discord_webhooks']['music'] && stats['discord_webhooks']['music']['count']) || 0,
         ],
         backgroundColor: [
           'rgba(147, 51, 234, 0.8)',
@@ -215,7 +217,7 @@ const Overview = () => {
 
       {/* Health Status Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {health?.components && Object.entries(health.components).map(([name, status]) => (
+        {health && health['components'] && Object.entries(health['components']).map(([name, status]) => (
           <div key={name} className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -241,10 +243,10 @@ const Overview = () => {
             Total Notifications
           </p>
           <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
-            {stats?.total_notifications || 0}
+            {(stats && stats['total_items']) || 0}
           </p>
           <p className="mt-1 text-sm text-green-600 dark:text-green-400">
-            +{stats?.notifications_today || 0} today
+            +{(stats && stats['items_today']) || 0} today
           </p>
         </div>
 
@@ -253,10 +255,10 @@ const Overview = () => {
             Queue Size
           </p>
           <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
-            {stats?.queue_size || 0}
+            {(stats && stats['queue_stats'] && stats['queue_stats']['pending']) || 0}
           </p>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {stats?.queue_processing_rate || 0}/min
+            {(stats && stats['queue_stats'] && stats['queue_stats']['processing_rate']) || 0}/min
           </p>
         </div>
 
@@ -265,10 +267,10 @@ const Overview = () => {
             Database Items
           </p>
           <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
-            {stats?.database_items || 0}
+            {(stats && stats['total_items']) || 0}
           </p>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {stats?.database_size_mb || 0} MB
+            {(stats && stats['system_health'] && stats['system_health']['database_size_mb']) || 0} MB
           </p>
         </div>
 
@@ -277,10 +279,10 @@ const Overview = () => {
             Uptime
           </p>
           <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
-            {stats?.uptime_hours || 0}h
+            {(stats && stats['system_health'] && stats['system_health']['uptime_hours']) || 0}h
           </p>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {stats?.uptime_percentage || 100}% available
+            {(stats && stats['system_health'] && stats['system_health']['uptime_percentage']) || 100}% available
           </p>
         </div>
       </div>

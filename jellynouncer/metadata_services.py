@@ -218,10 +218,10 @@ class MetadataService:
         # Fetch metadata from all available sources concurrently with semaphore control
         tasks = []
 
-        async def rate_limited_fetch(fetch_func, item):
+        async def rate_limited_fetch(fetch_func, media_item):
             """Wrap fetch function with semaphore for rate limiting."""
             async with self._api_semaphore:
-                return await fetch_func(item)
+                return await fetch_func(media_item)
 
         if self.omdb_client:
             tasks.append(('omdb', rate_limited_fetch(self._fetch_omdb_metadata, item)))
@@ -359,7 +359,7 @@ class MetadataService:
                         # Try to serialize the object's dict representation
                         raw_dict = omdb_data.__dict__ if hasattr(omdb_data, '__dict__') else omdb_data
                         self.logger.debug(json.dumps(raw_dict, indent=2, default=str))
-                    except Exception as e:
+                    except Exception:
                         # Fallback to repr if JSON serialization fails
                         self.logger.debug(f"  {repr(omdb_data)}")
                 else:

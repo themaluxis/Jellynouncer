@@ -24,11 +24,10 @@ License: MIT
 import os
 import ssl
 import socket
-import asyncio
 import secrets
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Dict, Any, Optional, List
 from cryptography import x509
 from cryptography.x509.oid import NameOID, ExtensionOID
 from cryptography.hazmat.primitives import hashes, serialization
@@ -49,9 +48,17 @@ class SSLManager:
     PFX and PEM formats and provides utilities for CSR generation.
     """
     
-    def __init__(self, db_path: str = "data/web_interface.db"):
+    def __init__(self, db_path: str = "data/web_interface.db", ssl_config=None):
+        """
+        Initialize SSL Manager.
+        
+        Args:
+            db_path: Database path for SSL settings and CSR tracking
+            ssl_config: Initial SSLConfig object from config.json
+        """
         self.logger = get_logger("ssl_manager")
         self.db_path = db_path
+        self.initial_ssl_config = ssl_config  # Initial config from config.json
         self.cert_dir = Path("data/certificates")
         self.cert_dir.mkdir(parents=True, exist_ok=True)
         
@@ -71,6 +78,7 @@ class SSLManager:
                     force_https BOOLEAN DEFAULT 0,
                     hsts_enabled BOOLEAN DEFAULT 0,
                     hsts_max_age INTEGER DEFAULT 31536000,
+                    config_hash TEXT,  -- Hash of config.json settings to detect changes
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     CHECK (id = 1)
                 )
@@ -103,6 +111,9 @@ class SSLManager:
                     VALUES (0, 0, 0)
                 """)
                 await db.commit()
+            
+            # Sync config.json to database if changed
+            await self._sync_config_to_db()
     
     async def get_ssl_settings(self) -> Dict[str, Any]:
         """Get current SSL configuration"""
@@ -120,7 +131,7 @@ class SSLManager:
             }
     
     async def update_ssl_settings(self, settings: Dict[str, Any]) -> bool:
-        """Update SSL configuration"""
+        """Update SSL configuration in database."""
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("""
@@ -149,7 +160,8 @@ class SSLManager:
             self.logger.error(f"Failed to update SSL settings: {e}")
             return False
     
-    def generate_private_key(self, key_size: int = 2048) -> rsa.RSAPrivateKey:
+    @staticmethod
+    def generate_private_key(key_size: int = 2048) -> rsa.RSAPrivateKey:
         """Generate a new RSA private key"""
         return rsa.generate_private_key(
             public_exponent=65537,
@@ -157,8 +169,8 @@ class SSLManager:
             backend=default_backend()
         )
     
+    @staticmethod
     def generate_csr(
-        self,
         private_key: rsa.RSAPrivateKey,
         common_name: str,
         organization: Optional[str] = None,
@@ -370,8 +382,8 @@ class SSLManager:
                     "organization": None
                 },
                 "serial_number": str(cert.serial_number),
-                "not_before": cert.not_valid_before_utc.isoformat(),
-                "not_after": cert.not_valid_after_utc.isoformat(),
+                "not_before": cert.not_valid_before.isoformat(),
+                "not_after": cert.not_valid_after.isoformat(),
                 "signature_algorithm": cert.signature_algorithm_oid._name,
                 "san_list": [],
                 "is_self_signed": cert.issuer == cert.subject
@@ -380,18 +392,18 @@ class SSLManager:
             # Extract subject information
             for attribute in cert.subject:
                 if attribute.oid == NameOID.COMMON_NAME:
-                    info["subject"]["common_name"] = attribute.value
+                    info["subject"]["common_name"] = str(attribute.value)
                 elif attribute.oid == NameOID.ORGANIZATION_NAME:
-                    info["subject"]["organization"] = attribute.value
+                    info["subject"]["organization"] = str(attribute.value)
                 elif attribute.oid == NameOID.COUNTRY_NAME:
-                    info["subject"]["country"] = attribute.value
+                    info["subject"]["country"] = str(attribute.value)
             
             # Extract issuer information
             for attribute in cert.issuer:
                 if attribute.oid == NameOID.COMMON_NAME:
-                    info["issuer"]["common_name"] = attribute.value
+                    info["issuer"]["common_name"] = str(attribute.value)
                 elif attribute.oid == NameOID.ORGANIZATION_NAME:
-                    info["issuer"]["organization"] = attribute.value
+                    info["issuer"]["organization"] = str(attribute.value)
             
             # Extract SANs
             try:
@@ -403,7 +415,7 @@ class SSLManager:
             
             # Check if certificate is expired
             now = datetime.now(timezone.utc)
-            if now < cert.not_valid_before_utc or now > cert.not_valid_after_utc:
+            if now < cert.not_valid_before or now > cert.not_valid_after:
                 info["valid"] = False
                 info["error"] = "Certificate is expired or not yet valid"
             
@@ -449,21 +461,21 @@ class SSLManager:
                     "common_name": None,
                     "organization": None
                 },
-                "not_before": certificate.not_valid_before_utc.isoformat(),
-                "not_after": certificate.not_valid_after_utc.isoformat(),
+                "not_before": certificate.not_valid_before.isoformat(),
+                "not_after": certificate.not_valid_after.isoformat(),
                 "chain_count": len(additional_certs) if additional_certs else 0
             }
             
             # Extract subject information
             for attribute in certificate.subject:
                 if attribute.oid == NameOID.COMMON_NAME:
-                    info["subject"]["common_name"] = attribute.value
+                    info["subject"]["common_name"] = str(attribute.value)
                 elif attribute.oid == NameOID.ORGANIZATION_NAME:
-                    info["subject"]["organization"] = attribute.value
+                    info["subject"]["organization"] = str(attribute.value)
             
             # Check expiration
             now = datetime.now(timezone.utc)
-            if now < certificate.not_valid_before_utc or now > certificate.not_valid_after_utc:
+            if now < certificate.not_valid_before or now > certificate.not_valid_after:
                 info["valid"] = False
                 info["error"] = "Certificate is expired or not yet valid"
             
@@ -483,7 +495,8 @@ class SSLManager:
         Returns:
             Configured SSL context or None if SSL is disabled
         """
-        if not settings.get("ssl_enabled"):
+        # Check for both 'enabled' (new config) and 'ssl_enabled' (legacy)
+        if not settings.get("enabled") and not settings.get("ssl_enabled"):
             return None
         
         try:
@@ -573,6 +586,77 @@ class SSLManager:
             self.logger.error(f"Failed to create SSL context: {e}")
             return None
     
+    async def _sync_config_to_db(self):
+        """Sync config.json SSL settings to database if changed."""
+        if not self.initial_ssl_config:
+            return
+            
+        try:
+            # Calculate hash of config settings
+            import hashlib
+            import json
+            config_dict = self.initial_ssl_config.model_dump() if hasattr(self.initial_ssl_config, 'model_dump') else {}
+            if config_dict:
+                config_hash = hashlib.sha256(json.dumps(config_dict, sort_keys=True).encode()).hexdigest()
+                
+                async with aiosqlite.connect(self.db_path) as db:
+                    # Check if settings exist and if config has changed
+                    cursor = await db.execute("SELECT config_hash FROM ssl_settings WHERE id = 1")
+                    row = await cursor.fetchone()
+                    
+                    if not row:
+                        # First time - insert settings from config
+                        await db.execute("""
+                            INSERT INTO ssl_settings (
+                                ssl_enabled, cert_type, cert_path, key_path, chain_path,
+                                pfx_password, port, force_https, hsts_enabled, hsts_max_age, config_hash
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            config_dict.get("enabled", False),
+                            config_dict.get("cert_type"),
+                            config_dict.get("cert_path"),
+                            config_dict.get("key_path"),
+                            config_dict.get("chain_path"),
+                            config_dict.get("pfx_password"),
+                            config_dict.get("port", 9000),
+                            config_dict.get("force_https", False),
+                            config_dict.get("hsts_enabled", False),
+                            config_dict.get("hsts_max_age", 31536000),
+                            config_hash
+                        ))
+                        await db.commit()
+                        self.logger.info("Initialized SSL settings from config.json")
+                    elif row[0] != config_hash:
+                        # Config has changed - update database
+                        await db.execute("""
+                            UPDATE ssl_settings 
+                            SET ssl_enabled = ?, cert_type = ?, cert_path = ?, 
+                                key_path = ?, chain_path = ?, pfx_password = ?,
+                                port = ?, force_https = ?, hsts_enabled = ?, 
+                                hsts_max_age = ?, config_hash = ?, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = 1
+                        """, (
+                            config_dict.get("enabled", False),
+                            config_dict.get("cert_type"),
+                            config_dict.get("cert_path"),
+                            config_dict.get("key_path"),
+                            config_dict.get("chain_path"),
+                            config_dict.get("pfx_password"),
+                            config_dict.get("port", 9000),
+                            config_dict.get("force_https", False),
+                            config_dict.get("hsts_enabled", False),
+                            config_dict.get("hsts_max_age", 31536000),
+                            config_hash
+                        ))
+                        await db.commit()
+                        self.logger.info("Updated SSL settings from config.json (config changed)")
+                    else:
+                        self.logger.debug("SSL settings unchanged in config.json")
+                        
+        except Exception as e:
+            self.logger.error(f"Failed to sync config to database: {e}")
+            # Don't fail initialization if sync fails
+    
     async def test_ssl_configuration(self, settings: Dict[str, Any]) -> Dict[str, Any]:
         """
         Test SSL configuration by creating a test server
@@ -597,7 +681,7 @@ class SSLManager:
                 sock.bind(('127.0.0.1', test_port))
                 sock.listen(5)
                 
-                with context.wrap_socket(sock, server_side=True) as ssock:
+                with context.wrap_socket(sock, server_side=True):
                     # If we get here, SSL is configured correctly
                     return {
                         "success": True,
@@ -655,7 +739,7 @@ async def setup_ssl_routes(app, ssl_manager: SSLManager):
     @app.put("/api/ssl/settings")
     async def update_ssl_settings(settings: SSLSettings):
         """Update SSL settings"""
-        settings_dict = settings.dict()
+        settings_dict = settings.model_dump()
         success = await ssl_manager.update_ssl_settings(settings_dict)
         
         if not success:

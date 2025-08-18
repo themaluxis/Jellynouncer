@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   ServerIcon,
   ChatBubbleLeftRightIcon,
@@ -67,14 +67,14 @@ const Config = () => {
   ];
 
   useEffect(() => {
-    fetchConfig();
+    void fetchConfig();
   }, []);
 
   const fetchConfig = async () => {
     try {
       setLoading(true);
-      const data = await apiClient.get('/api/config');
-      setConfig(data);
+      const response = await apiClient.get('/api/config');
+      setConfig(response.data || response);
       setError(null);
     } catch (err) {
       setError('Failed to load configuration');
@@ -124,10 +124,10 @@ const Config = () => {
   const testConnection = async (type) => {
     try {
       const endpoint = type === 'jellyfin' ? '/api/test/jellyfin' : `/api/test/discord/${type}`;
-      const result = await apiClient.post(endpoint, config[type] || config.discord);
+      await apiClient.post(endpoint, config[type] || config.discord);
       setSuccess(`${type} connection test successful`);
       setTimeout(() => setSuccess(null), 3000);
-    } catch (err) {
+    } catch {
       setError(`${type} connection test failed`);
       setTimeout(() => setError(null), 3000);
     }
@@ -195,7 +195,10 @@ const Config = () => {
                   }
                 `}
               >
-                <tab.icon className="h-5 w-5 mr-2" />
+                {(() => {
+                  const Icon = tab.icon;
+                  return <Icon className="h-5 w-5 mr-2" />;
+                })()}
                 {tab.name}
               </button>
             ))}

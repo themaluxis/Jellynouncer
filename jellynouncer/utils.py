@@ -25,7 +25,6 @@ License: MIT
 import logging
 import logging.handlers
 import os
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -75,7 +74,7 @@ def interpolate_color(start_rgb, end_rgb, position):
     r = int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * position)
     g = int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * position)
     b = int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * position)
-    return (r, g, b)
+    return r, g, b
 
 
 def rgb_to_ansi(r, g, b):
@@ -347,10 +346,10 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
         and we're in a suitable environment, it adds color coding by log level.
         """
         
-        def __init__(self, use_colors=False):
+        def __init__(self, use_color_output=False):
             """Initialize formatter with color support option."""
             super().__init__()
-            self.use_colors = use_colors
+            self.use_colors = use_color_output
             
             # Only set up colors if requested
             if self.use_colors and COLORAMA_AVAILABLE:
@@ -406,9 +405,8 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
                 tz=timezone.utc
             ).strftime('%Y-%m-%d %H:%M:%S UTC')
 
-            # Get user context (extensible for multi-user scenarios)
+            # User context available via getattr(record, 'user', 'system') if needed
             # This allows tracking which user or process generated the log message
-            user = getattr(record, 'user', 'system')
             
             # Check if this is a gradient message
             is_gradient_message = False
@@ -418,11 +416,11 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
             if self.use_colors and record.name in ['jellynouncer.webhook', 'jellynouncer', 'jellynouncer.logo']:
                 # Check webhook initialization messages
                 if record.name == 'jellynouncer.webhook':
-                    for i, msg in enumerate(gradient_message_tracker['webhook_init']['messages']):
+                    for idx, msg in enumerate(gradient_message_tracker['webhook_init']['messages']):
                         if msg in message_text:
                             # Calculate gradient position for this message
                             total_msgs = len(gradient_message_tracker['webhook_init']['messages'])
-                            position = i / (total_msgs - 1) if total_msgs > 1 else 0
+                            position = idx / (total_msgs - 1) if total_msgs > 1 else 0
                             rgb = interpolate_color(JELLYFIN_PURPLE_RGB, JELLYFIN_BLUE_RGB, position)
                             gradient_color = rgb_to_ansi(*rgb)
                             is_gradient_message = True
@@ -444,11 +442,11 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
                     
                     # Check for main startup messages
                     if not is_gradient_message:
-                        for i, msg in enumerate(gradient_message_tracker['app_startup']['messages']):
+                        for idx, msg in enumerate(gradient_message_tracker['app_startup']['messages']):
                             if msg in message_text or (msg == "=" * 60 and message_text == "=" * 60):
                                 # Calculate gradient position for this message
                                 total_msgs = len(gradient_message_tracker['app_startup']['messages'])
-                                position = i / (total_msgs - 1) if total_msgs > 1 else 0
+                                position = idx / (total_msgs - 1) if total_msgs > 1 else 0
                                 rgb = interpolate_color(JELLYFIN_PURPLE_RGB, JELLYFIN_BLUE_RGB, position)
                                 gradient_color = rgb_to_ansi(*rgb)
                                 is_gradient_message = True
@@ -456,11 +454,11 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
                 
                 # Check for Jellyfin logo ASCII art
                 elif record.name == 'jellynouncer.logo':
-                    for i, msg in enumerate(gradient_message_tracker['jellyfin_logo']['messages']):
+                    for idx, msg in enumerate(gradient_message_tracker['jellyfin_logo']['messages']):
                         if message_text == msg:
                             # Calculate gradient position for this line
                             total_msgs = len(gradient_message_tracker['jellyfin_logo']['messages'])
-                            position = i / (total_msgs - 1) if total_msgs > 1 else 0
+                            position = idx / (total_msgs - 1) if total_msgs > 1 else 0
                             rgb = interpolate_color(JELLYFIN_PURPLE_RGB, JELLYFIN_BLUE_RGB, position)
                             gradient_color = rgb_to_ansi(*rgb)
                             is_gradient_message = True
@@ -513,7 +511,7 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
     console_handler = logging.StreamHandler()
     console_handler.setLevel(numeric_level)  # Use specified log level instead of hardcoded INFO
     # Use colored formatter for console output
-    console_handler.setFormatter(BracketFormatter(use_colors=use_colors))
+    console_handler.setFormatter(BracketFormatter(use_color_output=use_colors))
     logger.addHandler(console_handler)
 
     # Rotating file handler to prevent logs from consuming unlimited disk space
@@ -529,7 +527,7 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
         )
         file_handler.setLevel(numeric_level)  # Use specified log level for files
         # Use plain formatter for file output (no color codes)
-        file_handler.setFormatter(BracketFormatter(use_colors=False))
+        file_handler.setFormatter(BracketFormatter(use_color_output=False))
         logger.addHandler(file_handler)
     except PermissionError as e:
         # If we can't create file handler, log to console only
@@ -574,8 +572,8 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
     logger.info(f"Color Support: {color_status}")
 
     # List each handler for diagnostic purposes
-    for i, handler in enumerate(logger.handlers):
-        logger.info(f"Handler {i + 1}: {type(handler).__name__} - Level: {logging.getLevelName(handler.level)}")
+    for handler_idx, handler in enumerate(logger.handlers):
+        logger.info(f"Handler {handler_idx + 1}: {type(handler).__name__} - Level: {logging.getLevelName(handler.level)}")
 
     # Test logging at different levels to verify configuration
     if use_colors:

@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LockClosedIcon, UserIcon, XCircleIcon } from '@heroicons/react/24/outline';
 import { useAuthStore } from '../stores/authStore';
-import { apiClient } from '../utils/apiClient';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -20,10 +19,9 @@ const Login = () => {
     setError(null);
 
     try {
-      const response = await apiClient.post('/api/auth/login', formData);
+      const success = await login(formData.username, formData.password);
       
-      if (response.access_token) {
-        login(response.access_token, response.refresh_token, response.user);
+      if (success) {
         navigate('/');
       }
     } catch (err) {

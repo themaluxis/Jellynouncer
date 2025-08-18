@@ -149,8 +149,8 @@ class OMDbMetadata:
         """Convert 'N/A' strings to None for cleaner template handling."""
         from dataclasses import fields
 
-        for field in fields(self):
-            field_name = field.name
+        for data_field in fields(self):
+            field_name = data_field.name
             value = getattr(self, field_name)
             if value == "N/A":
                 setattr(self, field_name, None)
