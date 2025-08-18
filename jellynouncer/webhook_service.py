@@ -38,6 +38,7 @@ from .discord_services import DiscordNotifier
 from .metadata_services import MetadataService
 from .change_detector import ChangeDetector
 from .utils import get_logger
+from .sync_progress import SyncProgressDisplay
 
 
 class WebhookService:
@@ -1193,11 +1194,17 @@ class WebhookService:
                 'items_processed': 0,
                 'batch_errors': 0,
                 'total_individual_errors': 0,
+                'new_items': 0,
+                'updated_items': 0,
                 'producer_done': False,
                 'consumer_done': False,
                 'fatal_error': '',  # Empty string instead of None for type consistency
-                'should_stop': False  # Early exit flag for high error rates
+                'should_stop': False,  # Early exit flag for high error rates
+                'batch_size': 200  # Default, will be updated
             }
+            
+            # Initialize progress display (will be set once we know total items)
+            progress_display = None
             
             # Error threshold for early exit (stop if more than 10% of items fail)
             error_threshold_percent = 10
@@ -1211,12 +1218,37 @@ class WebhookService:
                         batch_num += 1
                         sync_state['total_items'] = total_count
                         sync_state['items_fetched'] += len(batch_items)
+                        sync_state['batch_size'] = len(batch_items)  # Update batch size
                         
-                        # Log when batch is fetched from API
-                        self.logger.info(
-                            f"Fetched batch {batch_num} from API: {len(batch_items)} items "
-                            f"(total fetched: {sync_state['items_fetched']}/{total_count})"
-                        )
+                        # Initialize progress display on first batch
+                        if batch_num == 1 and progress_display is None:
+                            nonlocal progress_display
+                            sync_type = "initial" if not background else "background"
+                            progress_display = SyncProgressDisplay(
+                                total_items=total_count,
+                                batch_size=len(batch_items),
+                                sync_type=sync_type,
+                                logger=self.logger
+                            )
+                            progress_display.log_sync_start()
+                        
+                        # Update progress display instead of basic logging
+                        if progress_display:
+                            progress_display.log_batch_progress(
+                                batch_num=batch_num,
+                                items_in_batch=len(batch_items),
+                                total_fetched=sync_state['items_fetched'],
+                                items_processed=sync_state['items_processed'],
+                                errors=sync_state['total_individual_errors'],
+                                new_items=sync_state.get('new_items', 0),
+                                updated_items=sync_state.get('updated_items', 0)
+                            )
+                        else:
+                            # Fallback to basic logging
+                            self.logger.info(
+                                f"Fetched batch {batch_num} from API: {len(batch_items)} items "
+                                f"(total fetched: {sync_state['items_fetched']}/{total_count})"
+                            )
                         
                         # Check if we should stop due to high error rate
                         if sync_state['should_stop']:
@@ -1253,7 +1285,8 @@ class WebhookService:
                         batch_num, batch_items = batch_data
                         batch_start_time = time.time()
                         
-                        self.logger.info(
+                        # Don't log processing here, it's handled by progress display
+                        self.logger.debug(
                             f"Processing batch {batch_num}: {len(batch_items)} items "
                             f"(queue size: {batch_queue.qsize()})"
                         )
@@ -1385,6 +1418,12 @@ class WebhookService:
                                     sync_state['items_processed'] += batch_results['successful']
                                     sync_state['total_individual_errors'] += batch_results['failed']
                                     
+                                    # Track new vs updated items
+                                    if 'new' in batch_results:
+                                        sync_state['new_items'] += batch_results['new']
+                                    if 'updated' in batch_results:
+                                        sync_state['updated_items'] += batch_results['updated']
+                                    
                                     batch_time = time.time() - batch_start_time
                                     
                                     # Log batch save completion with breakdown
@@ -1429,19 +1468,14 @@ class WebhookService:
                                     sync_state['fatal_error'] = f"Too many consecutive batch failures: {consecutive_batch_errors}"
                                     break
                             
-                            # Log overall progress periodically
-                            if batch_num % 5 == 0 and sync_state['total_items'] > 0:
-                                progress_pct = (sync_state['items_processed'] / sync_state['total_items']) * 100
-                                elapsed_time = time.time() - sync_start_time
-                                items_per_sec = sync_state['items_processed'] / elapsed_time if elapsed_time > 0 else 0
-                                eta = (sync_state['total_items'] - sync_state['items_processed']) / items_per_sec if items_per_sec > 0 else 0
-                                
-                                self.logger.info(
-                                    f"Sync progress: {sync_state['items_processed']}/{sync_state['total_items']} "
-                                    f"({progress_pct:.1f}%) - "
-                                    f"Rate: {items_per_sec:.1f} items/sec - "
-                                    f"ETA: {eta:.1f}s"
-                                )
+                            # Progress is now handled by the progress display in producer
+                            # Just update the progress display reference if needed
+                            if progress_display and batch_num % 5 == 0:
+                                # Update cumulative stats in progress display
+                                progress_display.items_processed = sync_state['items_processed']
+                                progress_display.errors = sync_state['total_individual_errors']
+                                progress_display.new_items = sync_state.get('new_items', 0)
+                                progress_display.updated_items = sync_state.get('updated_items', 0)
                                 
                                 # Check error rate and stop if too high
                                 if sync_state['items_processed'] > 100:  # Only check after processing some items
@@ -1518,28 +1552,38 @@ class WebhookService:
             else:
                 status = "error"
 
-            # Log comprehensive completion summary
-            self.logger.info("=" * 80)
-            self.logger.info(f"Library sync completed with status: {status.upper()}")
-            self.logger.info(f"  Items processed: {items_processed:,}/{total_items:,}")
-            self.logger.info(f"  Success rate: {success_rate:.1f}%")
-            self.logger.info(f"  Individual errors: {total_individual_errors:,}")
-            self.logger.info(f"  Batch errors: {batch_errors:,}")
-            self.logger.info(f"  Processing time: {processing_time:.2f}s")
-            self.logger.info(f"  Throughput: {items_processed / processing_time:.1f} items/sec")
-            self.logger.info(f"  Batch size used: {api_batch_size:,}")
-            self.logger.info("=" * 80)
+            # Use progress display for completion summary if available
+            if progress_display:
+                progress_display.items_processed = items_processed
+                progress_display.errors = total_individual_errors
+                progress_display.new_items = sync_state.get('new_items', 0)
+                progress_display.updated_items = sync_state.get('updated_items', 0)
+                progress_display.log_sync_complete(success=(status == "success"))
+            else:
+                # Fallback to basic logging
+                self.logger.info("=" * 80)
+                self.logger.info(f"Library sync completed with status: {status.upper()}")
+                self.logger.info(f"  Items processed: {items_processed:,}/{total_items:,}")
+                self.logger.info(f"  Success rate: {success_rate:.1f}%")
+                self.logger.info(f"  Individual errors: {total_individual_errors:,}")
+                self.logger.info(f"  Batch errors: {batch_errors:,}")
+                self.logger.info(f"  Processing time: {processing_time:.2f}s")
+                self.logger.info(f"  Throughput: {items_processed / processing_time:.1f} items/sec")
+                self.logger.info(f"  Batch size used: {api_batch_size:,}")
+                self.logger.info("=" * 80)
 
             return {
                 "status": status,
                 "items_processed": items_processed,
                 "total_items": total_items,
+                "new_items": sync_state.get('new_items', 0),
+                "updated_items": sync_state.get('updated_items', 0),
                 "errors": total_individual_errors,
                 "batch_errors": batch_errors,
                 "success_rate": round(success_rate, 1),
                 "processing_time": round(processing_time, 2),
                 "throughput": round(items_processed / processing_time, 1) if processing_time > 0 else 0,
-                "batch_size_used": api_batch_size
+                "batch_size_used": sync_state.get('batch_size', 200)
             }
 
         except Exception as e:

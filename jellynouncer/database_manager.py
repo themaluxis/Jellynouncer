@@ -692,7 +692,7 @@ class DatabaseManager:
                 db.row_factory = aiosqlite.Row
 
                 # Build query with optional limit
-                sql = "SELECT * FROM media_items WHERE item_type = ? ORDER BY timestamp DESC"
+                sql = "SELECT * FROM media_items WHERE item_type = ? ORDER BY timestamp_created DESC"
                 params = (item_type,)
 
                 if limit:
@@ -830,7 +830,7 @@ class DatabaseManager:
                 cursor = await db.execute("""
                                           SELECT COUNT(*) as count
                                           FROM media_items
-                                          WHERE datetime(timestamp) > datetime('now', '-1 day')
+                                          WHERE datetime(timestamp_created) > datetime('now', '-1 day')
                                           """)
                 row = await cursor.fetchone()
                 stats['recent_additions'] = row['count'] if row else 0
