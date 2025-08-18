@@ -143,7 +143,11 @@ const Templates = () => {
                 </div>
                 <div className="flex gap-2">
                   <button 
-                    onClick={() => { selectedTemplate && restoreMutation.mutate(selectedTemplate) }}
+                    onClick={() => { 
+                      if (selectedTemplate) {
+                        void restoreMutation.mutate(selectedTemplate);
+                      }
+                    }}
                     className="btn btn-secondary"
                     disabled={!templates?.data?.find(t => t.name === selectedTemplate)?.['is_default']}
                   >

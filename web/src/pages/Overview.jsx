@@ -116,18 +116,20 @@ const Overview = () => {
   };
 
   // Chart data
+  const queueStats = stats?.['queue_stats'] || {};
+  const lineDataset = {
+    label: 'Notifications',
+    data: Object.values(queueStats).map(v => typeof v === 'number' ? v : Number(v) || 0),
+    tension: 0.3,
+    fill: true,
+  };
+  // Add color properties using bracket notation to avoid type warnings
+  lineDataset['borderColor'] = 'rgb(147, 51, 234)';
+  lineDataset['backgroundColor'] = 'rgba(147, 51, 234, 0.1)';
+  
   const notificationChartData = {
-    labels: stats && stats['queue_stats'] ? Object.keys(stats['queue_stats']) : [],
-    datasets: [
-      {
-        label: 'Notifications',
-        data: stats && stats['queue_stats'] ? Object.values(stats['queue_stats']) : [],
-        borderColor: 'rgb(147, 51, 234)',
-        backgroundColor: 'rgba(147, 51, 234, 0.1)',
-        tension: 0.3,
-        fill: true,
-      },
-    ],
+    labels: Object.keys(queueStats),
+    datasets: [lineDataset],
   };
 
   const contentTypeChartData = {
@@ -135,9 +137,9 @@ const Overview = () => {
     datasets: [
       {
         data: [
-          (stats && stats['discord_webhooks'] && stats['discord_webhooks']['movies'] && stats['discord_webhooks']['movies']['count']) || 0,
-          (stats && stats['discord_webhooks'] && stats['discord_webhooks']['tv'] && stats['discord_webhooks']['tv']['count']) || 0,
-          (stats && stats['discord_webhooks'] && stats['discord_webhooks']['music'] && stats['discord_webhooks']['music']['count']) || 0,
+          Number((stats && stats['discord_webhooks'] && stats['discord_webhooks']['movies'] && stats['discord_webhooks']['movies']['count']) || 0),
+          Number((stats && stats['discord_webhooks'] && stats['discord_webhooks']['tv'] && stats['discord_webhooks']['tv']['count']) || 0),
+          Number((stats && stats['discord_webhooks'] && stats['discord_webhooks']['music'] && stats['discord_webhooks']['music']['count']) || 0),
         ],
         backgroundColor: [
           'rgba(147, 51, 234, 0.8)',

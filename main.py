@@ -55,6 +55,9 @@ class ServiceLauncher:
     def start_webhook_service(self):
         """Start the webhook service in a separate process"""
         try:
+            # Setup logging for the webhook service process
+            setup_logging()
+            
             # Import here to avoid circular imports
             from jellynouncer import webhook_api
             
@@ -76,6 +79,9 @@ class ServiceLauncher:
     def start_web_service(self):
         """Start the web interface in a separate process"""
         try:
+            # Setup logging for the web service process
+            setup_logging()
+            
             # Import here to avoid circular imports
             from jellynouncer import web_api
             

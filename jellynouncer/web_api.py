@@ -36,7 +36,7 @@ from typing import Dict, Any, Optional, List
 from contextlib import asynccontextmanager
 
 # Third-party imports
-from fastapi import FastAPI, HTTPException, Depends, Security, status, Request
+from fastapi import FastAPI, HTTPException, Depends, Security, status, Request, File, Form, UploadFile
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -921,7 +921,9 @@ async def refresh_token(token_string: str):
 @app.get("/api/auth/status")
 async def get_auth_status():
     """Get authentication status (no auth required)"""
+    logger.debug("Auth status check requested")
     settings = await web_service.web_db.get_security_settings()
+    logger.debug(f"Returning auth status: auth_enabled={settings.get('auth_enabled', False)}")
     return settings
 
 
@@ -1155,6 +1157,179 @@ async def health_check():
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "service": "Jellynouncer Web Interface"
     }
+
+
+# ==================== SSL Certificate Management ====================
+
+@app.post("/api/ssl/upload")
+async def upload_ssl_file(
+    file: UploadFile = File(...),
+    type: str = Form(...),
+    current_user: Optional[Dict] = Depends(check_auth_required)
+):
+    """Upload SSL certificate or key file"""
+    try:
+        from pathlib import Path
+        
+        # Validate file type
+        if type not in ["cert", "key"]:
+            raise HTTPException(status_code=400, detail="Invalid file type")
+        
+        # Create SSL directory if it doesn't exist
+        ssl_dir = Path(web_service.config.server.data_dir) / "ssl"
+        ssl_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Determine file extension
+        file_ext = ".crt" if type == "cert" else ".key"
+        file_path = ssl_dir / f"{type}{file_ext}"
+        
+        # Save the file
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+        
+        # Update configuration
+        if type == "cert":
+            await web_service.update_config("web_interface", "ssl_cert_path", str(file_path))
+        else:
+            await web_service.update_config("web_interface", "ssl_key_path", str(file_path))
+        
+        logger.info(f"SSL {type} file uploaded to {file_path}")
+        
+        return {"status": "success", "path": str(file_path)}
+        
+    except Exception as e:
+        logger.error(f"Failed to upload SSL file: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/ssl/generate-csr")
+async def generate_csr_endpoint(
+    csr_data: Dict[str, Any],
+    current_user: Optional[Dict] = Depends(check_auth_required)
+):
+    """Generate a Certificate Signing Request"""
+    try:
+        # Extract CSR parameters
+        common_name = csr_data.get("commonName", "localhost")
+        country = csr_data.get("country", "US")
+        state = csr_data.get("state", "State")
+        locality = csr_data.get("locality", "City")
+        organization = csr_data.get("organization", "Organization")
+        organizational_unit = csr_data.get("organizationalUnit", "IT")
+        email = csr_data.get("email")
+        san_list = csr_data.get("sanList", [])
+        
+        # Generate CSR using SSL manager
+        result = await web_service.ssl_manager.create_csr_request(
+            common_name=common_name,
+            country=country,
+            state=state,
+            locality=locality,
+            organization=organization,
+            organizational_unit=organizational_unit,
+            email=email,
+            san_list=san_list if san_list else None
+        )
+        
+        logger.info(f"Generated CSR for {common_name}")
+        
+        return {
+            "status": "success",
+            "csr": result["csr"],
+            "private_key_path": result["private_key_path"]
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to generate CSR: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/ssl/generate-self-signed")
+async def generate_self_signed_cert(
+    cert_data: Dict[str, Any],
+    current_user: Optional[Dict] = Depends(check_auth_required)
+):
+    """Generate a self-signed certificate"""
+    try:
+        from pathlib import Path
+        from cryptography import x509
+        from cryptography.x509.oid import NameOID
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from datetime import datetime, timedelta
+        
+        # Extract certificate parameters
+        common_name = cert_data.get("commonName", "localhost")
+        days = cert_data.get("days", 365)
+        
+        # Generate private key
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048,
+        )
+        
+        # Generate certificate
+        subject = issuer = x509.Name([
+            x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+        ])
+        
+        cert = x509.CertificateBuilder().subject_name(
+            subject
+        ).issuer_name(
+            issuer
+        ).public_key(
+            private_key.public_key()
+        ).serial_number(
+            x509.random_serial_number()
+        ).not_valid_before(
+            datetime.utcnow()
+        ).not_valid_after(
+            datetime.utcnow() + timedelta(days=days)
+        ).add_extension(
+            x509.SubjectAlternativeName([
+                x509.DNSName(common_name),
+                x509.DNSName("localhost"),
+            ]),
+            critical=False,
+        ).sign(private_key, hashes.SHA256())
+        
+        # Save certificate and key
+        ssl_dir = Path(web_service.config.server.data_dir) / "ssl"
+        ssl_dir.mkdir(parents=True, exist_ok=True)
+        
+        cert_path = ssl_dir / "self_signed.crt"
+        key_path = ssl_dir / "self_signed.key"
+        
+        # Write certificate
+        with open(cert_path, "wb") as f:
+            f.write(cert.public_bytes(serialization.Encoding.PEM))
+        
+        # Write private key
+        with open(key_path, "wb") as f:
+            f.write(private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption()
+            ))
+        
+        # Update configuration
+        await web_service.update_config("web_interface", "ssl_cert_path", str(cert_path))
+        await web_service.update_config("web_interface", "ssl_key_path", str(key_path))
+        await web_service.update_config("web_interface", "ssl_enabled", True)
+        
+        logger.info(f"Generated self-signed certificate for {common_name}")
+        
+        return {
+            "status": "success",
+            "cert_path": str(cert_path),
+            "key_path": str(key_path),
+            "valid_days": days
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to generate self-signed certificate: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Serve static files (React build)

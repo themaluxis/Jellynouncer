@@ -134,7 +134,7 @@
     "development_mode": false,
     "show_docker_interfaces": false,
     "allowed_hosts": [],
-    "force_color_output": false,
+    "force_color_output": true,
     "disable_color_output": false
   },
   "web_interface": {

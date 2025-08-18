@@ -261,6 +261,19 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
     # Initialize colorama if available - colors on by default in Docker
     use_colors = False
     
+    # Try to load configuration to get color settings
+    config_force_color = False
+    config_disable_color = False
+    try:
+        from jellynouncer.config_models import ConfigurationValidator
+        validator = ConfigurationValidator()
+        config = validator.load_and_validate_config()
+        config_force_color = config.server.force_color_output
+        config_disable_color = config.server.disable_color_output
+    except:
+        # Config not available yet, use defaults
+        pass
+    
     # Create a basic logger for debugging color initialization
     # We can't use the main logger yet since it hasn't been set up
     init_logger = logging.getLogger("jellynouncer.init")
@@ -274,17 +287,20 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
     init_logger.debug("=" * 60)
     init_logger.debug("Color initialization starting...")
     init_logger.debug(f"Colorama available: {COLORAMA_AVAILABLE}")
+    init_logger.debug(f"Config force_color_output: {config_force_color}")
+    init_logger.debug(f"Config disable_color_output: {config_disable_color}")
     
     # Initialize variables with defaults to avoid "referenced before assignment" warnings
     in_docker = False
     has_tty = False
-    force_no_color = False
+    force_no_color = config_disable_color  # Use config setting as base
     
     if COLORAMA_AVAILABLE:
-        # Check if colors are explicitly disabled via NO_COLOR environment variable
-        force_no_color = os.environ.get('NO_COLOR', '').lower() in ('1', 'true', 'yes')
+        # Check if colors are explicitly disabled via NO_COLOR environment variable or config
+        env_no_color = os.environ.get('NO_COLOR', '').lower() in ('1', 'true', 'yes')
+        force_no_color = env_no_color or config_disable_color
         init_logger.debug(f"NO_COLOR environment variable: {os.environ.get('NO_COLOR', 'not set')}")
-        init_logger.debug(f"Force no color: {force_no_color}")
+        init_logger.debug(f"Force no color: {force_no_color} (env: {env_no_color}, config: {config_disable_color})")
         
         # Check if we're in Docker (by checking for /.dockerenv file)
         in_docker = os.path.exists('/.dockerenv')
@@ -322,9 +338,10 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "/app/logs") -> loggin
             init_logger.debug("Initializing colorama with: autoreset=True (standard mode)")
             colorama.init(autoreset=True)
             use_colors = True
-        elif os.environ.get('FORCE_COLOR', '').lower() in ('1', 'true', 'yes'):
+        elif os.environ.get('FORCE_COLOR', '').lower() in ('1', 'true', 'yes') or config_force_color:
             # Allow forcing colors even in non-Docker, non-TTY environments if needed
-            init_logger.debug("Colors ENABLED: FORCE_COLOR environment variable is set")
+            source = "FORCE_COLOR environment variable" if os.environ.get('FORCE_COLOR', '').lower() in ('1', 'true', 'yes') else "config.server.force_color_output"
+            init_logger.debug(f"Colors ENABLED: {source} is set")
             init_logger.debug("Initializing colorama with: autoreset=True, strip=False, convert=False")
             colorama.init(autoreset=True, strip=False, convert=False)
             use_colors = True
