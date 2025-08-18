@@ -422,6 +422,10 @@ class DiscordNotifier:
         self.notifications_config = None
         self.rate_limits: Dict[str, Dict[str, Any]] = {}
         self.jinja_env: Optional[Environment] = None
+        self.notification_queue: Dict[str, List[Any]] = {
+            "new_items": [],
+            "upgraded_items": [],
+        }
 
         # Create thumbnail manager internally (needs Jellyfin config from main config)
         # This will need to be set during initialize() when full config is available
@@ -660,10 +664,14 @@ class DiscordNotifier:
 
             # Check rate limits before sending
             if await self.is_rate_limited(webhook_url):
-                self.logger.warning(f"Rate limited for webhook: {webhook_url}")
+                self.logger.warning(f"Rate limited for webhook: {webhook_url}. Queuing notification.")
+                if action == "new_item":
+                    self.notification_queue["new_items"].append(item)
+                elif action == "upgraded_item":
+                    self.notification_queue["upgraded_items"].append(item)
                 return {
-                    "success": False,
-                    "error": "Rate limited",
+                    "success": True,
+                    "message": "Notification queued due to rate limiting",
                     "webhook_url": webhook_url
                 }
 

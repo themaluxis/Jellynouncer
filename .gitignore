@@ -1,9 +1,30 @@
-.idea
-.venv
-.github/workflows/
-/.idea
-.idea/inspectionProfiles/profiles_settings.xml
-.idea/misc.xml
-CLAUDE.md
-/.claude
-.claude/settings.local.json
+# JetBrains Rider
+.idea/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# VSCode
+.vscode/
+
+# Environment
+.env
+.env.*
+!.env.template
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+
+# Local settings
+.claude/
+*.local
