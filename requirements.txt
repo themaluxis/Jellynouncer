@@ -9,3 +9,6 @@ pydantic==2.11.0
 omdb==0.10.1
 tmdbv3api==1.9.0
 colorama==0.4.6
+pytest==8.4.0
+pytest-asyncio==0.24.0
+pytest-mock==3.14.0
