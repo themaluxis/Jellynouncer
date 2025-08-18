@@ -723,6 +723,8 @@ class WebInterfaceConfig(BaseModel):
         host (str): Host to bind the web interface to
         jwt_secret (Optional[str]): Secret key for JWT tokens (auto-generated if None)
         auth_enabled (bool): Whether authentication is required
+        username (Optional[str]): Username for basic auth
+        password (Optional[str]): Password for basic auth
         ssl_enabled (bool): Whether SSL/HTTPS is enabled
         ssl_cert_path (Optional[str]): Path to SSL certificate file
         ssl_key_path (Optional[str]): Path to SSL private key file
@@ -735,10 +737,20 @@ class WebInterfaceConfig(BaseModel):
     host: str = Field(default="0.0.0.0", description="Host to bind web interface to")
     jwt_secret: Optional[str] = Field(default=None, description="Secret for JWT tokens (auto-generated if None)")
     auth_enabled: bool = Field(default=False, description="Require authentication for web interface")
+    username: Optional[str] = Field(default=None, description="Basic auth username")
+    password: Optional[str] = Field(default=None, description="Basic auth password")
     ssl_enabled: bool = Field(default=False, description="Enable HTTPS for web interface")
     ssl_cert_path: Optional[str] = Field(default=None, description="Path to SSL certificate file")
     ssl_key_path: Optional[str] = Field(default=None, description="Path to SSL private key file")
     ssl_port: int = Field(default=9000, ge=1024, le=65535, description="HTTPS port for web interface")
+
+    @model_validator(mode='after')
+    def validate_auth(self) -> 'WebInterfaceConfig':
+        """Validate authentication settings when enabled."""
+        if self.auth_enabled:
+            if not self.username or not self.password:
+                raise ValueError("Username and password required when auth is enabled")
+        return self
 
 
 # ==================== SSL/TLS CONFIGURATION ====================
@@ -854,55 +866,7 @@ class SSLConfig(BaseModel):
 
 
 # ==================== WEB INTERFACE CONFIGURATION ====================
-
-class WebInterfaceConfig(BaseModel):
-    """
-    Web interface configuration for the management UI.
-
-    This model controls settings specific to the web-based management interface
-    that allows users to view logs, manage settings, and monitor the application.
-
-    **Understanding the Web Interface:**
-        The web interface provides a user-friendly way to manage Jellynouncer
-        without editing configuration files or using the command line. It runs
-        on a separate port from the webhook server.
-
-    Attributes:
-        enabled (bool): Whether the web interface is enabled
-        port (int): Port for the web interface (default: 1985)
-        host (str): Host to bind the web interface to
-        auth_enabled (bool): Whether authentication is required
-        username (Optional[str]): Username for basic auth
-        password (Optional[str]): Password for basic auth
-
-    Example:
-        ```python
-        web = WebInterfaceConfig(
-            enabled=True,
-            port=1985,
-            host="0.0.0.0",
-            auth_enabled=True,
-            username="admin",
-            password="secure_password"
-        )
-        ```
-    """
-    model_config = ConfigDict(extra='forbid')
-
-    enabled: bool = Field(default=True, description="Enable web interface")
-    port: int = Field(default=1985, ge=1024, le=65535, description="Web interface port")
-    host: str = Field(default="0.0.0.0", description="Web interface host")
-    auth_enabled: bool = Field(default=False, description="Enable basic authentication")
-    username: Optional[str] = Field(default=None, description="Basic auth username")
-    password: Optional[str] = Field(default=None, description="Basic auth password")
-
-    @model_validator(mode='after')
-    def validate_auth(self) -> 'WebInterfaceConfig':
-        """Validate authentication settings when enabled."""
-        if self.auth_enabled:
-            if not self.username or not self.password:
-                raise ValueError("Username and password required when auth is enabled")
-        return self
+# Note: WebInterfaceConfig is already defined above with SSL support at line 713
 
 
 # ==================== METADATA SERVICES CONFIGURATION ====================
