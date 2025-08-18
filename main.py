@@ -72,6 +72,9 @@ class ServiceLauncher:
                 log_level=os.environ.get("LOG_LEVEL", "info").lower(),
                 access_log=False  # We have our own logging
             )
+        except asyncio.CancelledError:
+            # Normal shutdown cancellation, not an error
+            self.logger.info("Webhook service shutdown cancelled (normal)")
         except Exception as e:
             self.logger.error(f"Webhook service failed: {e}")
             sys.exit(1)
@@ -108,6 +111,9 @@ class ServiceLauncher:
                 log_level=os.environ.get("LOG_LEVEL", "info").lower(),
                 access_log=False  # We have our own logging
             )
+        except asyncio.CancelledError:
+            # Normal shutdown cancellation, not an error
+            self.logger.info("Web service shutdown cancelled (normal)")
         except Exception as e:
             self.logger.error(f"Web service failed: {e}")
             sys.exit(1)
@@ -123,19 +129,27 @@ class ServiceLauncher:
         """Shutdown both services gracefully"""
         self.running = False
         
-        if self.webhook_process and self.webhook_process.is_alive():
-            self.logger.info("Stopping webhook service...")
-            self.webhook_process.terminate()
-            self.webhook_process.join(timeout=5)
+        if self.webhook_process is not None and hasattr(self.webhook_process, '_popen') and self.webhook_process._popen is not None:
             if self.webhook_process.is_alive():
-                self.webhook_process.kill()
+                self.logger.info("Stopping webhook service...")
+                try:
+                    self.webhook_process.terminate()
+                    self.webhook_process.join(timeout=5)
+                    if self.webhook_process.is_alive():
+                        self.webhook_process.kill()
+                except (AttributeError, OSError) as e:
+                    self.logger.warning(f"Error terminating webhook process: {e}")
         
-        if self.web_process and self.web_process.is_alive():
-            self.logger.info("Stopping web interface...")
-            self.web_process.terminate()
-            self.web_process.join(timeout=5)
+        if self.web_process is not None and hasattr(self.web_process, '_popen') and self.web_process._popen is not None:
             if self.web_process.is_alive():
-                self.web_process.kill()
+                self.logger.info("Stopping web interface...")
+                try:
+                    self.web_process.terminate()
+                    self.web_process.join(timeout=5)
+                    if self.web_process.is_alive():
+                        self.web_process.kill()
+                except (AttributeError, OSError) as e:
+                    self.logger.warning(f"Error terminating web process: {e}")
         
         self.logger.info("All services stopped")
     

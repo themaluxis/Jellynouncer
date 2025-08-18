@@ -1,68 +1,68 @@
 {#
-  Server Status Template for Jellynouncer
-  ========================================
+  Modèle de statut du serveur pour Jellynouncer
+  =============================================
 
-  Provides comprehensive server status notifications with health metrics.
-  Supports online/offline states, degraded performance, and recovery info.
+  Fournit des notifications complètes de statut de serveur avec métriques de santé.
+  Prend en charge les états en ligne/hors ligne, performances dégradées et informations de récupération.
 
   Variables:
-  - is_online: Boolean for server connectivity
-  - jellyfin_url: Server URL
-  - timestamp: ISO timestamp
-  - server_info: Optional server details (when online)
-  - health_data: Optional health check data
-  - downtime_duration: Optional time server was down
-  - error_details: Optional error information
+  - is_online: Booléen pour la connectivité du serveur
+  - jellyfin_url: URL du serveur
+  - timestamp: Horodatage ISO
+  - server_info: Détails optionnels du serveur (quand en ligne)
+  - health_data: Données optionnelles de vérification de santé
+  - downtime_duration: Durée optionnelle d'arrêt du serveur
+  - error_details: Informations optionnelles d'erreur
 #}
 {
   "embeds": [
     {
       {#
-        Dynamic Title Based on Status
-        ------------------------------
-        Support more states than just online/offline
+        Titre dynamique basé sur le statut
+        -----------------------------------
+        Prend en charge plus d'états que simplement en ligne/hors ligne
       #}
       "title": {{ (
-        ("🟡 Jellyfin Server Degraded" if health_data and health_data.status == 'degraded'
-         else "🟢 Jellyfin Server Online") if is_online
-        else "🔴 Jellyfin Server Offline"
+        ("🟡 Serveur Jellyfin dégradé" if health_data and health_data.status == 'degraded'
+         else "🟢 Serveur Jellyfin en ligne") if is_online
+        else "🔴 Serveur Jellyfin hors ligne"
       ) | tojson }},
 
       {#
-        Enhanced Description with Context
-        ----------------------------------
-        Provide more detailed status information
+        Description améliorée avec contexte
+        ------------------------------------
+        Fournit des informations de statut plus détaillées
       #}
       "description": "{% if is_online -%}
         {%- if health_data and health_data.status == 'degraded' -%}
-          ⚠️ **Jellyfin server is experiencing issues but remains partially operational.**\n\n
-          🔍 **Issue Details**: Some components may not be functioning correctly\n
-          📊 **Overall Status**: Degraded Performance\n
-          🔄 **Notifications**: May be delayed or incomplete
+          ⚠️ **Le serveur Jellyfin rencontre des problèmes mais reste partiellement opérationnel.**\n\n
+          🔍 **Détails du problème**: Certains composants peuvent ne pas fonctionner correctement\n
+          📊 **Statut général**: Performances dégradées\n
+          🔄 **Notifications**: Peuvent être retardées ou incomplètes
         {%- elif downtime_duration -%}
-          🎉 **Jellyfin server connection has been restored!**\n\n
-          ⏱️ **Downtime Duration**: {{ downtime_duration }}\n
-          📊 **Service Status**: All systems operational\n
-          🔄 **Recovery Actions**: Syncing missed items\n
-          📺 **Media Access**: Fully available
+          🎉 **La connexion au serveur Jellyfin a été restaurée !**\n\n
+          ⏱️ **Durée d'arrêt**: {{ downtime_duration }}\n
+          📊 **Statut du service**: Tous les systèmes opérationnels\n
+          🔄 **Actions de récupération**: Synchronisation des éléments manqués\n
+          📺 **Accès aux médias**: Entièrement disponible
         {%- else -%}
-          ✅ **Jellyfin server is operating normally.**\n\n
-          📊 **Service Status**: All systems operational\n
-          🔄 **Notifications**: Active and processing\n
-          📺 **Media Access**: Available
+          ✅ **Le serveur Jellyfin fonctionne normalement.**\n\n
+          📊 **Statut du service**: Tous les systèmes opérationnels\n
+          🔄 **Notifications**: Actives et en cours de traitement\n
+          📺 **Accès aux médias**: Disponible
         {%- endif -%}
       {%- else -%}
-        ⚠️ **Unable to connect to Jellyfin server.**\n\n
-        🔍 **Status**: Connection lost
-        {%- if error_details %}\n❌ **Error**: {{ error_details }}{% endif -%}
-        \n⏰ **Retry Interval**: Every 60 seconds\n
-        📱 **Notifications**: Queued until reconnection\n
-        💾 **Data**: All notifications will be processed when connection is restored
+        ⚠️ **Impossible de se connecter au serveur Jellyfin.**\n\n
+        🔍 **Statut**: Connexion perdue
+        {%- if error_details %}\n❌ **Erreur**: {{ error_details }}{% endif -%}
+        \n⏰ **Intervalle de retry**: Toutes les 60 secondes\n
+        📱 **Notifications**: Mises en file d'attente jusqu'à la reconnexion\n
+        💾 **Données**: Toutes les notifications seront traitées lors de la restauration de connexion
       {%- endif %}",
 
       {#
-        Dynamic Color Based on Status
-        ------------------------------
+        Couleur dynamique basée sur le statut
+        --------------------------------------
       #}
       "color": {% if is_online -%}
         {%- if health_data and health_data.status == 'degraded' -%}
@@ -76,161 +76,161 @@
 
       "fields": [
         {#
-          Server Connection Details
-          --------------------------
+          Détails de connexion au serveur
+          --------------------------------
         #}
         {
-          "name": "🌐 Server Details",
-          "value": {{ ("**URL**: " ~ jellyfin_url ~ "\n**Status**: " ~
-            ("⚠️ Degraded" if is_online and health_data and health_data.status == 'degraded'
-             else "✅ Connected" if is_online
-             else "❌ Disconnected") ~
-            ("\n**Server**: " ~ server_info.ServerName if server_info and server_info.ServerName else "") ~
+          "name": "🌐 Détails du serveur :",
+          "value": {{ ("**URL**: " ~ jellyfin_url ~ "\n**Statut**: " ~
+            ("⚠️ Dégradé" if is_online and health_data and health_data.status == 'degraded'
+             else "✅ Connecté" if is_online
+             else "❌ Déconnecté") ~
+            ("\n**Serveur**: " ~ server_info.ServerName if server_info and server_info.ServerName else "") ~
             ("\n**Version**: " ~ server_info.Version if server_info and server_info.Version else "")
           ) | tojson }},
           "inline": true
         },
 
         {#
-          Timestamp with Better Formatting
-          ---------------------------------
+          Horodatage avec meilleur formatage
+          ----------------------------------
         #}
         {
-          "name": "🕐 Timestamp",
+          "name": "🕐 Horodatage :",
           "value": {{ ((timestamp[:19] | replace('T', ' ')) ~ " UTC" ~
-            ("\n**Downtime**: " ~ downtime_duration if downtime_duration else "")
+            ("\n**Temps d'arrêt**: " ~ downtime_duration if downtime_duration else "")
           ) | tojson }},
           "inline": true
         }
 
         {#
-          Service Components Status (when online)
-          ----------------------------------------
+          Statut des composants de service (quand en ligne)
+          --------------------------------------------------
         #}
         {% if is_online and health_data and health_data.components %}
         ,{
-          "name": "📊 Component Status",
+          "name": "📊 Statut des composants :",
           "value": "
             {%- if health_data.components.jellyfin -%}
               **Jellyfin**:
-              {%- if health_data.components.jellyfin.status == 'healthy' %} ✅ Healthy
-              {%- elif health_data.components.jellyfin.status == 'degraded' %} ⚠️ Degraded
-              {%- else %} ❌ Unhealthy{% endif -%}
+              {%- if health_data.components.jellyfin.status == 'healthy' %} ✅ Sain
+              {%- elif health_data.components.jellyfin.status == 'degraded' %} ⚠️ Dégradé
+              {%- else %} ❌ Défaillant{% endif -%}
             {%- endif -%}
             {%- if health_data.components.database -%}
-              \n**Database**:
-              {%- if health_data.components.database.status == 'healthy' %} ✅ Healthy
-              {%- else %} ❌ Issues{% endif -%}
-              {%- if health_data.components.database.total_items %} ({{ health_data.components.database.total_items }} items){% endif -%}
+              \n**Base de données**:
+              {%- if health_data.components.database.status == 'healthy' %} ✅ Saine
+              {%- else %} ❌ Problèmes{% endif -%}
+              {%- if health_data.components.database.total_items %} ({{ health_data.components.database.total_items }} éléments){% endif -%}
             {%- endif -%}
             {%- if health_data.components.discord -%}
               \n**Discord**:
               {%- if health_data.components.discord.webhooks_configured %} ✅ {{ health_data.components.discord.webhooks_configured }} webhooks
-              {%- else %} ❌ No webhooks{% endif -%}
+              {%- else %} ❌ Aucun webhook{% endif -%}
             {%- endif -%}
             {%- if health_data.components.metadata_services -%}
-              \n**Metadata**:
-              {%- if health_data.components.metadata_services.enabled %} ✅ Enabled
-              {%- else %} ⚠️ Disabled{% endif -%}
+              \n**Métadonnées**:
+              {%- if health_data.components.metadata_services.enabled %} ✅ Activées
+              {%- else %} ⚠️ Désactivées{% endif -%}
             {%- endif %}",
           "inline": false
         }
         {% endif %}
 
         {#
-          Service Statistics (when online)
-          ---------------------------------
+          Statistiques de service (quand en ligne)
+          -----------------------------------------
         #}
         {% if is_online and health_data and health_data.service_status %}
         ,{
-          "name": "📈 Service Metrics",
+          "name": "📈 Métriques du service :",
           "value": "
             {%- if health_data.service_status.uptime_seconds -%}
-              **Uptime**: {{ (health_data.service_status.uptime_seconds / 3600) | round(1) }} hours
+              **Temps de fonctionnement**: {{ (health_data.service_status.uptime_seconds / 3600) | round(1) }} heures
             {%- endif -%}
             {%- if health_data.service_status.initial_sync_complete is defined -%}
-              \n**Initial Sync**:
-              {%- if health_data.service_status.initial_sync_complete %} ✅ Complete
-              {%- else %} ⏳ In Progress{% endif -%}
+              \n**Synchronisation initiale**:
+              {%- if health_data.service_status.initial_sync_complete %} ✅ Terminée
+              {%- else %} ⏳ En cours{% endif -%}
             {%- endif -%}
             {%- if health_data.service_status.sync_in_progress is defined -%}
-              \n**Background Sync**:
-              {%- if health_data.service_status.sync_in_progress %} 🔄 Running
-              {%- else %} ⏸️ Idle{% endif -%}
+              \n**Synchronisation en arrière-plan**:
+              {%- if health_data.service_status.sync_in_progress %} 🔄 En cours
+              {%- else %} ⏸️ Inactive{% endif -%}
             {%- endif %}",
           "inline": true
         }
         {% endif %}
 
         {#
-          Queue Status (when available)
-          ------------------------------
+          Statut de file d'attente (quand disponible)
+          --------------------------------------------
         #}
         {% if queue_status %}
         ,{
-          "name": "📬 Notification Queues",
+          "name": "📬 Files de notifications :",
           "value": "
             {%- if queue_status.new_items is defined -%}
-              **New Items**: {{ queue_status.new_items }} queued
+              **Nouveaux éléments**: {{ queue_status.new_items }} en file
             {%- endif -%}
             {%- if queue_status.upgraded_items is defined -%}
-              \n**Upgrades**: {{ queue_status.upgraded_items }} queued
+              \n**Mises à niveau**: {{ queue_status.upgraded_items }} en file
             {%- endif -%}
             {%- if queue_status.total is defined -%}
-              \n**Total Pending**: {{ queue_status.total }}
+              \n**Total en attente**: {{ queue_status.total }}
             {%- endif %}",
           "inline": true
         }
         {% endif %}
 
         {#
-          Next Steps / Actions
-          ---------------------
+          Prochaines étapes / Actions
+          ----------------------------
         #}
         {% if is_online %}
         ,{
-          "name": "🔄 {% if downtime_duration %}Recovery Actions{% else %}System Actions{% endif %}",
+          "name": "🔄 {% if downtime_duration %}Actions de récupération{% else %}Actions système{% endif %}",
           "value": "
             {%- if downtime_duration -%}
-              • Processing queued notifications\n
-              • Syncing library changes\n
-              • Verifying database integrity\n
-              • Resuming normal monitoring
+              • Traitement des notifications en file d'attente\n
+              • Synchronisation des changements de bibliothèque\n
+              • Vérification de l'intégrité de la base de données\n
+              • Reprise de la surveillance normale
             {%- elif health_data and health_data.status == 'degraded' -%}
-              • Monitoring degraded components\n
-              • Attempting automatic recovery\n
-              • Logging diagnostic information\n
-              • May retry failed operations
+              • Surveillance des composants dégradés\n
+              • Tentative de récupération automatique\n
+              • Enregistrement des informations de diagnostic\n
+              • Possible nouvelle tentative d'opérations échouées
             {%- else -%}
-              • Monitoring for new content\n
-              • Processing webhooks normally\n
-              • Background sync active\n
-              • All systems operational
+              • Surveillance du nouveau contenu\n
+              • Traitement normal des webhooks\n
+              • Synchronisation en arrière-plan active\n
+              • Tous les systèmes opérationnels
             {%- endif %}",
           "inline": false
         }
         {% else %}
         ,{
-          "name": "📋 Automatic Recovery",
-          "value": "• Attempting reconnection every 60 seconds\n
-            • Preserving notification queue\n
-            • Monitoring server availability\n
-            • Will auto-sync when restored\n
-            • No data will be lost",
+          "name": "📋 Récupération automatique :",
+          "value": "• Tentative de reconnexion toutes les 60 secondes\n
+            • Préservation de la file de notifications\n
+            • Surveillance de la disponibilité du serveur\n
+            • Synchronisation automatique lors de la restauration\n
+            • Aucune donnée ne sera perdue",
           "inline": false
         }
         {% endif %}
 
         {#
-          Error Details (when offline)
-          -----------------------------
+          Détails d'erreur (quand hors ligne)
+          ------------------------------------
         #}
         {% if not is_online and error_details %}
         ,{
-          "name": "❌ Error Information",
-          "value": {{ ("**Type**: " ~ (error_type | default('Connection Error')) ~ "\n" ~
-            "**Details**: " ~ ((error_details[:500] + '...') if error_details|length > 500 else error_details) ~ "\n" ~
-            "**Time**: " ~ (timestamp[:19] | replace('T', ' '))
+          "name": "❌ Informations d'erreur :",
+          "value": {{ ("**Type**: " ~ (error_type | default('Erreur de connexion')) ~ "\n" ~
+            "**Détails**: " ~ ((error_details[:500] + '...') if error_details|length > 500 else error_details) ~ "\n" ~
+            "**Heure**: " ~ (timestamp[:19] | replace('T', ' '))
           ) | tojson }},
           "inline": false
         }
@@ -238,8 +238,8 @@
       ],
 
       {#
-        Dynamic Thumbnail
-        -----------------
+        Miniature dynamique
+        -------------------
       #}
       "thumbnail": {
         "url": {{ (
@@ -250,13 +250,13 @@
       },
 
       {#
-        Enhanced Footer
-        ---------------
+        Pied de page amélioré
+        ---------------------
       #}
       "footer": {
-        "text": {{ ("Jellynouncer v2.0.0 • Monitoring Service" ~
+        "text": {{ ("Jellynouncer v2.0.0 • Service de surveillance" ~
           (" • " ~ server_info.ServerName if server_info and server_info.ServerName else "") ~
-          (" • Metadata Enabled" if is_online and health_data and health_data.components.metadata_services and health_data.components.metadata_services.enabled else "")
+          (" • Métadonnées activées" if is_online and health_data and health_data.components.metadata_services and health_data.components.metadata_services.enabled else "")
         ) | tojson }},
         "icon_url": {{ (jellyfin_url ~ "/web/favicon.png") | tojson }}
       },
