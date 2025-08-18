@@ -13,7 +13,7 @@ COPY web/package*.json ./
 
 # Install dependencies using ci for reproducible builds
 # npm ci is preferred over npm install when package-lock.json exists
-RUN npm ci --omit=dev
+RUN npm ci
 
 # Copy frontend source code
 COPY web/ ./
