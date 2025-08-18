@@ -19,4 +19,4 @@
           with:
             context: .
             push: true
-            tags: ${{ secrets.DOCKER_HUB_USERNAME }}/jellynouncer:latest # Replace 'your-repo-name'
+            tags: ${{ secrets.DOCKER_HUB_USERNAME }}/jellynouncer:latest
