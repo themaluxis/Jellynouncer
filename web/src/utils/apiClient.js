@@ -38,7 +38,7 @@ apiClient.interceptors.request.use(
 // Response interceptor to handle token refresh and errors
 apiClient.interceptors.response.use(
   (response) => {
-    return response.data;
+    return response;
   },
   async (error) => {
     const originalRequest = error.config;
@@ -101,7 +101,7 @@ const webhookClient = axios.create({
 
 // Simple response interceptor for webhook client
 webhookClient.interceptors.response.use(
-  (response) => response.data,
+  (response) => response,
   (error) => Promise.reject(error)
 );
 

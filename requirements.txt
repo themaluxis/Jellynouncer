@@ -14,3 +14,4 @@ bcrypt==4.1.2
 pyjwt==2.8.0
 passlib==1.7.4
 cryptography==41.0.7
+psutil==5.9.8

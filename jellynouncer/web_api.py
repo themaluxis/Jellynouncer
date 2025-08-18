@@ -30,6 +30,7 @@ License: MIT
 import os
 import json
 import secrets
+import asyncio
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, List
@@ -54,6 +55,7 @@ from jellynouncer.config_models import ConfigurationValidator
 from jellynouncer.utils import get_logger
 from jellynouncer.webhook_service import WebhookService
 from jellynouncer.ssl_manager import SSLManager, setup_ssl_routes
+from jellynouncer.security_middleware import setup_security_middleware
 
 # Constants
 WEB_DB_PATH = "data/web_interface.db"
@@ -471,9 +473,62 @@ class WebInterfaceService:
         except Exception as e:
             self.logger.error(f"Failed to load configuration: {e}", exc_info=True)
             raise
+        
+        # Start periodic stats refresh task
+        asyncio.create_task(self._periodic_stats_refresh())
+        self.logger.info("Started periodic Jellyfin stats refresh task")
+    
+    async def _periodic_stats_refresh(self):
+        """Periodically refresh Jellyfin stats"""
+        while True:
+            try:
+                # Wait 30 minutes between refreshes
+                await asyncio.sleep(1800)
+                
+                # Refresh stats
+                self.logger.debug("Refreshing Jellyfin stats...")
+                await self.refresh_jellyfin_stats()
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error(f"Error in periodic stats refresh: {e}")
+                # Wait 5 minutes before retry on error
+                await asyncio.sleep(300)
+    
+    async def refresh_jellyfin_stats(self) -> Dict[str, Any]:
+        """
+        Refresh Jellyfin server statistics and store in database.
+        
+        Returns:
+            Latest statistics dictionary
+        """
+        try:
+            # Get Jellyfin stats if webhook service is available
+            if self.webhook_service and self.webhook_service.jellyfin:
+                stats = await self.webhook_service.jellyfin.get_server_stats()
+                
+                # Save to database
+                if self.webhook_service.db:
+                    await self.webhook_service.db.save_jellyfin_stats(stats)
+                
+                return stats
+            else:
+                # Try to get from database
+                if self.webhook_service and self.webhook_service.db:
+                    return await self.webhook_service.db.get_latest_jellyfin_stats()
+                
+            return {}
+        except Exception as e:
+            self.logger.error(f"Failed to refresh Jellyfin stats: {e}")
+            return {}
     
     async def get_overview_stats(self) -> OverviewStats:
         """Get statistics for the overview page"""
+        import psutil
+        import os
+        from datetime import datetime, timedelta, timezone
+        
         stats = {
             "total_items": 0,
             "items_today": 0,
@@ -484,14 +539,66 @@ class WebInterfaceService:
                 "pending": 0,
                 "processing": 0,
                 "completed": 0,
-                "failed": 0
+                "failed": 0,
+                "processing_rate": 0
             },
             "system_health": {
                 "webhook_service": "running" if self.webhook_service else "stopped",
                 "database": "connected",
-                "last_sync": None
-            }
+                "last_sync": None,
+                "database_size_mb": 0,
+                "uptime_hours": 0,
+                "uptime_percentage": 100,
+                "cpu_usage": 0,
+                "memory_usage": 0,
+                "disk_usage": 0
+            },
+            "jellyfin_stats": None  # Will be populated from database
         }
+        
+        # System metrics
+        try:
+            # CPU and Memory
+            stats["system_health"]["cpu_usage"] = psutil.cpu_percent(interval=0.1)
+            memory = psutil.virtual_memory()
+            stats["system_health"]["memory_usage"] = memory.percent
+            
+            # Disk usage for data directory
+            data_dir = Path("data")
+            if data_dir.exists():
+                disk = psutil.disk_usage(str(data_dir))
+                stats["system_health"]["disk_usage"] = disk.percent
+                
+                # Database size
+                db_path = data_dir / "jellynouncer.db"
+                if db_path.exists():
+                    stats["system_health"]["database_size_mb"] = round(db_path.stat().st_size / (1024 * 1024), 2)
+            
+            # Uptime (simplified - would need proper tracking)
+            stats["system_health"]["uptime_hours"] = 24  # Placeholder
+            stats["system_health"]["uptime_percentage"] = 99.9  # Placeholder
+            
+        except Exception as e:
+            self.logger.warning(f"Could not get system metrics: {e}")
+        
+        # Get Jellyfin stats from database
+        try:
+            if self.webhook_service and self.webhook_service.db:
+                jellyfin_stats = await self.webhook_service.db.get_latest_jellyfin_stats()
+                if jellyfin_stats:
+                    # Check if stats are stale (older than 1 hour)
+                    if 'last_check' in jellyfin_stats:
+                        last_check = datetime.fromisoformat(jellyfin_stats['last_check'])
+                        if (datetime.now(timezone.utc) - last_check).total_seconds() > 3600:
+                            # Refresh stats in background
+                            asyncio.create_task(self.refresh_jellyfin_stats())
+                    
+                    stats["jellyfin_stats"] = jellyfin_stats
+                else:
+                    # No stats in database, trigger refresh
+                    asyncio.create_task(self.refresh_jellyfin_stats())
+        except Exception as e:
+            self.logger.warning(f"Could not get Jellyfin stats: {e}")
         
         # Get statistics from main database if webhook service is available
         if self.webhook_service and self.webhook_service.db:
@@ -730,6 +837,18 @@ async def lifespan(app_instance: FastAPI):
     
     # Setup SSL routes
     await setup_ssl_routes(app_instance, web_service.ssl_manager)
+    
+    # Setup security middleware
+    security_config = {
+        "rate_limit": 60,
+        "rate_window": 60,
+        "max_auth_attempts": 5,
+        "ban_duration": 30,
+        "exempt_paths": ["/webhook", "/health", "/api/health", "/api/auth/status"],
+        "enable_hsts": True,
+        "enable_csp": True
+    }
+    setup_security_middleware(app_instance, security_config)
     
     # Try to connect to webhook service if available
     # This would be passed in from main.py when both services run together

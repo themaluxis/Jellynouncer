@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { apiService } from '../services/api'
-import { Search, Download, RefreshCw, AlertCircle, Info, AlertTriangle, Bug, ChevronDown } from 'lucide-react'
+import { Icon, IconDuotone, IconLight } from '../components/FontAwesomeProIcon'
 import { parseLogText, filterLogs, getLogStatistics, formatLogForDisplay, exportLogs, LOG_LEVEL_COLORS } from '../utils/logParser'
 import { FixedSizeList as VirtualList } from 'react-window'
 
@@ -53,14 +53,14 @@ const Logs = () => {
       case 'ERROR':
       case 'CRITICAL':
       case 'FATAL':
-        return <AlertCircle size={14} />
+        return <IconDuotone icon="exclamation-circle" size="xs" color="text-red-500" />
       case 'WARNING':
       case 'WARN':
-        return <AlertTriangle size={14} />
+        return <IconDuotone icon="exclamation-triangle" size="xs" color="text-yellow-500" />
       case 'INFO':
-        return <Info size={14} />
+        return <IconDuotone icon="info-circle" size="xs" color="text-blue-500" />
       case 'DEBUG':
-        return <Bug size={14} />
+        return <IconDuotone icon="bug" size="xs" color="text-gray-500" />
       default:
         return null
     }
@@ -160,7 +160,7 @@ const Logs = () => {
               className="btn btn-secondary"
               disabled={isLoading}
             >
-              <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+              <IconDuotone icon="sync-alt" spin={isLoading} />
             </button>
           </div>
         </div>
@@ -199,7 +199,7 @@ const Logs = () => {
           />
           
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-dark-text-muted" size={20} />
+            <IconLight icon="search" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-dark-text-muted" size="lg" />
             <input 
               type="text"
               className="input pl-10 w-full"
@@ -222,9 +222,9 @@ const Logs = () => {
           
           <div className="relative">
             <button className="btn btn-secondary flex items-center gap-2">
-              <Download size={16} />
+              <IconDuotone icon="download" size="sm" />
               Export
-              <ChevronDown size={14} />
+              <IconLight icon="chevron-down" size="xs" />
             </button>
             <div className="absolute right-0 mt-1 w-32 bg-dark-elevated rounded-lg shadow-lg hidden group-hover:block">
               <button 

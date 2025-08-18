@@ -1,15 +1,9 @@
 import React, { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import {
-  HomeIcon,
-  Cog6ToothIcon,
-  DocumentTextIcon,
-  DocumentMagnifyingGlassIcon,
-  ArrowRightOnRectangleIcon,
-  Bars3Icon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline';
 import { useAuthStore } from '../stores/authStore';
+import ConnectionStatus from './ConnectionStatus';
+import DarkModeToggle from './DarkModeToggle';
+import { Icon, IconDuotone, IconLight } from './FontAwesomeProIcon';
 
 const Layout = () => {
   const location = useLocation();
@@ -18,10 +12,10 @@ const Layout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const navigation = [
-    { name: 'Overview', href: '/', icon: HomeIcon },
-    { name: 'Configuration', href: '/config', icon: Cog6ToothIcon },
-    { name: 'Templates', href: '/templates', icon: DocumentTextIcon },
-    { name: 'Logs', href: '/logs', icon: DocumentMagnifyingGlassIcon },
+    { name: 'Overview', href: '/', icon: 'home', style: 'duotone' },
+    { name: 'Configuration', href: '/config', icon: 'cogs', style: 'duotone' },
+    { name: 'Templates', href: '/templates', icon: 'file-code', style: 'duotone' },
+    { name: 'Logs', href: '/logs', icon: 'search-plus', style: 'duotone' },
   ];
 
   const handleLogout = () => {
@@ -50,7 +44,7 @@ const Layout = () => {
               onClick={() => setSidebarOpen(false)}
               className="text-gray-500 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300"
             >
-              <XMarkIcon className="h-6 w-6" />
+              <IconLight icon="times" size="lg" />
             </button>
           </div>
           
@@ -68,7 +62,7 @@ const Layout = () => {
                 `}
                 onClick={() => setSidebarOpen(false)}
               >
-                <item.icon className="mr-3 h-5 w-5" />
+                <IconDuotone icon={item.icon} className="mr-3" />
                 {item.name}
               </Link>
             ))}
@@ -89,7 +83,7 @@ const Layout = () => {
                   onClick={handleLogout}
                   className="ml-3 p-2 text-gray-500 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300"
                 >
-                  <ArrowRightOnRectangleIcon className="h-5 w-5" />
+                  <IconDuotone icon="sign-out-alt" />
                 </button>
               </div>
             </div>
@@ -120,7 +114,7 @@ const Layout = () => {
                   }
                 `}
               >
-                <item.icon className="mr-3 h-5 w-5" />
+                <IconDuotone icon={item.icon} className="mr-3" />
                 {item.name}
               </Link>
             ))}
@@ -142,7 +136,7 @@ const Layout = () => {
                   className="ml-3 p-2 text-gray-500 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300"
                   title="Logout"
                 >
-                  <ArrowRightOnRectangleIcon className="h-5 w-5" />
+                  <IconDuotone icon="sign-out-alt" />
                 </button>
               </div>
             </div>
@@ -158,7 +152,7 @@ const Layout = () => {
             onClick={() => setSidebarOpen(true)}
             className="text-gray-500 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300"
           >
-            <Bars3Icon className="h-6 w-6" />
+            <IconLight icon="bars" size="lg" />
           </button>
           <span className="ml-4 text-xl font-semibold text-gray-900 dark:text-white">
             Jellynouncer
@@ -177,13 +171,19 @@ const Layout = () => {
         {/* Footer */}
         <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex justify-between items-center">
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                © 2024 Jellynouncer - Made with ☕ by Mark Newton
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Version 2.0.0
-              </p>
+            <div className="flex flex-col sm:flex-row justify-between items-center space-y-2 sm:space-y-0">
+              <div className="flex items-center space-x-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  © 2024 Jellynouncer - Made with ☕ by Mark Newton
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Version 2.0.0
+                </p>
+              </div>
+              <div className="flex items-center space-x-4">
+                <ConnectionStatus />
+                <DarkModeToggle />
+              </div>
             </div>
           </div>
         </footer>

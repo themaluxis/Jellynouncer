@@ -321,6 +321,42 @@ class DatabaseManager:
                                      CURRENT_TIMESTAMP
                                  )
                                  """)
+                
+                # Create Jellyfin server stats table for dashboard metrics
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS jellyfin_stats (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        server_name TEXT,
+                        server_version TEXT,
+                        server_id TEXT,
+                        server_status TEXT DEFAULT 'unknown',
+                        total_users INTEGER DEFAULT 0,
+                        active_users INTEGER DEFAULT 0,
+                        total_items INTEGER DEFAULT 0,
+                        movie_count INTEGER DEFAULT 0,
+                        series_count INTEGER DEFAULT 0,
+                        episode_count INTEGER DEFAULT 0,
+                        music_count INTEGER DEFAULT 0,
+                        music_album_count INTEGER DEFAULT 0,
+                        photo_count INTEGER DEFAULT 0,
+                        book_count INTEGER DEFAULT 0,
+                        total_size_gb REAL DEFAULT 0,
+                        total_play_count INTEGER DEFAULT 0,
+                        total_watch_time_minutes INTEGER DEFAULT 0,
+                        library_stats TEXT,  -- JSON with per-library stats
+                        plugin_stats TEXT,   -- JSON with plugin information
+                        system_info TEXT,     -- JSON with system information
+                        last_error TEXT,
+                        last_check TIMESTAMP
+                    )
+                """)
+                
+                # Create index for quick lookups
+                await db.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_jellyfin_stats_timestamp 
+                    ON jellyfin_stats(timestamp DESC)
+                """)
 
                 # Create service state table for tracking maintenance operations
                 await db.execute("""
@@ -972,6 +1008,78 @@ class DatabaseManager:
             self.logger.error(f"Failed to update vacuum timestamp: {e}")
             return False
 
+    async def save_jellyfin_stats(self, stats: Dict[str, Any]) -> None:
+        """
+        Save Jellyfin server statistics to database.
+        
+        Args:
+            stats: Dictionary containing server statistics
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                INSERT INTO jellyfin_stats (
+                    server_name, server_version, server_id, server_status,
+                    total_users, active_users, total_items,
+                    movie_count, series_count, episode_count,
+                    music_count, music_album_count, photo_count, book_count,
+                    total_size_gb, total_play_count, total_watch_time_minutes,
+                    library_stats, plugin_stats, system_info,
+                    last_error, last_check
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                stats.get('server_name'),
+                stats.get('server_version'),
+                stats.get('server_id'),
+                stats.get('server_status', 'online'),
+                stats.get('total_users', 0),
+                stats.get('active_users', 0),
+                stats.get('total_items', 0),
+                stats.get('movie_count', 0),
+                stats.get('series_count', 0),
+                stats.get('episode_count', 0),
+                stats.get('music_count', 0),
+                stats.get('music_album_count', 0),
+                stats.get('photo_count', 0),
+                stats.get('book_count', 0),
+                stats.get('total_size_gb', 0),
+                stats.get('total_play_count', 0),
+                stats.get('total_watch_time_minutes', 0),
+                json.dumps(stats.get('library_stats', {})),
+                json.dumps(stats.get('plugin_stats', {})),
+                json.dumps(stats.get('system_info', {})),
+                stats.get('last_error'),
+                datetime.now(timezone.utc).isoformat()
+            ))
+            await db.commit()
+    
+    async def get_latest_jellyfin_stats(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the most recent Jellyfin server statistics.
+        
+        Returns:
+            Dictionary with server stats or None if not available
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("""
+                SELECT * FROM jellyfin_stats 
+                ORDER BY timestamp DESC 
+                LIMIT 1
+            """)
+            row = await cursor.fetchone()
+            
+            if row:
+                stats = dict(row)
+                # Parse JSON fields
+                if stats.get('library_stats'):
+                    stats['library_stats'] = json.loads(stats['library_stats'])
+                if stats.get('plugin_stats'):
+                    stats['plugin_stats'] = json.loads(stats['plugin_stats'])
+                if stats.get('system_info'):
+                    stats['system_info'] = json.loads(stats['system_info'])
+                return stats
+            return None
+    
     async def close(self) -> None:
         """
         Clean shutdown of database manager.

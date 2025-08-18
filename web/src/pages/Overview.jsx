@@ -23,6 +23,7 @@ import {
   MusicalNoteIcon,
 } from '@heroicons/react/24/outline';
 import { apiClient } from '../utils/apiClient';
+import JellyfinStats from '../components/JellyfinStats';
 
 // Register Chart.js components
 ChartJS.register(
@@ -53,10 +54,10 @@ const Overview = () => {
         apiClient.get('/api/health'),
       ]);
 
-      // The API returns the data directly, not wrapped in a 'data' property
-      const overview = overviewData.data || overviewData;
+      // Extract data from axios response
+      const overview = overviewData.data;
       setStats(overview);
-      setHealth(healthData.data || healthData);
+      setHealth(healthData.data);
       setRecentNotifications(overview && overview['recent_notifications'] ? overview['recent_notifications'] : []);
       setError(null);
     } catch (err) {
@@ -309,6 +310,11 @@ const Overview = () => {
           </div>
         </div>
       </div>
+
+      {/* Jellyfin Server Statistics */}
+      {stats && stats['jellyfin_stats'] && (
+        <JellyfinStats stats={stats['jellyfin_stats']} />
+      )}
 
       {/* Recent Notifications */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow">

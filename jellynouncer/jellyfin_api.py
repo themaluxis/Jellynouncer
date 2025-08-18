@@ -484,6 +484,171 @@ class JellyfinAPI:
         timeout = base_timeout + (batch_size * per_item_overhead) + network_buffer
         return min(timeout, 120)  # Cap at 2 minutes max
     
+    async def get_server_stats(self) -> Dict[str, Any]:
+        """
+        Collect comprehensive server statistics from Jellyfin.
+        
+        Returns:
+            Dictionary containing server stats
+        """
+        try:
+            stats = {}
+            
+            # Get server info
+            try:
+                server_info = self.client.jellyfin.get_server_info()
+                if server_info:
+                    stats['server_name'] = server_info.get('ServerName', 'Unknown')
+                    stats['server_version'] = server_info.get('Version', 'Unknown')
+                    stats['server_id'] = server_info.get('Id', 'Unknown')
+                    stats['server_status'] = 'online'
+            except Exception as e:
+                self.logger.warning(f"Could not get server info: {e}")
+                stats['server_status'] = 'error'
+                stats['last_error'] = str(e)
+            
+            # Get user statistics
+            try:
+                users = self.client.jellyfin.get_users()
+                stats['total_users'] = len(users) if users else 0
+                # Count active users (logged in within last 30 days)
+                active_count = 0
+                if users:
+                    for user in users:
+                        if user.get('LastActivityDate'):
+                            last_activity = datetime.fromisoformat(user['LastActivityDate'].replace('Z', '+00:00'))
+                            if (datetime.now(timezone.utc) - last_activity).days <= 30:
+                                active_count += 1
+                stats['active_users'] = active_count
+            except Exception as e:
+                self.logger.warning(f"Could not get user stats: {e}")
+            
+            # Get library statistics
+            try:
+                libraries = self.client.jellyfin.get_user_views(self.config.user_id)
+                library_stats = {}
+                total_items = 0
+                movie_count = 0
+                series_count = 0
+                episode_count = 0
+                music_count = 0
+                music_album_count = 0
+                photo_count = 0
+                book_count = 0
+                
+                if libraries and 'Items' in libraries:
+                    for library in libraries['Items']:
+                        lib_name = library.get('Name', 'Unknown')
+                        lib_type = library.get('CollectionType', 'mixed')
+                        lib_id = library.get('Id')
+                        
+                        # Get item count for this library
+                        try:
+                            lib_items = self.client.jellyfin.user_items(
+                                user_id=self.config.user_id,
+                                params={
+                                    'ParentId': lib_id,
+                                    'Recursive': True,
+                                    'Limit': 1,
+                                    'IncludeItemTypes': 'Movie,Series,Episode,Audio,MusicAlbum,Photo,Book'
+                                }
+                            )
+                            
+                            item_count = lib_items.get('TotalRecordCount', 0) if lib_items else 0
+                            total_items += item_count
+                            
+                            library_stats[lib_name] = {
+                                'type': lib_type,
+                                'id': lib_id,
+                                'item_count': item_count
+                            }
+                            
+                            # Count by type
+                            if lib_type == 'movies':
+                                movie_count += item_count
+                            elif lib_type == 'tvshows':
+                                # Get series and episode counts separately
+                                series_items = self.client.jellyfin.user_items(
+                                    user_id=self.config.user_id,
+                                    params={'ParentId': lib_id, 'Recursive': True, 'Limit': 1, 'IncludeItemTypes': 'Series'}
+                                )
+                                episode_items = self.client.jellyfin.user_items(
+                                    user_id=self.config.user_id,
+                                    params={'ParentId': lib_id, 'Recursive': True, 'Limit': 1, 'IncludeItemTypes': 'Episode'}
+                                )
+                                series_count += series_items.get('TotalRecordCount', 0) if series_items else 0
+                                episode_count += episode_items.get('TotalRecordCount', 0) if episode_items else 0
+                            elif lib_type == 'music':
+                                music_count += item_count
+                                album_items = self.client.jellyfin.user_items(
+                                    user_id=self.config.user_id,
+                                    params={'ParentId': lib_id, 'Recursive': True, 'Limit': 1, 'IncludeItemTypes': 'MusicAlbum'}
+                                )
+                                music_album_count += album_items.get('TotalRecordCount', 0) if album_items else 0
+                            elif lib_type == 'photos':
+                                photo_count += item_count
+                            elif lib_type == 'books':
+                                book_count += item_count
+                                
+                        except Exception as e:
+                            self.logger.warning(f"Could not get stats for library {lib_name}: {e}")
+                
+                stats['total_items'] = total_items
+                stats['movie_count'] = movie_count
+                stats['series_count'] = series_count
+                stats['episode_count'] = episode_count
+                stats['music_count'] = music_count
+                stats['music_album_count'] = music_album_count
+                stats['photo_count'] = photo_count
+                stats['book_count'] = book_count
+                stats['library_stats'] = library_stats
+                
+            except Exception as e:
+                self.logger.warning(f"Could not get library stats: {e}")
+            
+            # Get system info
+            try:
+                system_info = self.client.jellyfin.get_system_info()
+                if system_info:
+                    stats['system_info'] = {
+                        'operating_system': system_info.get('OperatingSystem', 'Unknown'),
+                        'architecture': system_info.get('SystemArchitecture', 'Unknown'),
+                        'has_update': system_info.get('HasUpdateAvailable', False),
+                        'encoding_threads': system_info.get('EncodingThreadCount', 0),
+                        'transcoding_temp_path': system_info.get('TranscodingTempPath', ''),
+                        'cache_path': system_info.get('CachePath', ''),
+                    }
+            except Exception as e:
+                self.logger.warning(f"Could not get system info: {e}")
+            
+            # Get plugin info
+            try:
+                plugins = self.client.jellyfin.get_plugins()
+                if plugins:
+                    plugin_list = []
+                    for plugin in plugins:
+                        plugin_list.append({
+                            'name': plugin.get('Name', 'Unknown'),
+                            'version': plugin.get('Version', 'Unknown'),
+                            'enabled': plugin.get('Status', '') == 'Active'
+                        })
+                    stats['plugin_stats'] = plugin_list
+            except Exception as e:
+                self.logger.warning(f"Could not get plugin info: {e}")
+            
+            # Calculate storage size (approximate based on media items)
+            # This is a rough estimate - actual implementation would need different approach
+            stats['total_size_gb'] = 0  # Would need to aggregate from individual items
+            
+            return stats
+            
+        except Exception as e:
+            self.logger.error(f"Failed to collect server stats: {e}")
+            return {
+                'server_status': 'error',
+                'last_error': str(e)
+            }
+    
     async def get_all_items(self,
                             batch_size: Optional[int] = None,
                             progress_callback: Optional[Callable[[int, int], None]] = None) -> List[Dict[str, Any]]:

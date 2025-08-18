@@ -593,6 +593,68 @@ class NotificationsConfig(BaseModel):
     filter_deletes: bool = Field(default=True, description="Filter out delete notifications for upgrades (delete followed by add of same item)")
 
 
+# ==================== BACKUP CONFIGURATION ====================
+
+class BackupConfig(BaseModel):
+    """
+    Backup and restore configuration settings.
+    
+    This model controls automated backup scheduling, retention policies,
+    and what components are included in backups.
+    
+    Attributes:
+        enabled (bool): Enable automatic backups
+        backup_dir (str): Directory to store backup files
+        schedule (str): Backup schedule (hourly, daily, weekly, disabled)
+        backup_time (str): Time for daily/weekly backups (HH:MM format)
+        retention_days (int): Days to retain backups before deletion
+        max_backups (int): Maximum number of backups to keep
+        compress (bool): Compress backup archives with gzip
+        backup_config (bool): Include configuration files in backups
+        backup_database (bool): Include database in backups
+        backup_templates (bool): Include templates in backups
+        backup_ssl (bool): Include SSL certificates in backups
+        backup_logs (bool): Include log files in backups
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(default=True, description="Enable automatic backups")
+    backup_dir: str = Field(default="data/backups", description="Backup directory path")
+    schedule: str = Field(default="daily", description="Backup schedule: hourly, daily, weekly, disabled")
+    backup_time: str = Field(default="02:00", description="Time for daily/weekly backups (HH:MM)")
+    retention_days: int = Field(default=30, ge=1, description="Days to retain backups")
+    max_backups: int = Field(default=10, ge=1, description="Maximum number of backups to keep")
+    compress: bool = Field(default=True, description="Compress backup archives")
+    backup_config: bool = Field(default=True, description="Include configuration in backups")
+    backup_database: bool = Field(default=True, description="Include database in backups")
+    backup_templates: bool = Field(default=True, description="Include templates in backups")
+    backup_ssl: bool = Field(default=False, description="Include SSL certificates in backups")
+    backup_logs: bool = Field(default=False, description="Include logs in backups")
+    
+    @field_validator('schedule')
+    @classmethod
+    def validate_schedule(cls, v: str) -> str:
+        """Validate backup schedule"""
+        valid_schedules = ['hourly', 'daily', 'weekly', 'disabled']
+        if v.lower() not in valid_schedules:
+            raise ValueError(f"Schedule must be one of: {', '.join(valid_schedules)}")
+        return v.lower()
+    
+    @field_validator('backup_time')
+    @classmethod
+    def validate_backup_time(cls, v: str) -> str:
+        """Validate backup time format (HH:MM)"""
+        try:
+            hour, minute = v.split(':')
+            hour = int(hour)
+            minute = int(minute)
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                raise ValueError
+            return f"{hour:02d}:{minute:02d}"
+        except:
+            raise ValueError("Backup time must be in HH:MM format (e.g., 02:00)")
+
+
 # ==================== SERVER CONFIGURATION ====================
 
 class ServerConfig(BaseModel):
@@ -1126,6 +1188,7 @@ class AppConfig(BaseModel):
     ssl: SSLConfig = Field(default_factory=SSLConfig)
     web_interface: WebInterfaceConfig = Field(default_factory=WebInterfaceConfig)
     metadata_services: MetadataServicesConfig = Field(default_factory=MetadataServicesConfig)
+    backup: BackupConfig = Field(default_factory=BackupConfig)
 
 
 # ==================== CONFIGURATION VALIDATION ====================
