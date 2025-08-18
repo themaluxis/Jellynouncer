@@ -2,7 +2,7 @@
 
     on:
       push:
-        branches: [ "main" ] # or your desired branch
+        branches: [ "main", "develop" ] # or your desired branch
 
     jobs:
       build:
@@ -19,4 +19,4 @@
           with:
             context: .
             push: true
-            tags: ${{ secrets.DOCKER_HUB_USERNAME }}/jellynouncer:latest
+            tags: ${{ secrets.DOCKER_HUB_USERNAME }}/jellynouncer:develop
