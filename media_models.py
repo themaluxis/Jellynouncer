@@ -399,6 +399,7 @@ class MediaItem:
     content_hash: str = field(default="", init=False)  # MD5 hash for change detection (auto-generated)
     timestamp_created: str = field(default="", init=False)  # Object creation timestamp (auto-generated)
     file_size: Optional[int] = None  # File size in bytes
+    ratings: Optional[dict] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """
