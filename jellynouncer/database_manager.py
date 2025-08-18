@@ -448,13 +448,9 @@ class DatabaseManager:
 
                 # Convert DatabaseItem to dictionary for database insertion
                 item_dict = asdict(item)
-                
-                # Remove private fields that shouldn't be saved to database
-                # _content_hash is internal storage, we need to use the content_hash property
-                if '_content_hash' in item_dict:
-                    del item_dict['_content_hash']
-                    # Add the actual content hash from the property
-                    item_dict['content_hash'] = item.content_hash
+
+                # The content_hash is computed in __post_init__ and included by asdict.
+                # The old code checking for '_content_hash' was incorrect and has been removed.
 
                 # Serialize list fields to JSON strings
                 for field in ['genres', 'studios', 'tags', 'artists', 'subtitle_languages', 'subtitle_formats']:
@@ -596,83 +592,104 @@ class DatabaseManager:
                 # Begin transaction for all items with immediate lock
                 await db.execute("BEGIN IMMEDIATE")
 
-                # Process items in chunks matching API batch size for consistency
-                # Uses same adaptive sizing as API calls for optimal performance
-                chunk_size = 500  # Maximum batch size, matches API's max batch size
+                # Define SQLite limits for batch processing to avoid "too many SQL variables" error
+                SQLITE_MAX_VARIABLES = 999
+
+                # Get the number of columns from the first item.
+                # This assumes all items have the same structure, which is a safe assumption for a batch.
+                if not items:
+                    return {'successful': 0, 'failed': 0, 'total': 0}
                 
-                for chunk_start in range(0, len(items), chunk_size):
-                    chunk = items[chunk_start:chunk_start + chunk_size]
+                try:
+                    # Dynamically determine column count from the dataclass
+                    num_columns = len(items[0].__dataclass_fields__)
+                except (IndexError, AttributeError):
+                    # Fallback if items list is empty or not a dataclass
+                    return {'successful': 0, 'failed': 0, 'total': 0}
+
+                # Calculate a safe chunk size for batch inserts to stay under the variable limit.
+                sqlite_chunk_size = SQLITE_MAX_VARIABLES // num_columns if num_columns > 0 else 50
+                self.logger.debug(f"Calculated SQLite chunk size: {sqlite_chunk_size} rows per insert for {num_columns} columns")
+
+                # The outer loop is not strictly necessary anymore but provides an extra layer of safety
+                # and memory management for extremely large `items` lists.
+                api_chunk_size = 500
+
+                for api_chunk_start in range(0, len(items), api_chunk_size):
+                    api_chunk = items[api_chunk_start:api_chunk_start + api_chunk_size]
                     
-                    try:
-                        # Prepare all items in chunk
-                        columns = None
-                        items_to_insert = []
-                        
-                        for item in chunk:
-                            try:
-                                # Convert to dictionary and serialize JSON fields efficiently
-                                item_dict = asdict(item)
-                                
-                                # Remove private fields that shouldn't be saved to database
-                                # _content_hash is internal storage, we need to use the content_hash property
-                                if '_content_hash' in item_dict:
-                                    del item_dict['_content_hash']
-                                    # Add the actual content hash from the property
-                                    item_dict['content_hash'] = item.content_hash
-                                
-                                # Optimize JSON serialization with set lookup
-                                json_fields = {'genres', 'studios', 'tags', 'artists', 'subtitle_languages', 'subtitle_formats'}
-                                for field in json_fields:
-                                    if field in item_dict and item_dict[field] is not None:
-                                        item_dict[field] = json.dumps(item_dict[field])
-                                
-                                if columns is None:
-                                    columns = list(item_dict.keys())
-                                
-                                items_to_insert.append(list(item_dict.values()))
-                                
-                            except Exception as e:
-                                self.logger.warning(f"Failed to prepare item {item.item_id}: {e}")
-                                failed += 1
-                        
-                        if items_to_insert and columns:
-                            # Build optimized batch INSERT with multiple VALUES
-                            placeholders_per_item = f"({','.join('?' * len(columns))})"
-                            all_placeholders = ','.join([placeholders_per_item] * len(items_to_insert))
-                            columns_str = ','.join(columns)
+                    # Inner loop to process items in smaller, SQLite-safe chunks
+                    for i in range(0, len(api_chunk), sqlite_chunk_size):
+                        sqlite_chunk = api_chunk[i:i + sqlite_chunk_size]
+
+                        try:
+                            # Prepare all items in the smaller SQLite chunk
+                            columns = None
+                            items_to_insert = []
                             
-                            # Flatten values list
-                            all_values = [val for item_values in items_to_insert for val in item_values]
+                            for item in sqlite_chunk:
+                                try:
+                                    # Convert to dictionary and serialize JSON fields efficiently
+                                    item_dict = asdict(item)
+
+                                    # The content_hash is computed in __post_init__ and included by asdict.
+                                    # The old code checking for '_content_hash' was incorrect and has been removed.
+
+                                    # Optimize JSON serialization
+                                    json_fields = {'genres', 'studios', 'tags', 'artists', 'subtitle_languages', 'subtitle_formats'}
+                                    for field in json_fields:
+                                        if field in item_dict and item_dict[field] is not None:
+                                            item_dict[field] = json.dumps(item_dict[field])
+
+                                    if columns is None:
+                                        columns = list(item_dict.keys())
+
+                                    items_to_insert.append(list(item_dict.values()))
+
+                                except Exception as e:
+                                    self.logger.warning(f"Failed to prepare item {item.item_id} for batch insert: {e}")
+                                    failed += 1
                             
-                            sql = f"INSERT OR REPLACE INTO media_items ({columns_str}) VALUES {all_placeholders}"
-                            
-                            await db.execute(sql, all_values)
-                            successful += len(items_to_insert)
-                            
-                    except Exception as e:
-                        # Fall back to individual inserts for this chunk if batch fails
-                        self.logger.warning(f"Batch insert failed, using fallback: {e}")
-                        
-                        for item in chunk:
-                            try:
-                                item_dict = asdict(item)
-                                json_fields = {'genres', 'studios', 'tags', 'artists', 'subtitle_languages', 'subtitle_formats'}
-                                for field in json_fields:
-                                    if field in item_dict and item_dict[field] is not None:
-                                        item_dict[field] = json.dumps(item_dict[field])
+                            if items_to_insert and columns:
+                                # Build optimized batch INSERT for the smaller chunk
+                                placeholders_per_item = f"({','.join('?' * len(columns))})"
+                                all_placeholders = ','.join([placeholders_per_item] * len(items_to_insert))
+                                columns_str = ','.join(columns)
                                 
-                                placeholders = ','.join('?' * len(item_dict))
-                                columns = ','.join(item_dict.keys())
+                                # Flatten values list for the SQL execution
+                                all_values = [val for item_values in items_to_insert for val in item_values]
                                 
-                                await db.execute(
-                                    f"INSERT OR REPLACE INTO media_items ({columns}) VALUES ({placeholders})",
-                                    list(item_dict.values())
-                                )
-                                successful += 1
+                                sql = f"INSERT OR REPLACE INTO media_items ({columns_str}) VALUES {all_placeholders}"
                                 
-                            except Exception as e:
-                                self.logger.warning(f"Failed to save item {item.item_id}: {e}")
-                                failed += 1
+                                await db.execute(sql, all_values)
+                                successful += len(items_to_insert)
+
+                        except Exception as e:
+                            # Fall back to individual inserts for this chunk if the batch insert fails
+                            self.logger.warning(f"Batch insert for chunk failed, using individual insert fallback: {e}")
+
+                            for item in sqlite_chunk:
+                                try:
+                                    item_dict = asdict(item)
+
+                                    # Ensure content hash and JSON fields are correctly handled for individual insert
+                                    json_fields = {'genres', 'studios', 'tags', 'artists', 'subtitle_languages', 'subtitle_formats'}
+                                    for field in json_fields:
+                                        if field in item_dict and item_dict[field] is not None:
+                                            item_dict[field] = json.dumps(item_dict[field])
+
+                                    placeholders = ','.join('?' * len(item_dict))
+                                    columns_str = ','.join(item_dict.keys())
+
+                                    await db.execute(
+                                        f"INSERT OR REPLACE INTO media_items ({columns_str}) VALUES ({placeholders})",
+                                        list(item_dict.values())
+                                    )
+                                    successful += 1
+
+                                except Exception as e_ind:
+                                    self.logger.error(f"Failed to save item {item.item_id} individually after batch failure: {e_ind}")
+                                    failed += 1
 
                 # Commit the entire transaction
                 await db.commit()
