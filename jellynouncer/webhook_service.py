@@ -1061,6 +1061,9 @@ class WebhookService:
                 # Wait before next iteration (5 minutes)
                 await asyncio.sleep(300)
 
+            except asyncio.CancelledError:
+                self.logger.info("Background tasks cancelled - service is shutting down")
+                break
             except Exception as e:
                 self.logger.error(f"Background task error: {e}", exc_info=True)
                 await asyncio.sleep(60)  # Wait 1 minute before retrying
@@ -1713,6 +1716,15 @@ class WebhookService:
             # Signal background tasks to stop
             self.shutdown_event.set()
 
+            # Cancel deletion cleanup task if running
+            if hasattr(self, 'deletion_cleanup_task') and self.deletion_cleanup_task and not self.deletion_cleanup_task.done():
+                self.deletion_cleanup_task.cancel()
+                try:
+                    await self.deletion_cleanup_task
+                except asyncio.CancelledError:
+                    pass
+                self.logger.debug("Deletion cleanup task cancelled")
+
             # Close metadata service (which handles TVDB cleanup internally)
             if self.metadata_service:
                 try:
@@ -2072,6 +2084,9 @@ class WebhookService:
                     self.logger.info(f"Processing expired deletion for {info['payload'].Name} (no upgrade detected)")
                     await self._send_deletion_notification(info['payload'])
                     
+            except asyncio.CancelledError:
+                self.logger.debug("Deletion cleanup task cancelled - service is shutting down")
+                break
             except Exception as e:
                 self.logger.error(f"Error in deletion cleanup task: {e}")
                 await asyncio.sleep(30)  # Wait longer on error
