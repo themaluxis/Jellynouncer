@@ -249,39 +249,19 @@ app = FastAPI(
 
 
 @app.post("/webhook")
-async def receive_webhook(payload: WebhookPayload):
+async def receive_webhook(request: Request):
     """
     Main webhook endpoint for receiving notifications from Jellyfin.
 
-    This endpoint processes incoming webhooks from Jellyfin's webhook plugin
-    and triggers the appropriate notification workflow. It validates the
-    payload format and handles the complete notification pipeline.
+    This endpoint is designed to be robust and accept raw request bodies,
+    manually parsing and validating them. This avoids issues with incorrect
+    Content-Type headers from clients like the Jellyfin webhook plugin.
 
     Args:
-        payload (WebhookPayload): Validated webhook data from Jellyfin
+        request (Request): The incoming FastAPI request object.
 
     Returns:
-        dict: Processing result with status and details
-
-    Raises:
-        HTTPException: If service is not ready or processing fails
-
-    Example:
-        Jellyfin webhook plugin should be configured to send POST requests to:
-        `http://your-jellynouncer-server:PORT/webhook`
-
-        Default port is 8080, but can be configured via PORT environment variable
-        or config file server.port setting.
-
-        Example webhook payload:
-        ```json
-        {
-            "ItemId": "abc123",
-            "Name": "The Matrix",
-            "ItemType": "Movie",
-            "NotificationType": "library.new"
-        }
-        ```
+        dict: Processing result with status and details.
     """
     if webhook_service is None:
         raise HTTPException(
@@ -289,11 +269,23 @@ async def receive_webhook(payload: WebhookPayload):
             detail="Service not ready - still initializing"
         )
 
+    # Manually parse and validate the webhook payload
     try:
-        # Process the webhook through our service layer
+        body = await request.body()
+        data = json.loads(body)
+        payload = WebhookPayload(**data)
+    except json.JSONDecodeError:
+        webhook_service.logger.warning("Webhook received with invalid JSON body.")
+        raise HTTPException(status_code=400, detail="Invalid JSON body.")
+    except ValidationError as e:
+        # Manually trigger our custom validation exception handler
+        # This ensures consistent error responses for all validation failures.
+        return await validation_exception_handler(request, e)
+
+    # Process the validated payload through the service layer
+    try:
         result = await webhook_service.process_webhook(payload)
         return result
-
     except Exception as e:
         # Log the error but don't expose internal details to the client
         webhook_service.logger.error(f"Webhook processing failed: {e}", exc_info=True)
